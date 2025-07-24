@@ -46,7 +46,8 @@ import {
   ArrowUp,
   Hourglass,
   UserCheck,
-  Play
+  Play,
+  Bell // 🔔 NOVO: Ícone para notificações
 } from 'lucide-react';
 
 const DashboardPage = () => {
@@ -152,6 +153,14 @@ const DashboardPage = () => {
         filteredTickets = filteredTickets.filter(ticket => ticket.status === 'concluido');
         break;
       
+      // 🔔 NOVO: Filtro para chamados com notificações não lidas
+      case 'com_notificacoes_nao_lidas':
+        // Filtrar apenas chamados que têm notificações não lidas
+        filteredTickets = filteredTickets.filter(ticket => 
+          ticketNotifications[ticket.id] && ticketNotifications[ticket.id] > 0
+        );
+        break;
+      
       default:
         break;
     }
@@ -166,6 +175,11 @@ const DashboardPage = () => {
 
   // NOVO: Função para contar chamados por categoria
   const getTicketCounts = () => {
+    // 🔔 NOVO: Contar chamados com notificações não lidas
+    const ticketsWithUnreadNotifications = tickets.filter(ticket => 
+      ticketNotifications[ticket.id] && ticketNotifications[ticket.id] > 0
+    ).length;
+
     const counts = {
       todos: tickets.length,
       sem_tratativa: tickets.filter(t => t.status === 'aberto').length,
@@ -184,7 +198,9 @@ const DashboardPage = () => {
       }).length,
       devolvido: tickets.filter(t => t.status === 'devolvido' || (t.historico && t.historico.some(h => h.acao === 'devolvido'))).length,
       aguardando_validacao: tickets.filter(t => t.status === 'executado_aguardando_validacao').length,
-      concluidos: tickets.filter(t => t.status === 'concluido').length
+      concluidos: tickets.filter(t => t.status === 'concluido').length,
+      // 🔔 NOVO: Adicionar contagem de notificações não lidas
+      com_notificacoes_nao_lidas: ticketsWithUnreadNotifications
     };
     return counts;
   };
@@ -192,6 +208,8 @@ const DashboardPage = () => {
   // NOVO: Configuração dos cards de filtro
   const filterCards = [
     { id: 'todos', title: 'Todos', icon: FileText, color: 'bg-blue-50 border-blue-200 hover:bg-blue-100', iconColor: 'text-blue-600', activeColor: 'bg-blue-500 text-white border-blue-500' },
+    // 🔔 NOVO: Card de notificações não lidas - posicionado no início para destaque
+    { id: 'com_notificacoes_nao_lidas', title: 'Com Notificações', icon: Bell, color: 'bg-red-50 border-red-200 hover:bg-red-100', iconColor: 'text-red-600', activeColor: 'bg-red-500 text-white border-red-500' },
     { id: 'sem_tratativa', title: 'Sem Tratativa', icon: AlertCircle, color: 'bg-orange-50 border-orange-200 hover:bg-orange-100', iconColor: 'text-orange-600', activeColor: 'bg-orange-500 text-white border-orange-500' },
     { id: 'em_tratativa', title: 'Em Tratativa', icon: Clock, color: 'bg-yellow-50 border-yellow-200 hover:bg-yellow-100', iconColor: 'text-yellow-600', activeColor: 'bg-yellow-500 text-white border-yellow-500' },
     { id: 'em_execucao', title: 'Em Execução', icon: Play, color: 'bg-blue-50 border-blue-200 hover:bg-blue-100', iconColor: 'text-blue-600', activeColor: 'bg-blue-500 text-white border-blue-500' },
@@ -272,41 +290,6 @@ const DashboardPage = () => {
       setTicketNotifications({});
     }
   };
-
-  useEffect(() => {
-    if (authInitialized && user && userProfile && user.uid) {
-      loadDashboardData();
-    } else if (authInitialized && !user) {
-      navigate('/login');
-    } else if (authInitialized && user && !userProfile) {
-      console.warn('DashboardPage: usuário logado mas perfil não carregado ainda');
-      setLoading(false);
-    }
-  }, [user, userProfile, authInitialized, navigate]);
-
-  useEffect(() => {
-    if (tickets.length > 0 && user?.uid) {
-      // ✅ 3. ALTERAÇÃO: Listener agora usa o serviço unificado.
-      const unsubscribe = notificationService.subscribeToNotifications(user.uid, (allNotifications) => {
-        console.log('📱 Listener de notificações do Dashboard ativado, documentos:', allNotifications.length);
-        const counts = {};
-        allNotifications.forEach(notification => {
-          // Conta apenas as notificações não lidas que pertencem a um chamado
-          if (notification.ticketId && !notification.lida) {
-            counts[notification.ticketId] = (counts[notification.ticketId] || 0) + 1;
-          }
-        });
-        console.log('📱 Contagens de notificação do Dashboard atualizadas:', counts);
-        setTicketNotifications(counts);
-      });
-      
-      return () => {
-        if (unsubscribe) {
-          unsubscribe();
-        }
-      };
-    }
-  }, [tickets, user?.uid]);
 
   const loadDashboardData = async () => {
     try {
@@ -402,17 +385,20 @@ const DashboardPage = () => {
         setProjectNames(projectNamesMap);
         
       } else if (userProfile?.funcao === 'operador') {
-        console.log('⚙️ Operador: carregando TODOS os projetos e chamados da área (MÉTODO ORIGINAL)');
-        console.log('🔍 Área do operador:', userProfile?.area);
-        
-        const [allProjects, operatorTickets, allUsers] = await Promise.all([
+        console.log('👷 Operador: carregando chamados da área específica');
+        const [allProjects, allTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
-          ticketService.getTicketsByAreaInvolved(userProfile.area),
+          ticketService.getAllTickets(),
           userService.getAllUsers()
         ]);
         
-        console.log('📊 Projetos carregados:', allProjects.length);
-        console.log('📊 Chamados da área carregados:', operatorTickets.length);
+        const operatorTickets = allTickets.filter(ticket => {
+          const isFromOperatorArea = ticket.area === userProfile.area;
+          const isAssignedToOperator = ticket.atribuidoA === user.uid;
+          const isInvolvedArea = ticket.areasEnvolvidas && ticket.areasEnvolvidas.includes(userProfile.area);
+          
+          return isFromOperatorArea || isAssignedToOperator || isInvolvedArea;
+        });
         
         setProjects(allProjects);
         setTickets(operatorTickets);
@@ -425,50 +411,14 @@ const DashboardPage = () => {
         setProjectNames(projectNamesMap);
         
       } else if (userProfile?.funcao === 'gerente') {
-        console.log('👔 Gerente: carregando TODOS os dados com prioridade para escalados');
+        console.log('👔 Gerente: carregando todos os dados');
         const [allProjects, allTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
           ticketService.getAllTickets(),
           userService.getAllUsers()
         ]);
-        
         setProjects(allProjects);
-        setUsers(allUsers);
-        
-        const sortedTickets = [...allTickets].sort((a, b) => {
-          const aEscaladoParaGerente = a.escalonamentos?.some(esc => 
-            esc.gerenteId === user.uid || esc.responsavelId === user.uid
-          );
-          const bEscaladoParaGerente = b.escalonamentos?.some(esc => 
-            esc.gerenteId === user.uid || esc.responsavelId === user.uid
-          );
-          
-          if (aEscaladoParaGerente && !bEscaladoParaGerente) return -1;
-          if (!aEscaladoParaGerente && bEscaladoParaGerente) return 1;
-          
-          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
-          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
-          return dateB - dateA;
-        });
-        
-        setTickets(sortedTickets);
-        
-        const projectNamesMap = {};
-        allProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
-        
-      } else {
-        console.log('👤 Usuário padrão: carregando dados básicos');
-        const [allProjects, userTickets, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          ticketService.getTicketsByUser(user.uid),
-          userService.getAllUsers()
-        ]);
-        
-        setProjects(allProjects);
-        setTickets(userTickets);
+        setTickets(allTickets);
         setUsers(allUsers);
         
         const projectNamesMap = {};
@@ -478,27 +428,69 @@ const DashboardPage = () => {
         setProjectNames(projectNamesMap);
       }
       
-      console.log('✅ Dados carregados:', {
-        projetos: projects.length,
-        chamados: tickets.length,
-        usuarios: users.length
-      });
-      
     } catch (error) {
       console.error('❌ Erro ao carregar dados do dashboard:', error);
-      setProjects([]);
-      setTickets([]);
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    if (authInitialized && user && userProfile && user.uid) {
+      loadDashboardData();
+    } else if (authInitialized && !user) {
+      navigate('/login');
+    } else if (authInitialized && user && !userProfile) {
+      console.warn('DashboardPage: usuário logado mas perfil não carregado ainda');
+      setLoading(false);
+    }
+  }, [user, userProfile, authInitialized, navigate]);
+
+  useEffect(() => {
+    if (tickets.length > 0 && user?.uid) {
+      // ✅ 3. ALTERAÇÃO: Listener agora usa o serviço unificado.
+      const unsubscribe = notificationService.subscribeToNotifications(user.uid, (allNotifications) => {
+        console.log('📱 Listener de notificações do Dashboard ativado, documentos:', allNotifications.length);
+        const counts = {};
+        allNotifications.forEach(notification => {
+          // Conta apenas as notificações não lidas que pertencem a um chamado
+          if (notification.ticketId && !notification.lida) {
+            counts[notification.ticketId] = (counts[notification.ticketId] || 0) + 1;
+          }
+        });
+        console.log('📱 Contagens de notificação do Dashboard atualizadas:', counts);
+        setTicketNotifications(counts);
+      });
+      
+      return () => {
+        if (unsubscribe) {
+          unsubscribe();
+        }
+      };
+    }
+  }, [tickets, user?.uid]);
+
   if (!authInitialized || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Carregando dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user || !userProfile) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Acesso Negado</h2>
+          <p className="text-gray-600 mb-4">Você precisa estar logado para acessar esta página.</p>
+          <Button onClick={() => navigate('/login')}>
+            Fazer Login
+          </Button>
         </div>
       </div>
     );
@@ -507,450 +499,290 @@ const DashboardPage = () => {
   const counts = getTicketCounts();
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      <div className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0`}>
-        <div className="flex items-center justify-between h-16 px-6 border-b">
-          <h1 className="text-xl font-semibold text-gray-900">Gestão de Chamados</h1>
-          <button
-            onClick={() => setMobileMenuOpen(false)}
-            className="lg:hidden"
-          >
-            <X className="h-6 w-6" />
-          </button>
-        </div>
-        
-        <nav className="mt-6 px-3">
-          <div className="space-y-1">
-            {(userProfile?.funcao === 'produtor' || userProfile?.funcao === 'consultor' || userProfile?.funcao === 'administrador' || 
-              (userProfile?.funcao === 'operador' && userProfile?.area === 'operacional') ||
-              (userProfile?.funcao === 'operador' && userProfile?.area === 'comunicacao_visual') ||
-              (userProfile?.funcao === 'operador' && userProfile?.area === 'almoxarifado')) && (
-              <Button 
-                onClick={() => navigate('/novo-chamado')}
-                className="w-full justify-start mb-4"
-              >
-                <Plus className="h-4 w-4 mr-3" />
-                Novo Chamado
-              </Button>
-            )}
-            
-            {userProfile?.funcao === 'administrador' && (
-              <Button 
-                onClick={() => navigate('/novo-projeto')}
-                variant="outline"
-                className="w-full justify-start mb-4"
-              >
-                <Plus className="h-4 w-4 mr-3" />
-                Novo Projeto
-              </Button>
-            )}
-            
-            <Button 
-              onClick={() => navigate('/projetos')}
-              variant="ghost"
-              className="w-full justify-start"
-            >
-              <FolderOpen className="h-4 w-4 mr-3" />
-              Ver Projetos
-            </Button>
-            
-            <Button 
-              onClick={() => navigate('/cronograma')}
-              variant="ghost"
-              className="w-full justify-start"
-            >
-              <Calendar className="h-4 w-4 mr-3" />
-              Cronograma
-            </Button>
-            
-            {userProfile?.funcao === 'administrador' && (
-              <>
-                <Button 
-                  onClick={() => navigate('/eventos')}
-                  variant="ghost"
-                  className="w-full justify-start"
-                >
-                  <Calendar className="h-4 w-4 mr-3" />
-                  Eventos
-                </Button>
-                
-                <Button 
-                  onClick={() => navigate('/usuarios')}
-                  variant="ghost"
-                  className="w-full justify-start"
-                >
-                  <Users className="h-4 w-4 mr-3" />
-                  Usuários
-                </Button>
-                
-                <Button 
-                  onClick={() => navigate('/relatorios')}
-                  variant="ghost"
-                  className="w-full justify-start"
-                >
-                  <BarChart3 className="h-4 w-4 mr-3" />
-                  Relatórios
-                </Button>
-                
-                <Button 
-                  onClick={() => navigate('/analytics')}
-                  variant="ghost"
-                  className="w-full justify-start"
-                >
-                  <BarChart3 className="h-4 w-4 mr-3" />
-                  Analytics
-                </Button>
-                
-                <Button 
-                  onClick={() => navigate('/admin/painel')}
-                  variant="ghost"
-                  className="w-full justify-start"
-                >
-                  <BarChart3 className="h-4 w-4 mr-3" />
-                  Painel Admin
-                </Button>
-              </>
-            )}
-          </div>
-        </nav>
-        
-        <div className="absolute bottom-0 w-full p-4 border-t">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="w-full justify-start">
-                <User className="h-4 w-4 mr-3" />
-                {userProfile?.nome || user?.email}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={logout}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Sair
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
-      {mobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-          onClick={() => setMobileMenuOpen(false)}
-        />
-      )}
-
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white shadow-sm border-b">
-          <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden"
-              >
-                <Menu className="h-6 w-6" />
-              </button>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">Dashboard</h2>
-                <p className="text-sm text-gray-500">
-                  Bem-vindo, {userProfile?.nome || user?.email} ({userProfile?.funcao})
-                </p>
-              </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
+              <h1 className="text-xl font-semibold text-gray-900">Dashboard</h1>
             </div>
             
             <div className="flex items-center space-x-4">
               <NotificationCenter />
+              
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="flex items-center space-x-2">
+                    <User className="h-4 w-4" />
+                    <span className="hidden sm:inline">{userProfile?.nome}</span>
+                    <ChevronDown className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => navigate('/perfil')}>
+                    <User className="h-4 w-4 mr-2" />
+                    Perfil
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={logout}>
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Sair
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
-        </header>
+        </div>
+      </header>
 
-        <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
-          <Tabs defaultValue="chamados" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="chamados" className="flex items-center space-x-2">
-                <FileText className="h-4 w-4" />
-                <span>Chamados</span>
-              </TabsTrigger>
-              <TabsTrigger value="projetos" className="flex items-center space-x-2">
-                <FolderOpen className="h-4 w-4" />
-                <span>Projetos</span>
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="chamados" className="space-y-6">
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-3 mb-6">
-                {filterCards.map((card) => {
-                  const IconComponent = card.icon;
-                  const isActive = activeFilter === card.id;
-                  const count = counts[card.id];
-                  
-                  return (
-                    <Card
-                      key={card.id}
-                      className={`cursor-pointer transition-all duration-200 ${
-                        isActive ? card.activeColor : card.color
-                      } hover:shadow-md`}
-                      onClick={() => setActiveFilter(card.id)}
-                    >
-                      <CardContent className="p-3 sm:p-4">
-                        <div className="flex flex-col items-center text-center space-y-2">
-                          <IconComponent 
-                            className={`h-5 w-5 sm:h-6 sm:w-6 ${
-                              isActive ? 'text-white' : card.iconColor
-                            }`} 
-                          />
-                          <div>
-                            <p className={`text-xs sm:text-sm font-medium ${
-                              isActive ? 'text-white' : 'text-gray-900'
-                            }`}>
-                              {card.title}
-                            </p>
-                            <p className={`text-lg sm:text-xl font-bold ${
-                              isActive ? 'text-white' : card.iconColor
-                            }`}>
-                              {count}
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="space-y-8">
+          {/* Welcome Section */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">
+                  Olá, {userProfile?.nome}! 👋
+                </h2>
+                <p className="mt-1 text-gray-600">
+                  Bem-vindo ao seu dashboard. Aqui você pode gerenciar seus chamados e projetos.
+                </p>
               </div>
+              <div className="mt-4 sm:mt-0">
+                <Button onClick={() => navigate('/novo-chamado')} className="w-full sm:w-auto">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Novo Chamado
+                </Button>
+              </div>
+            </div>
+          </div>
 
-              {activeFilter !== 'todos' && (
-                <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                  <div className="flex items-center space-x-2">
-                    <Filter className="h-4 w-4 text-blue-600" />
-                    <span className="text-sm font-medium text-blue-900">
-                      Filtro ativo: {filterCards.find(c => c.id === activeFilter)?.title}
-                    </span>
-                    <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                      {counts[activeFilter]} chamado{counts[activeFilter] !== 1 ? 's' : ''}
-                    </Badge>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setActiveFilter('todos')}
-                    className="text-blue-600 hover:text-blue-800"
-                  >
-                    <X className="h-4 w-4 mr-1" />
-                    Limpar filtro
-                  </Button>
-                </div>
-              )}
+          {/* Filter Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            {filterCards.map((card) => {
+              const IconComponent = card.icon;
+              const count = counts[card.id] || 0;
+              const isActive = activeFilter === card.id;
               
-              <div className="space-y-4">
-                {Object.entries(getTicketsByProject()).map(([projectName, projectTickets]) => (
-                  <div key={projectName} className="border rounded-lg">
-                    <button
-                      onClick={() => toggleProjectExpansion(projectName)}
-                      className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center space-x-3">
-                        {expandedProjects[projectName] ? (
-                          <ChevronDown className="h-4 w-4 text-gray-500" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 text-gray-500" />
-                        )}
-                        <div>
-                          <h3 className="font-medium text-sm md:text-base">{projectName}</h3>
-                          <p className="text-xs text-gray-500">{projectTickets.length} chamado{projectTickets.length !== 1 ? 's' : ''}</p>
-                        </div>
+              return (
+                <Card 
+                  key={card.id}
+                  className={`cursor-pointer transition-all duration-200 ${
+                    isActive ? card.activeColor : card.color
+                  } ${
+                    // 🔔 NOVO: Destaque especial para o card de notificações quando há notificações
+                    card.id === 'com_notificacoes_nao_lidas' && count > 0 && !isActive
+                      ? 'ring-2 ring-red-400 shadow-lg animate-pulse'
+                      : ''
+                  }`}
+                  onClick={() => setActiveFilter(card.id)}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-center space-x-3">
+                      <div className={`p-2 rounded-lg ${
+                        isActive ? 'bg-white bg-opacity-20' : 'bg-white'
+                      }`}>
+                        <IconComponent className={`h-5 w-5 ${
+                          isActive ? 'text-white' : card.iconColor
+                        }`} />
                       </div>
-                    </button>
-                    
-                    {expandedProjects[projectName] && (
-                      <div className="border-t bg-gray-50/50 p-4 space-y-3">
-                        {projectTickets.map((ticket) => {
-                          const isAwaitingApproval = ticket.status === 'aguardando_aprovacao' && 
-                                                   userProfile?.funcao === 'gerente' && 
-                                                   ticket.gerenteResponsavelId === user.uid;
-                          
-                          const cardClassName = `${bulkActionMode ? 'cursor-default' : 'cursor-pointer hover:shadow-md'} transition-shadow ${
-                            isAwaitingApproval 
-                              ? 'bg-orange-50 border-2 border-orange-400 shadow-lg ring-2 ring-orange-200' 
-                              : 'bg-white'
-                          } ${selectedTickets.has(ticket.id) ? 'ring-2 ring-blue-500' : ''}`;
-                          
-                          return (
-                          <Card 
-                            key={ticket.id} 
-                            className={cardClassName}
-                            onClick={bulkActionMode ? undefined : () => handleTicketClick(ticket.id)}
-                          >
-                            <CardContent className="p-3 md:p-4">
-                              <div className="flex flex-col space-y-3">
-                                <div className="flex items-start justify-between">
-                                  {bulkActionMode && (
-                                    <div className="flex items-center mr-3">
-                                      <Checkbox
-                                        checked={selectedTickets.has(ticket.id)}
-                                        onCheckedChange={(checked) => handleTicketSelect(ticket.id, checked)}
-                                        onClick={(e) => e.stopPropagation()}
-                                      />
-                                    </div>
-                                  )}
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <h3 className="font-medium text-sm md:text-base truncate">{ticket.titulo}</h3>
-                                      {ticketNotifications[ticket.id] && (
-                                        <Badge className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                                          {ticketNotifications[ticket.id]}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    <p className="text-xs md:text-sm text-gray-600 mt-1 line-clamp-2">{ticket.descricao}</p>
-                                  </div>
-                                  
-                                  <div className="flex items-center space-x-2 ml-2 flex-shrink-0">
-                                    <div className="text-right text-xs text-gray-500">
-                                      <div className="flex flex-col items-end">
-                                        <span className="font-medium">
-                                          {(ticket.dataUltimaAtualizacao?.toDate?.() || ticket.createdAt?.toDate?.())?.toLocaleDateString('pt-BR') || 'N/A'}
-                                        </span>
-                                        <span className="text-xs opacity-75">
-                                          {(ticket.dataUltimaAtualizacao?.toDate?.() || ticket.createdAt?.toDate?.())?.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) || ''}
-                                        </span>
-                                      </div>
-                                    </div>
-                                    
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleTicketClick(ticket.id);
-                                      }}
-                                      className="h-8 w-8 p-0"
-                                    >
-                                      <Eye className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                </div>
-                                
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Badge className={`${getStatusColor(ticket.status)} text-xs`}>
-                                    {ticket.status?.replace('_', ' ')}
-                                  </Badge>
-                                  <Badge className={`${getPriorityColor(ticket.prioridade)} text-xs`}>
-                                    {ticket.prioridade}
-                                  </Badge>
-                                  <span className="text-xs text-gray-500">
-                                    {ticket.area?.replace('_', ' ')}
-                                  </span>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                          );
-                        })}
+                      <div>
+                        <p className={`text-xs sm:text-sm font-medium ${
+                          isActive ? 'text-white' : 'text-gray-900'
+                        }`}>
+                          {card.title}
+                        </p>
+                        <p className={`text-lg sm:text-xl font-bold ${
+                          isActive ? 'text-white' : card.iconColor
+                        }`}>
+                          {count}
+                          {/* 🔔 NOVO: Indicador visual extra para notificações */}
+                          {card.id === 'com_notificacoes_nao_lidas' && count > 0 && (
+                            <span className="ml-1 text-xs">🔔</span>
+                          )}
+                        </p>
                       </div>
-                    )}
-                  </div>
-                ))}
-                
-                {Object.keys(getTicketsByProject()).length === 0 && (
-                  <Card>
-                    <CardContent className="p-8 text-center">
-                      <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">
-                        {activeFilter === 'todos' ? 'Nenhum chamado encontrado' : 'Nenhum chamado neste filtro'}
-                      </h3>
-                      <p className="text-gray-500">
-                        {activeFilter === 'todos' 
-                          ? 'Não há chamados para exibir no momento.' 
-                          : `Não há chamados com o filtro "${filterCards.find(c => c.id === activeFilter)?.title}" aplicado.`
-                        }
-                      </p>
-                      {activeFilter !== 'todos' && (
-                        <Button
-                          variant="outline"
-                          onClick={() => setActiveFilter('todos')}
-                          className="mt-4"
-                        >
-                          Ver todos os chamados
-                        </Button>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            </TabsContent>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
 
-            <TabsContent value="projetos" className="space-y-6">
-              <div className="space-y-4">
-                {Object.entries(getProjectsByEvent()).map(([eventName, eventProjects]) => (
-                  <div key={eventName} className="border rounded-lg">
-                    <button
-                      onClick={() => toggleEventExpansion(eventName)}
-                      className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center space-x-3">
-                        {expandedEvents[eventName] ? (
-                          <ChevronDown className="h-5 w-5 text-gray-500" />
-                        ) : (
-                          <ChevronRight className="h-5 w-5 text-gray-500" />
-                        )}
-                        <h3 className="font-semibold text-lg">{eventName}</h3>
-                        <Badge variant="secondary" className="ml-2">
-                          {eventProjects.length} projeto{eventProjects.length !== 1 ? 's' : ''}
-                        </Badge>
-                      </div>
-                    </button>
-                    
-                    {expandedEvents[eventName] && (
-                      <div className="border-t bg-gray-50/50 p-4 space-y-3">
-                        {eventProjects.map((project) => (
-                          <Card 
-                            key={project.id} 
-                            className="cursor-pointer hover:shadow-md transition-shadow bg-white"
-                            onClick={() => handleProjectClick(project)}
-                          >
-                            <CardContent className="p-4">
-                              <div className="flex items-start justify-between">
-                                <div className="space-y-2">
-                                  <h4 className="font-medium">{project.nome}</h4>
-                                  <div className="flex items-center space-x-2">
-                                    <Badge variant="outline">
-                                      {project.status?.replace('_', ' ')}
-                                    </Badge>
-                                    <span className="text-xs text-gray-500">
-                                      {project.local}
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="text-right text-xs text-gray-500">
-                                  <div>
-                                    {project.dataInicio && new Date(project.dataInicio.seconds * 1000).toLocaleDateString('pt-BR')}
-                                  </div>
-                                  <div>
-                                    {project.dataFim && new Date(project.dataFim.seconds * 1000).toLocaleDateString('pt-BR')}
-                                  </div>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                
-                {Object.keys(getProjectsByEvent()).length === 0 && (
-                  <Card>
-                    <CardContent className="p-8 text-center">
-                      <FolderOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhum projeto encontrado</h3>
-                      <p className="text-gray-500">Não há projetos para exibir no momento.</p>
-                    </CardContent>
-                  </Card>
+          {/* Active Filter Indicator */}
+          {activeFilter !== 'todos' && (
+            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+              <div className="flex items-center space-x-2">
+                <Filter className="h-4 w-4 text-blue-600" />
+                <span className="text-sm font-medium text-blue-900">
+                  Filtro ativo: {filterCards.find(c => c.id === activeFilter)?.title}
+                </span>
+                <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                  {counts[activeFilter]} chamado{counts[activeFilter] !== 1 ? 's' : ''}
+                </Badge>
+                {/* 🔔 NOVO: Indicador especial para filtro de notificações */}
+                {activeFilter === 'com_notificacoes_nao_lidas' && (
+                  <Badge className="bg-red-500 text-white">
+                    <Bell className="h-3 w-3 mr-1" />
+                    Requer atenção
+                  </Badge>
                 )}
               </div>
-            </TabsContent>
-          </Tabs>
-        </main>
-      </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setActiveFilter('todos')}
+                className="text-blue-600 hover:text-blue-800"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Limpar filtro
+              </Button>
+            </div>
+          )}
+          
+          {/* Tickets List */}
+          <div className="space-y-4">
+            {Object.entries(getTicketsByProject()).map(([projectName, projectTickets]) => (
+              <div key={projectName} className="border rounded-lg">
+                <button
+                  onClick={() => toggleProjectExpansion(projectName)}
+                  className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center space-x-3">
+                    {expandedProjects[projectName] ? (
+                      <ChevronDown className="h-4 w-4 text-gray-500" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-gray-500" />
+                    )}
+                    <div>
+                      <h3 className="font-medium text-sm md:text-base">{projectName}</h3>
+                      <p className="text-xs text-gray-500">
+                        {projectTickets.length} chamado{projectTickets.length !== 1 ? 's' : ''}
+                        {/* 🔔 NOVO: Mostrar quantas notificações não lidas há no projeto */}
+                        {(() => {
+                          const projectNotificationCount = projectTickets.reduce((total, ticket) => {
+                            return total + (ticketNotifications[ticket.id] || 0);
+                          }, 0);
+                          return projectNotificationCount > 0 ? (
+                            <span className="ml-2 text-red-600 font-medium">
+                              • {projectNotificationCount} notificação{projectNotificationCount !== 1 ? 'ões' : ''} não lida{projectNotificationCount !== 1 ? 's' : ''}
+                            </span>
+                          ) : null;
+                        })()}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+                
+                {expandedProjects[projectName] && (
+                  <div className="border-t bg-gray-50/50 p-4 space-y-3">
+                    {projectTickets.map((ticket) => {
+                      const isAwaitingApproval = ticket.status === 'aguardando_aprovacao' && 
+                                               userProfile?.funcao === 'gerente' && 
+                                               ticket.gerenteResponsavelId === user.uid;
+                      
+                      // 🔔 NOVO: Destacar chamados com notificações não lidas
+                      const hasUnreadNotifications = ticketNotifications[ticket.id] && ticketNotifications[ticket.id] > 0;
+                      
+                      const cardClassName = `${bulkActionMode ? 'cursor-default' : 'cursor-pointer hover:shadow-md'} transition-shadow ${
+                        isAwaitingApproval 
+                          ? 'bg-orange-50 border-2 border-orange-400 shadow-lg ring-2 ring-orange-200' 
+                          : hasUnreadNotifications && activeFilter === 'com_notificacoes_nao_lidas'
+                            ? 'bg-red-50 border-2 border-red-300 shadow-lg'
+                            : 'bg-white'
+                      } ${selectedTickets.has(ticket.id) ? 'ring-2 ring-blue-500' : ''}`;
+                      
+                      return (
+                      <Card 
+                        key={ticket.id} 
+                        className={cardClassName}
+                        onClick={bulkActionMode ? undefined : () => handleTicketClick(ticket.id)}
+                      >
+                        <CardContent className="p-3 md:p-4">
+                          <div className="flex flex-col space-y-3">
+                            <div className="flex items-start justify-between">
+                              {bulkActionMode && (
+                                <div className="flex items-center mr-3">
+                                  <Checkbox
+                                    checked={selectedTickets.has(ticket.id)}
+                                    onCheckedChange={(checked) => handleTicketSelect(ticket.id, checked)}
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-medium text-sm md:text-base truncate">{ticket.titulo}</h3>
+                                  {ticketNotifications[ticket.id] && (
+                                    <Badge className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                                      {ticketNotifications[ticket.id]}
+                                    </Badge>
+                                  )}
+                                  {isAwaitingApproval && (
+                                    <Badge className="bg-orange-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
+                                      APROVAÇÃO
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1 line-clamp-2">{ticket.descricao}</p>
+                              </div>
+                            </div>
+                            
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              <Badge className={getStatusColor(ticket.status)}>
+                                {ticket.status?.replace('_', ' ').toUpperCase()}
+                              </Badge>
+                              <Badge className={getPriorityColor(ticket.prioridade)}>
+                                {ticket.prioridade?.toUpperCase()}
+                              </Badge>
+                              {ticket.area && (
+                                <Badge variant="outline">
+                                  {ticket.area.replace('_', ' ').toUpperCase()}
+                                </Badge>
+                              )}
+                              <span className="text-gray-400">
+                                {ticket.createdAt?.toDate?.()?.toLocaleDateString('pt-BR') || 'Data não disponível'}
+                              </span>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+            
+            {getDisplayedTickets().length === 0 && (
+              <div className="text-center py-12">
+                <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  {activeFilter === 'com_notificacoes_nao_lidas' 
+                    ? 'Nenhum chamado com notificações não lidas'
+                    : 'Nenhum chamado encontrado'
+                  }
+                </h3>
+                <p className="text-gray-600">
+                  {activeFilter === 'com_notificacoes_nao_lidas'
+                    ? 'Todos os seus chamados estão em dia! 🎉'
+                    : activeFilter === 'todos'
+                      ? 'Comece criando seu primeiro chamado.'
+                      : `Não há chamados com o filtro "${filterCards.find(c => c.id === activeFilter)?.title}".`
+                  }
+                </p>
+                {activeFilter === 'todos' && (
+                  <Button onClick={() => navigate('/novo-chamado')} className="mt-4">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Criar Primeiro Chamado
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
     </div>
   );
 };
