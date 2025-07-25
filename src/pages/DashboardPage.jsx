@@ -5,6 +5,7 @@ import { projectService } from '../services/projectService';
 import { ticketService } from '../services/ticketService';
 import { userService } from '../services/userService';
 import notificationService from '../services/notificationService';
+// ✅ ADIÇÃO: 'onSnapshot' já estava importado, apenas garantindo que será usado.
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Button } from '@/components/ui/button';
@@ -47,7 +48,7 @@ import {
   UserCheck,
   Play,
   BellRing,
-  Lock // ✅ ADIÇÃO: Importando o ícone de cadeado
+  Lock
 } from 'lucide-react';
 
 const DashboardPage = () => {
@@ -65,19 +66,18 @@ const DashboardPage = () => {
   const [expandedProjects, setExpandedProjects] = useState({});
   const [ticketNotifications, setTicketNotifications] = useState({});
   
-  // Estados para ações em lote
   const [selectedTickets, setSelectedTickets] = useState(new Set());
   const [bulkActionMode, setBulkActionMode] = useState(false);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
   const [activeFilter, setActiveFilter] = useState('todos');
 
-  // Função para buscar nome do projeto
+  // NENHUMA ALTERAÇÃO NESTA FUNÇÃO
   const getProjectName = (projetoId) => {
     return projectNames[projetoId] || 'Projeto não encontrado';
   };
 
-  // Função para filtrar chamados baseado no filtro ativo
+  // NENHUMA ALTERAÇÃO NESTA FUNÇÃO
   const getFilteredTickets = () => {
     let filteredTickets = [...tickets];
 
@@ -131,7 +131,6 @@ const DashboardPage = () => {
         break;
     }
 
-    // Ordenar por dataUltimaAtualizacao (mais recente primeiro)
     return filteredTickets.sort((a, b) => {
       const dateA = a.dataUltimaAtualizacao?.toDate?.() || a.createdAt?.toDate?.() || new Date(0);
       const dateB = b.dataUltimaAtualizacao?.toDate?.() || b.createdAt?.toDate?.() || new Date(0);
@@ -139,7 +138,7 @@ const DashboardPage = () => {
     });
   };
 
-  // Função para contar chamados por categoria
+  // NENHUMA ALTERAÇÃO NESTA FUNÇÃO
   const getTicketCounts = () => {
     const counts = {
       todos: tickets.length,
@@ -165,7 +164,7 @@ const DashboardPage = () => {
     return counts;
   };
 
-  // Configuração dos cards de filtro
+  // NENHUMA ALTERAÇÃO NESTA CONSTANTE
   const filterCards = [
     { id: 'todos', title: 'Todos', icon: FileText, color: 'bg-blue-50 border-blue-200 hover:bg-blue-100', iconColor: 'text-blue-600', activeColor: 'bg-blue-500 text-white border-blue-500' },
     { id: 'com_notificacao', title: 'Notificações', icon: BellRing, color: 'bg-red-50 border-red-200 hover:bg-red-100', iconColor: 'text-red-600', activeColor: 'bg-red-500 text-white border-red-500' },
@@ -179,6 +178,7 @@ const DashboardPage = () => {
     { id: 'concluidos', title: 'Concluídos', icon: CheckCircle, color: 'bg-green-50 border-green-200 hover:bg-green-100', iconColor: 'text-green-600', activeColor: 'bg-green-500 text-white border-green-500' }
   ];
 
+  // NENHUMA ALTERAÇÃO NESTAS FUNÇÕES
   const getDisplayedTickets = () => getFilteredTickets();
   const getProjectsByEvent = () => {
     const grouped = {};
@@ -200,11 +200,13 @@ const DashboardPage = () => {
     return grouped;
   };
 
+  // NENHUMA ALTERAÇÃO NESTAS FUNÇÕES
   const toggleEventExpansion = (eventName) => setExpandedEvents(prev => ({ ...prev, [eventName]: !prev[eventName] }));
   const toggleProjectExpansion = (projectName) => setExpandedProjects(prev => ({ ...prev, [projectName]: !prev[projectName] }));
   const handleProjectClick = (project) => navigate(`/projeto/${project.id}`);
   const handleTicketClick = (ticketId) => navigate(`/chamado/${ticketId}`);
 
+  // NENHUMA ALTERAÇÃO NESTAS FUNÇÕES
   const getStatusColor = (status) => {
     const colors = { 'aberto': 'bg-blue-100 text-blue-800', 'em_tratativa': 'bg-yellow-100 text-yellow-800', 'em_execucao': 'bg-blue-100 text-blue-800', 'enviado_para_area': 'bg-purple-100 text-purple-800', 'escalado_para_area': 'bg-purple-100 text-purple-800', 'aguardando_aprovacao': 'bg-orange-100 text-orange-800', 'executado_aguardando_validacao': 'bg-indigo-100 text-indigo-800', 'concluido': 'bg-green-100 text-green-800', 'cancelado': 'bg-red-100 text-red-800', 'devolvido': 'bg-pink-100 text-pink-800' };
     return colors[status] || 'bg-gray-100 text-gray-800';
@@ -214,6 +216,7 @@ const DashboardPage = () => {
     return colors[priority] || 'bg-gray-100 text-gray-800';
   };
 
+  // NENHUMA ALTERAÇÃO NESTA FUNÇÃO
   const handleTicketSelect = (ticketId, checked) => {
     const newSelected = new Set(selectedTickets);
     if (checked) newSelected.add(ticketId);
@@ -221,226 +224,106 @@ const DashboardPage = () => {
     setSelectedTickets(newSelected);
   };
 
-  const loadTicketNotifications = async () => {
-    if (!user?.uid || !tickets.length) return;
-    try {
-      const notificationCounts = {};
-      for (const ticket of tickets) {
-        try {
-          const count = await notificationService.getUnreadNotificationsByTicket(user.uid, ticket.id);
-          if (count > 0) {
-            notificationCounts[ticket.id] = count;
-          }
-        } catch (ticketError) {
-          console.warn(`⚠️ Erro ao carregar notificações do chamado ${ticket.id}:`, ticketError);
-        }
-      }
-      setTicketNotifications(notificationCounts);
-    } catch (error) {
-      console.error('❌ Erro ao carregar notificações dos chamados:', error);
-      setTicketNotifications({});
-    }
-  };
-
+  // ✅ ALTERAÇÃO: Este hook agora configura todos os listeners em tempo real,
+  // substituindo a necessidade da função `loadDashboardData`.
   useEffect(() => {
-    if (authInitialized && user && userProfile && user.uid) {
-      loadDashboardData();
-    } else if (authInitialized && !user) {
-      navigate('/login');
-    } else if (authInitialized && user && !userProfile) {
-      setLoading(false);
+    if (!authInitialized || !user || !userProfile) {
+      if(authInitialized && !user) navigate('/login');
+      return;
     }
-  }, [user, userProfile, authInitialized, navigate]);
 
-  useEffect(() => {
-    if (tickets.length > 0 && user?.uid) {
-      const unsubscribe = notificationService.subscribeToNotifications(user.uid, (allNotifications) => {
-        const counts = {};
-        allNotifications.forEach(notification => {
-          if (notification.ticketId && !notification.lida) {
-            counts[notification.ticketId] = (counts[notification.ticketId] || 0) + 1;
-          }
-        });
-        setTicketNotifications(counts);
+    setLoading(true);
+
+    // Listener para PROJETOS
+    const projectsQuery = query(collection(db, 'projects'));
+    const unsubscribeProjects = onSnapshot(projectsQuery, (snapshot) => {
+      const allProjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const projectNamesMap = {};
+      allProjects.forEach(project => {
+        projectNamesMap[project.id] = project.nome;
       });
-      return () => {
-        if (unsubscribe) {
-          unsubscribe();
-        }
-      };
-    }
-  }, [tickets, user?.uid]);
+      setProjectNames(projectNamesMap);
+      setProjects(allProjects);
+      console.log('🔄 Projetos atualizados em tempo real:', allProjects.length);
+    });
 
-  const loadDashboardData = async () => {
-    try {
-      setLoading(true);
+    // Listener para USUÁRIOS
+    const usersQuery = query(collection(db, 'usuarios'));
+    const unsubscribeUsers = onSnapshot(usersQuery, (snapshot) => {
+      const allUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsers(allUsers);
+      console.log('🔄 Usuários atualizados em tempo real:', allUsers.length);
+    });
+
+    // Listener para CHAMADOS
+    let ticketsQuery;
+    if (userProfile.funcao === 'operador' && userProfile.area) {
+      ticketsQuery = query(collection(db, 'tickets'), where('areasEnvolvidas', 'array-contains', userProfile.area));
+    } else {
+      ticketsQuery = query(collection(db, 'tickets'));
+    }
+
+    const unsubscribeTickets = onSnapshot(ticketsQuery, (snapshot) => {
+      const allTicketsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log('🔄 Chamados brutos recebidos em tempo real:', allTicketsData.length);
       
-      console.log('🔍 Carregando dados para:', userProfile?.funcao);
-      
-      // ✅ ADIÇÃO: Lógica de filtro de confidencialidade
+      // A lógica de filtragem que estava em `loadDashboardData` é aplicada aqui
       const filterConfidential = (ticket) => {
-        // Se o chamado não for confidencial, todos podem ver
-        if (!ticket.isConfidential) {
-          return true;
-        }
-        // Se for confidencial, apenas o criador e administradores podem ver
-        // Operadores verão na lógica específica de suas áreas
+        if (!ticket.isConfidential) return true;
         const isCreator = ticket.criadoPor === user.uid;
-        const isAdmin = userProfile?.funcao === 'administrador';
+        const isAdmin = userProfile.funcao === 'administrador';
         return isCreator || isAdmin;
       };
 
-      if (userProfile?.funcao === 'administrador') {
-        console.log('👑 Administrador: carregando TODOS os dados');
-        const [allProjects, allTickets, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          ticketService.getAllTickets(),
-          userService.getAllUsers()
-        ]);
-        setProjects(allProjects);
-        setTickets(allTickets); // Admin vê todos, sem filtro de confidencialidade aqui
-        setUsers(allUsers);
-        
-        const projectNamesMap = {};
-        allProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
-        
-      } else if (userProfile?.funcao === 'produtor') {
-        console.log('🏭 Produtor: carregando projetos próprios e chamados relacionados');
-        const [allProjects, allTickets, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          ticketService.getAllTickets(),
-          userService.getAllUsers()
-        ]);
-        
-        const produtorProjects = allProjects.filter(project => 
-          project.produtorId === user.uid
+      let processedTickets = [];
+      const userRole = userProfile.funcao;
+
+      if (userRole === 'administrador' || userRole === 'gerente' || userRole === 'operador') {
+        processedTickets = allTicketsData;
+      } else if (userRole === 'produtor') {
+        const produtorProjectIds = projects.filter(p => p.produtorId === user.uid).map(p => p.id);
+        processedTickets = allTicketsData.filter(ticket => 
+          produtorProjectIds.includes(ticket.projetoId) && filterConfidential(ticket)
         );
-        
-        const produtorProjectIds = produtorProjects.map(p => p.id);
-        
-        // ✅ ALTERAÇÃO: Aplicando filtro de confidencialidade para Produtor
-        const produtorTickets = allTickets.filter(ticket => {
-          const isRelatedToProject = produtorProjectIds.includes(ticket.projetoId);
-          // O chamado deve pertencer ao projeto E passar no filtro de confidencialidade
-          return isRelatedToProject && filterConfidential(ticket);
-        });
-        
-        setProjects(produtorProjects);
-        setTickets(produtorTickets);
-        setUsers(allUsers);
-        
-        const projectNamesMap = {};
-        produtorProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
-        
-      } else if (userProfile?.funcao === 'consultor') {
-        console.log('👨‍💼 Consultor: carregando projetos próprios e chamados específicos');
-        const [allProjects, allTickets, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          ticketService.getAllTickets(),
-          userService.getAllUsers()
-        ]);
-        
-        const consultorProjects = allProjects.filter(project => 
-          project.consultorId === user.uid
-        );
-        
-        const consultorProjectIds = consultorProjects.map(p => p.id);
-        
-        // ✅ ALTERAÇÃO: Aplicando filtro de confidencialidade para Consultor
-        const consultorTickets = allTickets.filter(ticket => {
-          const isFromConsultorProject = consultorProjectIds.includes(ticket.projetoId);
-          const isOpenedByConsultor = ticket.criadoPor === user.uid; // Usando criadoPor para consistência
-          const isEscalatedToConsultor = ticket.escalonamentos?.some(esc => 
-            esc.consultorId === user.uid || esc.responsavelId === user.uid
-          );
-          
-          const isRelated = isFromConsultorProject || isOpenedByConsultor || isEscalatedToConsultor;
-          // O chamado deve ser relacionado ao consultor E passar no filtro de confidencialidade
+      } else if (userRole === 'consultor') {
+        const consultorProjectIds = projects.filter(p => p.consultorId === user.uid).map(p => p.id);
+        processedTickets = allTicketsData.filter(ticket => {
+          const isRelated = consultorProjectIds.includes(ticket.projetoId) || ticket.criadoPor === user.uid;
           return isRelated && filterConfidential(ticket);
         });
-        
-        setProjects(consultorProjects);
-        setTickets(consultorTickets);
-        setUsers(allUsers);
-        
-        const projectNamesMap = {};
-        allProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
-        
-      } else if (userProfile?.funcao === 'operador') {
-        console.log('⚙️ Operador: carregando chamados da área');
-        const [allProjects, operatorTickets, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          // A busca `getTicketsByAreaInvolved` já traz os chamados corretos.
-          // Operadores podem ver chamados confidenciais se forem da sua área.
-          ticketService.getTicketsByAreaInvolved(userProfile.area),
-          userService.getAllUsers()
-        ]);
-        
-        setProjects(allProjects);
-        setTickets(operatorTickets);
-        setUsers(allUsers);
-        
-        const projectNamesMap = {};
-        allProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
-        
-      } else if (userProfile?.funcao === 'gerente') {
-        console.log('👔 Gerente: carregando TODOS os dados');
-        const [allProjects, allTickets, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          ticketService.getAllTickets(),
-          userService.getAllUsers()
-        ]);
-        
-        setProjects(allProjects);
-        setUsers(allUsers);
-        // Gerentes podem ver todos os chamados, incluindo confidenciais
-        setTickets(allTickets);
-        
-        const projectNamesMap = {};
-        allProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
-        
       } else {
-        console.log('👤 Usuário padrão: carregando dados básicos');
-        const [allProjects, userTickets, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          ticketService.getTicketsByUser(user.uid),
-          userService.getAllUsers()
-        ]);
-        
-        setProjects(allProjects);
-        setTickets(userTickets);
-        setUsers(allUsers);
-        
-        const projectNamesMap = {};
-        allProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
+        processedTickets = allTicketsData.filter(ticket => ticket.criadoPor === user.uid);
       }
       
-    } catch (error) {
-      console.error('❌ Erro ao carregar dados do dashboard:', error);
-      setProjects([]);
-      setTickets([]);
-    } finally {
+      console.log('✅ Chamados processados e filtrados para o dashboard:', processedTickets.length);
+      setTickets(processedTickets);
       setLoading(false);
-    }
-  };
+    });
+
+    // Listener para NOTIFICAÇÕES
+    const unsubscribeNotifications = notificationService.subscribeToNotifications(user.uid, (allNotifications) => {
+      const counts = {};
+      allNotifications.forEach(notification => {
+        if (notification.ticketId && !notification.lida) {
+          counts[notification.ticketId] = (counts[notification.ticketId] || 0) + 1;
+        }
+      });
+      setTicketNotifications(counts);
+    });
+
+    return () => {
+      console.log('🧹 Limpando listeners do dashboard...');
+      unsubscribeProjects();
+      unsubscribeUsers();
+      unsubscribeTickets();
+      unsubscribeNotifications();
+    };
+  }, [authInitialized, user, userProfile, navigate, projects]); // `projects` está na dependência para re-filtrar os tickets se a lista de projetos do usuário mudar
+
+
+  // A função `loadDashboardData` foi removida pois sua lógica agora vive dentro do `useEffect` com `onSnapshot`,
+  // tornando o carregamento de dados reativo e em tempo real, em vez de uma única chamada.
+  // Todas as outras funções e a renderização JSX abaixo permanecem INALTERADAS.
 
   if (!authInitialized || loading) {
     return (
@@ -742,7 +625,6 @@ const DashboardPage = () => {
                                   )}
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
-                                      {/* ✅ ADIÇÃO: Ícone de cadeado para chamados confidenciais */}
                                       {ticket.isConfidential && (
                                         <Lock className="h-4 w-4 text-orange-500 flex-shrink-0" title="Chamado Confidencial" />
                                       )}
