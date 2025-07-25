@@ -127,6 +127,10 @@ const DashboardPage = () => {
       case 'concluidos':
         filteredTickets = filteredTickets.filter(ticket => ticket.status === 'concluido');
         break;
+      // ✅ ADIÇÃO: Novo case para o filtro de aprovação do gerente
+      case 'aguardando_aprovacao':
+        filteredTickets = filteredTickets.filter(ticket => ticket.status === 'aguardando_aprovacao');
+        break;
       default:
         break;
     }
@@ -160,7 +164,9 @@ const DashboardPage = () => {
       }).length,
       devolvido: tickets.filter(t => t.status === 'devolvido' || (t.historico && t.historico.some(h => h.acao === 'devolvido'))).length,
       aguardando_validacao: tickets.filter(t => t.status === 'executado_aguardando_validacao').length,
-      concluidos: tickets.filter(t => t.status === 'concluido').length
+      concluidos: tickets.filter(t => t.status === 'concluido').length,
+      // ✅ ADIÇÃO: Nova linha para contar os chamados aguardando aprovação
+      aguardando_aprovacao: tickets.filter(t => t.status === 'aguardando_aprovacao').length
     };
     return counts;
   };
@@ -168,6 +174,15 @@ const DashboardPage = () => {
   // Configuração dos cards de filtro
   const filterCards = [
     { id: 'todos', title: 'Todos', icon: FileText, color: 'bg-blue-50 border-blue-200 hover:bg-blue-100', iconColor: 'text-blue-600', activeColor: 'bg-blue-500 text-white border-blue-500' },
+    // ✅ ADIÇÃO: Card condicional para gerentes
+    ...(userProfile?.funcao === 'gerente' ? [{
+      id: 'aguardando_aprovacao', 
+      title: 'Aguardando Aprovação', 
+      icon: UserCheck, 
+      color: 'bg-orange-50 border-orange-200 hover:bg-orange-100', 
+      iconColor: 'text-orange-600', 
+      activeColor: 'bg-orange-500 text-white border-orange-500' 
+    }] : []),
     { id: 'com_notificacao', title: 'Notificações', icon: BellRing, color: 'bg-red-50 border-red-200 hover:bg-red-100', iconColor: 'text-red-600', activeColor: 'bg-red-500 text-white border-red-500' },
     { id: 'sem_tratativa', title: 'Sem Tratativa', icon: AlertCircle, color: 'bg-orange-50 border-orange-200 hover:bg-orange-100', iconColor: 'text-orange-600', activeColor: 'bg-orange-500 text-white border-orange-500' },
     { id: 'em_tratativa', title: 'Em Tratativa', icon: Clock, color: 'bg-yellow-50 border-yellow-200 hover:bg-yellow-100', iconColor: 'text-yellow-600', activeColor: 'bg-yellow-500 text-white border-yellow-500' },
@@ -221,135 +236,36 @@ const DashboardPage = () => {
     setSelectedTickets(newSelected);
   };
 
+  const loadTicketNotifications = async () => {
+    if (!user?.uid || !tickets.length) return;
+    try {
+      const notificationCounts = {};
+      for (const ticket of tickets) {
+        try {
+          const count = await notificationService.getUnreadNotificationsByTicket(user.uid, ticket.id);
+          if (count > 0) {
+            notificationCounts[ticket.id] = count;
+          }
+        } catch (ticketError) {
+          console.warn(`⚠️ Erro ao carregar notificações do chamado ${ticket.id}:`, ticketError);
+        }
+      }
+      setTicketNotifications(notificationCounts);
+    } catch (error) {
+      console.error('❌ Erro ao carregar notificações dos chamados:', error);
+      setTicketNotifications({});
+    }
+  };
+
   useEffect(() => {
-    if (authInitialized && !user) {
+    if (authInitialized && user && userProfile && user.uid) {
+      loadDashboardData();
+    } else if (authInitialized && !user) {
       navigate('/login');
-    }
-  }, [authInitialized, user, navigate]);
-
-  // ✅ CORREÇÃO: useEffect para carregar dados estáticos (Projetos, Usuários) SEPARADAMENTE
-  useEffect(() => {
-    if (!authInitialized || !user || !userProfile) return;
-
-    const loadStaticData = async () => {
-      try {
-        const [allProjects, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          userService.getAllUsers()
-        ]);
-        
-        const projectNamesMap = {};
-        allProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
-        setUsers(allUsers);
-        
-        // A filtragem de projetos visíveis acontece aqui
-        let userProjects = allProjects;
-        if (userProfile.funcao === 'produtor') {
-            userProjects = allProjects.filter(p => p.produtorId === user.uid);
-        } else if (userProfile.funcao === 'consultor') {
-            userProjects = allProjects.filter(p => p.consultorId === user.uid);
-        }
-        setProjects(userProjects);
-
-      } catch (error) {
-        console.error('❌ Erro ao carregar dados estáticos:', error);
-      }
-    };
-    
-    loadStaticData();
-    
-  }, [authInitialized, user, userProfile]);
-
-
-  // ✅ CORREÇÃO: useEffect dedicado para o listener de chamados em tempo real
-  useEffect(() => {
-    if (!authInitialized || !user || !userProfile?.funcao) {
-      // Se não estiver autenticado ou o perfil não carregou completamente, não faz nada
-      if (authInitialized && user && !userProfile) setLoading(false);
-      return;
-    }
-
-    console.log(`🔄 Configurando listener para: ${userProfile.funcao}`);
-
-    const ticketsCollection = collection(db, 'chamados');
-    let ticketsQuery;
-    
-    // ✅ CORREÇÃO: Adicionada verificação para garantir que os dados da query existam
-    switch (userProfile.funcao) {
-      case 'operador':
-        if (!userProfile.area) {
-          console.warn('⚠️ Perfil de operador sem área definida. Listener não iniciado.');
-          setLoading(false);
-          return; // Sai da função se a área não estiver definida
-        }
-        ticketsQuery = query(ticketsCollection, where('areasEnvolvidas', 'array-contains', userProfile.area));
-        break;
-      case 'usuario_padrao':
-        ticketsQuery = query(ticketsCollection, where('criadoPor', '==', user.uid));
-        break;
-      case 'administrador':
-      case 'gerente':
-        ticketsQuery = query(ticketsCollection);
-        break;
-      // Para produtor e consultor, a query inicial busca todos, e a lógica de filtro é aplicada depois
-      default:
-        ticketsQuery = query(ticketsCollection);
-        break;
-    }
-    
-    const unsubscribe = onSnapshot(ticketsQuery, (querySnapshot) => {
-      let fetchedTickets = [];
-      querySnapshot.forEach((doc) => {
-        fetchedTickets.push({ id: doc.id, ...doc.data() });
-      });
-
-      console.log(`Real-time update: ${fetchedTickets.length} chamados recebidos.`);
-      
-      const filterConfidential = (ticket) => {
-        if (!ticket.isConfidential) return true;
-        const isCreator = ticket.criadoPor === user.uid;
-        const isAdmin = userProfile?.funcao === 'administrador';
-        return isCreator || isAdmin;
-      };
-
-      let finalTickets;
-      
-      // A lógica de filtro pós-busca permanece a mesma para os casos complexos
-      if (userProfile.funcao === 'produtor') {
-        const produtorProjectIds = projects.map(p => p.id);
-        finalTickets = fetchedTickets.filter(ticket => 
-            produtorProjectIds.includes(ticket.projetoId) && filterConfidential(ticket)
-        );
-      } else if (userProfile.funcao === 'consultor') {
-          const consultorProjectIds = projects.map(p => p.id);
-          finalTickets = fetchedTickets.filter(ticket => {
-            const isFromConsultorProject = consultorProjectIds.includes(ticket.projetoId);
-            const isOpenedByConsultor = ticket.criadoPor === user.uid;
-            const isEscalatedToConsultor = ticket.escalonamentos?.some(esc => 
-              esc.consultorId === user.uid || esc.responsavelId === user.uid
-            );
-            return (isFromConsultorProject || isOpenedByConsultor || isEscalatedToConsultor) && filterConfidential(ticket);
-        });
-      } else {
-        finalTickets = fetchedTickets;
-      }
-      
-      setTickets(finalTickets);
-      if (loading) setLoading(false);
-    }, (error) => {
-      console.error("❌ Erro no listener de chamados: ", error);
+    } else if (authInitialized && user && !userProfile) {
       setLoading(false);
-    });
-
-    return () => {
-      console.log('Unsubscribing from ticket updates.');
-      unsubscribe();
-    };
-
-  }, [authInitialized, user, userProfile, projects]); // `projects` continua necessário para a filtragem de produtor/consultor
+    }
+  }, [user, userProfile, authInitialized, navigate]);
 
   useEffect(() => {
     if (tickets.length > 0 && user?.uid) {
@@ -370,6 +286,165 @@ const DashboardPage = () => {
     }
   }, [tickets, user?.uid]);
 
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      
+      console.log('🔍 Carregando dados para:', userProfile?.funcao);
+      
+      const filterConfidential = (ticket) => {
+        if (!ticket.isConfidential) {
+          return true;
+        }
+        const isCreator = ticket.criadoPor === user.uid;
+        const isAdmin = userProfile?.funcao === 'administrador';
+        return isCreator || isAdmin;
+      };
+
+      if (userProfile?.funcao === 'administrador') {
+        console.log('👑 Administrador: carregando TODOS os dados');
+        const [allProjects, allTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getAllTickets(),
+          userService.getAllUsers()
+        ]);
+        setProjects(allProjects);
+        setTickets(allTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else if (userProfile?.funcao === 'produtor') {
+        console.log('🏭 Produtor: carregando projetos próprios e chamados relacionados');
+        const [allProjects, allTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getAllTickets(),
+          userService.getAllUsers()
+        ]);
+        
+        const produtorProjects = allProjects.filter(project => 
+          project.produtorId === user.uid
+        );
+        
+        const produtorProjectIds = produtorProjects.map(p => p.id);
+        
+        const produtorTickets = allTickets.filter(ticket => {
+          const isRelatedToProject = produtorProjectIds.includes(ticket.projetoId);
+          return isRelatedToProject && filterConfidential(ticket);
+        });
+        
+        setProjects(produtorProjects);
+        setTickets(produtorTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        produtorProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else if (userProfile?.funcao === 'consultor') {
+        console.log('👨‍💼 Consultor: carregando projetos próprios e chamados específicos');
+        const [allProjects, allTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getAllTickets(),
+          userService.getAllUsers()
+        ]);
+        
+        const consultorProjects = allProjects.filter(project => 
+          project.consultorId === user.uid
+        );
+        
+        const consultorProjectIds = consultorProjects.map(p => p.id);
+        
+        const consultorTickets = allTickets.filter(ticket => {
+          const isFromConsultorProject = consultorProjectIds.includes(ticket.projetoId);
+          const isOpenedByConsultor = ticket.criadoPor === user.uid;
+          const isEscalatedToConsultor = ticket.escalonamentos?.some(esc => 
+            esc.consultorId === user.uid || esc.responsavelId === user.uid
+          );
+          
+          const isRelated = isFromConsultorProject || isOpenedByConsultor || isEscalatedToConsultor;
+          return isRelated && filterConfidential(ticket);
+        });
+        
+        setProjects(consultorProjects);
+        setTickets(consultorTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else if (userProfile?.funcao === 'operador') {
+        console.log('⚙️ Operador: carregando chamados da área');
+        const [allProjects, operatorTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getTicketsByAreaInvolved(userProfile.area),
+          userService.getAllUsers()
+        ]);
+        
+        setProjects(allProjects);
+        setTickets(operatorTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else if (userProfile?.funcao === 'gerente') {
+        console.log('👔 Gerente: carregando TODOS os dados');
+        const [allProjects, allTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getAllTickets(),
+          userService.getAllUsers()
+        ]);
+        
+        setProjects(allProjects);
+        setUsers(allUsers);
+        setTickets(allTickets);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else {
+        console.log('👤 Usuário padrão: carregando dados básicos');
+        const [allProjects, userTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getTicketsByUser(user.uid),
+          userService.getAllUsers()
+        ]);
+        
+        setProjects(allProjects);
+        setTickets(userTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+      }
+      
+    } catch (error) {
+      console.error('❌ Erro ao carregar dados do dashboard:', error);
+      setProjects([]);
+      setTickets([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (!authInitialized || loading) {
     return (
@@ -561,6 +636,8 @@ const DashboardPage = () => {
                   const isActive = activeFilter === card.id;
                   const count = counts[card.id];
                   
+                  if (!count && card.id === 'aguardando_aprovacao') return null; // Não renderiza o card de gerente se não houver chamados
+                  
                   return (
                     <Card
                       key={card.id}
@@ -671,6 +748,7 @@ const DashboardPage = () => {
                                   )}
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
+                                      {/* ✅ ADIÇÃO: Ícone de cadeado para chamados confidenciais */}
                                       {ticket.isConfidential && (
                                         <Lock className="h-4 w-4 text-orange-500 flex-shrink-0" title="Chamado Confidencial" />
                                       )}
@@ -731,7 +809,7 @@ const DashboardPage = () => {
                   </div>
                 ))}
                 
-                {Object.keys(getTicketsByProject()).length === 0 && !loading && (
+                {Object.keys(getTicketsByProject()).length === 0 && (
                   <Card>
                     <CardContent className="p-8 text-center">
                       <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
