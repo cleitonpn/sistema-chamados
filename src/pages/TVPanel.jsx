@@ -36,7 +36,7 @@ const TVPanel = () => {
   const [users, setUsers] = useState({});
 
   // --- Estados para Novos Cards e Correções ---
-  const [untreatedByArea, setUntreatedByArea] = useState([]);
+  const [untreatedByArea, setUntreatedByArea] = useState({});
   const [topExecutors, setTopExecutors] = useState([]);
   const [slaStats, setSlaStats] = useState({ violated: 0, atRisk: 0 });
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
@@ -53,10 +53,16 @@ const TVPanel = () => {
 
   const RESOLUTION_GOAL = 95;
 
+  // useEffect DEDICADO APENAS PARA O RELÓGIO
   useEffect(() => {
-    // ✅ O clock interval agora deve funcionar corretamente pois o erro de renderização foi corrigido.
-    const clockInterval = setInterval(() => setCurrentTime(new Date()), 1000);
+    const clockInterval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(clockInterval);
+  }, []);
 
+  // useEffect para buscar todos os dados
+  useEffect(() => {
     const unsubscribeUsers = onSnapshot(query(collection(db, 'usuarios')), (snapshot) => {
       const usersData = snapshot.docs.reduce((acc, doc) => {
         if(doc.id) acc[doc.id] = doc.data();
@@ -76,13 +82,12 @@ const TVPanel = () => {
       const inicioDia = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
       const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1);
       
-      // ✅ Adicionada verificação "t && t.status" em todos os filtros para previnir o erro de tela branca.
       const openTickets = tickets.filter(t => t && t.status === 'aberto');
       
       setStats({
         total: tickets.length,
         abertos: openTickets.length,
-        // ✅ 2. Lógica do card "Em Andamento" atualizada
+        // ✅ LÓGICA CORRIGIDA para o card "Em Andamento"
         emAndamento: tickets.filter(t => t && ['em tratativa', 'tratativa', 'escalado_para_outra_area', 'aguardando_aprovacao'].includes(t.status)).length,
         concluidos: tickets.filter(t => t && t.status === 'concluido').length,
       });
@@ -154,7 +159,6 @@ const TVPanel = () => {
     });
 
     return () => {
-      clearInterval(clockInterval);
       unsubscribeTickets();
       unsubscribeProjects();
       unsubscribeUsers();
@@ -168,11 +172,9 @@ const TVPanel = () => {
   }
 
   return (
-    // ✅ 3. Classe overflow-hidden adicionada para garantir que o fundo cubra toda a tela
     <div className="min-h-screen h-screen max-h-screen bg-green-900 text-white p-2 flex flex-col gap-2 overflow-hidden">
       <header className="flex justify-between items-center flex-shrink-0 px-2">
         <div>
-          {/* ✅ 5. Título e subtítulo atualizados */}
           <h1 className="text-3xl font-bold text-white">Painel Operacional</h1>
           <p className="text-lg text-white/70">Uset / SP Group</p>
         </div>
@@ -182,7 +184,6 @@ const TVPanel = () => {
         </div>
       </header>
 
-      {/* ✅ 4. Layout principal mais compacto */}
       <div className="flex flex-grow gap-2 min-h-0">
         <main className="flex flex-col flex-grow gap-2 w-3/4">
           
