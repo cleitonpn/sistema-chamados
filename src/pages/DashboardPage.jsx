@@ -5,7 +5,7 @@ import { projectService } from '../services/projectService';
 import { ticketService } from '../services/ticketService';
 import { userService } from '../services/userService';
 import notificationService from '../services/notificationService';
-import { collection, query, where, onSnapshot } from 'firebase/firestore'; // onSnapshot já está aqui, ótimo!
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -227,32 +227,25 @@ const DashboardPage = () => {
     }
   }, [authInitialized, user, navigate]);
 
-  // ✅ NOVO useEffect para carregar dados e configurar listeners em tempo real
+  // ✅ CORREÇÃO: useEffect para carregar dados estáticos (Projetos, Usuários) SEPARADAMENTE
   useEffect(() => {
-    if (!authInitialized || !user || !userProfile) {
-      // Se não estiver autenticado ou o perfil não carregou, não faz nada
-      if (authInitialized && user && !userProfile) setLoading(false);
-      return;
-    }
+    if (!authInitialized || !user || !userProfile) return;
 
-    setLoading(true);
-    console.log('🔄 Configurando listeners em tempo real para:', userProfile.funcao);
-
-    // Carrega dados que não precisam de atualização em tempo real (ou com menor frequência)
     const loadStaticData = async () => {
       try {
         const [allProjects, allUsers] = await Promise.all([
           projectService.getAllProjects(),
           userService.getAllUsers()
         ]);
-
+        
         const projectNamesMap = {};
         allProjects.forEach(project => {
           projectNamesMap[project.id] = project.nome;
         });
         setProjectNames(projectNamesMap);
-
-        // Filtra projetos baseado na função do usuário
+        setUsers(allUsers);
+        
+        // A filtragem de projetos visíveis acontece aqui
         let userProjects = allProjects;
         if (userProfile.funcao === 'produtor') {
             userProjects = allProjects.filter(p => p.produtorId === user.uid);
@@ -260,37 +253,53 @@ const DashboardPage = () => {
             userProjects = allProjects.filter(p => p.consultorId === user.uid);
         }
         setProjects(userProjects);
-        setUsers(allUsers);
 
       } catch (error) {
-        console.error('❌ Erro ao carregar dados estáticos (projetos, usuários):', error);
+        console.error('❌ Erro ao carregar dados estáticos:', error);
       }
     };
-
-    loadStaticData();
-
-    // Define a consulta (query) base para os chamados
-    const ticketsCollection = collection(db, 'chamados');
-    let ticketsQuery = query(ticketsCollection); // Por padrão, busca todos
     
-    // Adapta a query de acordo com a função do usuário
-    // IMPORTANTE: Adapte essas regras `where` para corresponderem exatamente às regras de segurança do seu Firestore.
-    if (userProfile.funcao === 'operador') {
-      ticketsQuery = query(ticketsCollection, where('areasEnvolvidas', 'array-contains', userProfile.area));
-    } else if (userProfile.funcao === 'produtor') {
-      // Produtor vê chamados dos seus projetos. Isso requer carregar os projetos primeiro.
-      // A lógica de filtro pós-busca será mantida por simplicidade, mas o ideal seria otimizar a query.
-      // Esta parte continua filtrando no cliente após a busca.
-    } else if (userProfile.funcao === 'consultor') {
-       // Consultor vê chamados que criou ou que são de seus projetos.
-       // O Firestore não permite queries com 'OU' em campos diferentes. 
-       // Manteremos a filtragem no cliente.
-    } else if (userProfile.funcao === 'usuario_padrao') {
-       ticketsQuery = query(ticketsCollection, where('criadoPor', '==', user.uid));
-    }
-    // Admin e Gerente continuam com a query que busca todos os chamados.
+    loadStaticData();
+    
+  }, [authInitialized, user, userProfile]);
 
-    // Configura o listener em tempo real
+
+  // ✅ CORREÇÃO: useEffect dedicado para o listener de chamados em tempo real
+  useEffect(() => {
+    if (!authInitialized || !user || !userProfile?.funcao) {
+      // Se não estiver autenticado ou o perfil não carregou completamente, não faz nada
+      if (authInitialized && user && !userProfile) setLoading(false);
+      return;
+    }
+
+    console.log(`🔄 Configurando listener para: ${userProfile.funcao}`);
+
+    const ticketsCollection = collection(db, 'chamados');
+    let ticketsQuery;
+    
+    // ✅ CORREÇÃO: Adicionada verificação para garantir que os dados da query existam
+    switch (userProfile.funcao) {
+      case 'operador':
+        if (!userProfile.area) {
+          console.warn('⚠️ Perfil de operador sem área definida. Listener não iniciado.');
+          setLoading(false);
+          return; // Sai da função se a área não estiver definida
+        }
+        ticketsQuery = query(ticketsCollection, where('areasEnvolvidas', 'array-contains', userProfile.area));
+        break;
+      case 'usuario_padrao':
+        ticketsQuery = query(ticketsCollection, where('criadoPor', '==', user.uid));
+        break;
+      case 'administrador':
+      case 'gerente':
+        ticketsQuery = query(ticketsCollection);
+        break;
+      // Para produtor e consultor, a query inicial busca todos, e a lógica de filtro é aplicada depois
+      default:
+        ticketsQuery = query(ticketsCollection);
+        break;
+    }
+    
     const unsubscribe = onSnapshot(ticketsQuery, (querySnapshot) => {
       let fetchedTickets = [];
       querySnapshot.forEach((doc) => {
@@ -299,8 +308,6 @@ const DashboardPage = () => {
 
       console.log(`Real-time update: ${fetchedTickets.length} chamados recebidos.`);
       
-      // ✅ INÍCIO DA LÓGICA DE FILTRAGEM PÓS-BUSCA (já existente)
-      // Esta lógica é necessária para regras complexas que não podem ser feitas em uma única query do Firestore.
       const filterConfidential = (ticket) => {
         if (!ticket.isConfidential) return true;
         const isCreator = ticket.criadoPor === user.uid;
@@ -308,8 +315,9 @@ const DashboardPage = () => {
         return isCreator || isAdmin;
       };
 
-      let finalTickets = fetchedTickets;
-
+      let finalTickets;
+      
+      // A lógica de filtro pós-busca permanece a mesma para os casos complexos
       if (userProfile.funcao === 'produtor') {
         const produtorProjectIds = projects.map(p => p.id);
         finalTickets = fetchedTickets.filter(ticket => 
@@ -325,30 +333,23 @@ const DashboardPage = () => {
             );
             return (isFromConsultorProject || isOpenedByConsultor || isEscalatedToConsultor) && filterConfidential(ticket);
         });
-      } else if (userProfile.funcao !== 'operador' && userProfile.funcao !== 'administrador' && userProfile.funcao !== 'gerente') {
-        // Filtro de confidencialidade para outras funções que veem todos os chamados inicialmente
-        finalTickets = fetchedTickets.filter(filterConfidential);
+      } else {
+        finalTickets = fetchedTickets;
       }
-      // Operadores já são filtrados pela query e podem ver chamados confidenciais de sua área.
-      // Admins/Gerentes veem tudo.
-
+      
       setTickets(finalTickets);
-      // ✅ FIM DA LÓGICA DE FILTRAGEM
-
-      if (loading) setLoading(false); // Para o loading inicial apenas na primeira carga
+      if (loading) setLoading(false);
     }, (error) => {
       console.error("❌ Erro no listener de chamados: ", error);
       setLoading(false);
     });
 
-    // Função de limpeza: será chamada quando o componente for desmontado
     return () => {
       console.log('Unsubscribing from ticket updates.');
       unsubscribe();
     };
 
-  }, [authInitialized, user, userProfile, navigate, projects]); // `projects` é uma dependência para o filtro de produtor/consultor
-
+  }, [authInitialized, user, userProfile, projects]); // `projects` continua necessário para a filtragem de produtor/consultor
 
   useEffect(() => {
     if (tickets.length > 0 && user?.uid) {
@@ -383,11 +384,8 @@ const DashboardPage = () => {
 
   const counts = getTicketCounts();
 
-  // O RESTANTE DO SEU CÓDIGO JSX CONTINUA IGUAL...
-  // ...
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      {/* ... O seu JSX a partir daqui ... */}
       <div className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0`}>
         <div className="flex items-center justify-between h-16 px-6 border-b">
           <h1 className="text-xl font-semibold text-gray-900">Gestão de Chamados</h1>
@@ -733,7 +731,7 @@ const DashboardPage = () => {
                   </div>
                 ))}
                 
-                {Object.keys(getTicketsByProject()).length === 0 && (
+                {Object.keys(getTicketsByProject()).length === 0 && !loading && (
                   <Card>
                     <CardContent className="p-8 text-center">
                       <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
