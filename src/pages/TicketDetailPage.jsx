@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext'; // CORRIGIDO
-import { ticketService, TICKET_STATUS } from '@/services/ticketService'; // CORRIGIDO
-import { projectService } from '@/services/projectService'; // CORRIGIDO
-import { userService, AREAS } from '@/services/userService'; // CORRIGIDO
-import { messageService } from '@/services/messageService'; // CORRIGIDO
-import notificationService from '@/services/notificationService'; // CORRIGIDO
-import ImageUpload from '@/components/ImageUpload'; // CORRIGIDO
-import Header from '@/components/Header'; // CORRIGIDO
+import { useAuth } from '@/contexts/AuthContext';
+import { ticketService, TICKET_STATUS } from '@/services/ticketService';
+import { projectService } from '@/services/projectService';
+import { userService, AREAS } from '@/services/userService';
+import { messageService } from '@/services/messageService';
+import notificationService from '@/services/notificationService';
+import ImageUpload from '@/components/ImageUpload';
+import Header from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,7 +36,7 @@ import {
   Image as ImageIcon,
   Settings,
   AtSign,
-  Lock // ✅ ADIÇÃO: Importando o ícone de cadeado
+  Lock
 } from 'lucide-react';
 
 const TicketDetailPage = () => {
@@ -51,7 +51,6 @@ const TicketDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
-  // ✅ ADIÇÃO: Novo estado para controlar o acesso negado
   const [accessDenied, setAccessDenied] = useState(false);
 
 
@@ -89,12 +88,11 @@ const TicketDetailPage = () => {
   const [cursorPosition, setCursorPosition] = useState(0);
   const textareaRef = useRef(null);
 
-  // Função para carregar dados do chamado (sem alterações)
   const loadTicketData = async () => {
     try {
       setLoading(true);
       setError(null);
-      setAccessDenied(false); // Reseta o estado de acesso negado
+      setAccessDenied(false);
 
       console.log('Carregando dados do chamado:', ticketId);
 
@@ -131,7 +129,6 @@ const TicketDetailPage = () => {
     }
   };
 
-  // Carregar dados na inicialização (sem alterações)
   useEffect(() => {
     if (ticketId && user) {
       loadTicketData();
@@ -139,18 +136,14 @@ const TicketDetailPage = () => {
     }
   }, [ticketId, user]);
 
-  // ✅ ADIÇÃO: Novo useEffect para verificar permissões após o carregamento do chamado
   useEffect(() => {
     if (ticket && userProfile && user) {
-      // Se o chamado for confidencial, verifica as permissões
       if (ticket.isConfidential) {
         const isCreator = ticket.criadoPor === user.uid;
         const isAdmin = userProfile.funcao === 'administrador';
-        // Permite acesso se o usuário for um operador da área de destino OU da área de origem
         const isInvolvedOperator = userProfile.funcao === 'operador' && 
                                    (userProfile.area === ticket.area || userProfile.area === ticket.areaDeOrigem);
 
-        // Se o usuário não se encaixa em nenhuma das regras, nega o acesso
         if (!isCreator && !isAdmin && !isInvolvedOperator) {
           console.warn('ACESSO NEGADO: Usuário não autorizado a ver este chamado confidencial.');
           setAccessDenied(true);
@@ -171,7 +164,6 @@ const TicketDetailPage = () => {
     }
   };
 
-  // Carregar usuários para menções (sem alterações)
   useEffect(() => {
     const loadUsers = async () => {
       try {
@@ -185,7 +177,6 @@ const TicketDetailPage = () => {
     loadUsers();
   }, []);
 
-  // Demais funções (detectMentions, insertMention, etc.) permanecem inalteradas...
   const detectMentions = (text, position) => {
     const beforeCursor = text.substring(0, position);
     const mentionMatch = beforeCursor.match(/@(\w*)$/);
@@ -430,16 +421,19 @@ const TicketDetailPage = () => {
         }
       }
     }
+    // ✅ BLOCO DE CÓDIGO CORRIGIDO E SIMPLIFICADO
     if (userRole === 'gerente') {
-      const isEscalatedToManager = currentStatus === TICKET_STATUS.AWAITING_APPROVAL &&
-                                   ticket.areaGerencia &&
-                                   isManagerForArea(userProfile.area, ticket.areaGerencia);
-      if (isEscalatedToManager) {
+      // A condição agora verifica se o chamado está aguardando aprovação E se o ID do gerente responsável é o do usuário logado.
+      const isEscalatedToThisManager = currentStatus === 'aguardando_aprovacao' &&
+                                        ticket.gerenteResponsavelId === user.uid;
+
+      if (isEscalatedToThisManager) {
         return [
           { value: TICKET_STATUS.APPROVED, label: 'Aprovar', description: 'Aprovar e retornar para área' },
           { value: TICKET_STATUS.REJECTED, label: 'Reprovar', description: 'Reprovar e encerrar chamado' }
         ];
       }
+      // Se não for o gerente responsável pelo chamado, não mostra nenhuma ação.
       return [];
     }
     if (userRole === 'consultor' && ticket.criadoPor === user.uid) {
@@ -806,11 +800,9 @@ const TicketDetailPage = () => {
   };
 
   const getManagerAreaByTicketArea = (ticketArea) => {};
-  const isManagerForArea = (managerArea, targetManagerArea) => {};
   const getStatusColor = (status) => {};
   const getStatusText = (status) => {};
 
-  // Renderização de loading
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -822,7 +814,6 @@ const TicketDetailPage = () => {
     );
   }
 
-  // Renderização de erro
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -839,7 +830,6 @@ const TicketDetailPage = () => {
     );
   }
 
-  // ✅ ADIÇÃO: Nova renderização para quando o acesso for negado
   if (accessDenied) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -858,7 +848,6 @@ const TicketDetailPage = () => {
     );
   }
 
-  // Renderização se chamado não encontrado
   if (!ticket) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -901,7 +890,6 @@ const TicketDetailPage = () => {
               </p>
             </div>
             <div className="flex items-center">
-              {/* ✅ ADIÇÃO: Badge para indicar que o chamado é confidencial */}
               {ticket.isConfidential && (
                 <Badge variant="outline" className="mr-2 border-orange-400 bg-orange-50 text-orange-700">
                   <Lock className="h-3 w-3 mr-1.5" />
