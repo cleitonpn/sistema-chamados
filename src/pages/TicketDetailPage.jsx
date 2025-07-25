@@ -421,9 +421,8 @@ const TicketDetailPage = () => {
         }
       }
     }
-    // ✅ BLOCO DE CÓDIGO CORRIGIDO E SIMPLIFICADO
+    // ✅ BLOCO DE CÓDIGO CORRIGIDO
     if (userRole === 'gerente') {
-      // A condição agora verifica se o chamado está aguardando aprovação E se o ID do gerente responsável é o do usuário logado.
       const isEscalatedToThisManager = currentStatus === 'aguardando_aprovacao' &&
                                         ticket.gerenteResponsavelId === user.uid;
 
@@ -433,7 +432,6 @@ const TicketDetailPage = () => {
           { value: TICKET_STATUS.REJECTED, label: 'Reprovar', description: 'Reprovar e encerrar chamado' }
         ];
       }
-      // Se não for o gerente responsável pelo chamado, não mostra nenhuma ação.
       return [];
     }
     if (userRole === 'consultor' && ticket.criadoPor === user.uid) {
@@ -488,6 +486,7 @@ const TicketDetailPage = () => {
     }
   };
 
+  // ✅ FUNÇÃO ATUALIZADA
   const handleManagementEscalation = async () => {
     if (!managementArea) {
       alert('Por favor, selecione uma gerência de destino');
@@ -497,45 +496,32 @@ const TicketDetailPage = () => {
       alert('Por favor, descreva o motivo da escalação para gerência');
       return;
     }
+    
+    // Converte 'gerente_producao' em 'producao' para a busca
+    const targetArea = managementArea.replace('gerente_', '');
+    // Procura dinamicamente o gerente na lista de usuários carregada
+    const targetManager = users.find(u => u.funcao === 'gerente' && u.area === targetArea);
+
+    if (!targetManager) {
+      alert(`Erro: Nenhum gerente encontrado para a área "${targetArea}". Verifique o cadastro de usuários.`);
+      return;
+    }
+    
     setIsEscalatingToManagement(true);
     try {
-      const sanitizeValue = (value, defaultValue = null) => {
-        if (value === undefined || value === null) return defaultValue;
-        if (typeof value === 'string' && value.trim() === '') return defaultValue;
-        return value;
-      };
-      const rawUpdateData = {
+      const updateData = {
         status: 'aguardando_aprovacao',
         areaGerencia: managementArea,
-        escalationReason: managementReason?.trim(),
+        gerenteResponsavelId: targetManager.uid, // Salva o ID correto do gerente
+        escalationReason: managementReason.trim(),
         escaladoParaGerencia: true,
-        escaladoPor: user?.uid,
-        escaladoEm: new Date().toISOString(),
-        userRole: userProfile?.funcao
+        escaladoPor: user.uid,
+        escaladoEm: new Date(),
+        userRole: userProfile.funcao,
       };
-      const updateData = {};
-      updateData.status = sanitizeValue(rawUpdateData.status, 'aguardando_aprovacao');
-      updateData.escaladoParaGerencia = sanitizeValue(rawUpdateData.escaladoParaGerencia, true);
-      updateData.escaladoEm = sanitizeValue(rawUpdateData.escaladoEm, new Date().toISOString());
-      const areaGerencia = sanitizeValue(rawUpdateData.areaGerencia);
-      if (areaGerencia) updateData.areaGerencia = areaGerencia;
-      const escalationReason = sanitizeValue(rawUpdateData.escalationReason);
-      if (escalationReason) updateData.escalationReason = escalationReason;
-      const escaladoPor = sanitizeValue(rawUpdateData.escaladoPor);
-      if (escaladoPor) updateData.escaladoPor = escaladoPor;
-      const userRole = sanitizeValue(rawUpdateData.userRole);
-      if (userRole) updateData.userRole = userRole;
-      const hasUndefined = Object.entries(updateData).some(([key, value]) => {
-        const isUndefined = value === undefined;
-        if (isUndefined) {
-          console.error(`ERRO: Campo ${key} está undefined:`, value);
-        }
-        return isUndefined;
-      });
-      if (hasUndefined) {
-        throw new Error('Dados contêm valores undefined após sanitização');
-      }
-      await ticketService.escalateTicketToArea(ticketId, 'gerencia', updateData);
+
+      await ticketService.updateTicket(ticketId, updateData);
+      
       const gerenciaNames = {
         'gerente_operacional': 'Gerência Operacional',
         'gerente_comercial': 'Gerência Comercial',
@@ -665,7 +651,7 @@ const TicketDetailPage = () => {
         atualizadoPor: user.uid,
         atualizadoPorFuncao: userProfile.funcao,
         userRole: userProfile.funcao,
-        atualizadoEm: new Date().toISOString()
+        atualizadoEm: new Date() // Alterado para new Date()
       };
       if (newStatus === TICKET_STATUS.COMPLETED) {
         updateData.conclusaoDescricao = conclusionDescription;
@@ -674,13 +660,13 @@ const TicketDetailPage = () => {
       if (newStatus === TICKET_STATUS.REJECTED || (newStatus === TICKET_STATUS.SENT_TO_AREA && ticket.status === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION)) {
         updateData.motivoRejeicao = conclusionDescription;
         updateData.rejeitadoPor = user.uid;
-        updateData.rejeitadoEm = new Date().toISOString();
+        updateData.rejeitadoEm = new Date();
       }
       if (newStatus === TICKET_STATUS.ESCALATED_TO_OTHER_AREA) {
         updateData.areaAnterior = ticket.area;
         updateData.escaladoPara = selectedArea;
         updateData.escaladoPor = user.uid;
-        updateData.escaladoEm = new Date().toISOString();
+        updateData.escaladoEm = new Date();
         await ticketService.escalateTicketToArea(ticketId, selectedArea, updateData);
       } else {
         const comment = conclusionDescription || '';
@@ -689,9 +675,12 @@ const TicketDetailPage = () => {
       if (newStatus === TICKET_STATUS.AWAITING_APPROVAL) {
         updateData.escaladoParaGerencia = true;
         updateData.escaladoPor = user.uid;
-        updateData.escaladoEm = new Date().toISOString();
-        const gerenteUid = getManagerUidByArea(managementArea);
-        updateData.gerenteResponsavelId = gerenteUid;
+        updateData.escaladoEm = new Date();
+        const targetArea = managementArea.replace('gerente_', '');
+        const targetManager = users.find(u => u.funcao === 'gerente' && u.area === targetArea);
+        if(targetManager) {
+          updateData.gerenteResponsavelId = targetManager.uid;
+        }
         updateData.areaGerencia = managementArea;
       }
       if (newStatus === 'devolver_para_area') {
@@ -702,7 +691,7 @@ const TicketDetailPage = () => {
         updateData.consultorId = null;
         updateData.areaDeOrigem = null;
         updateData.devolvidoPeloConsultor = true;
-        updateData.devolvidoEm = new Date().toISOString();
+        updateData.devolvidoEm = new Date();
         updateData.devolvidoPor = user.uid;
       }
       await ticketService.updateTicket(ticketId, updateData);
@@ -725,7 +714,7 @@ const TicketDetailPage = () => {
           conteudo: isApproval 
             ? `✅ **Chamado aprovado pelo gerente ${managerName}**\n\nO chamado foi aprovado e retornará para a área responsável para execução.`
             : `❌ **Chamado reprovado pelo gerente ${managerName}**\n\n**Motivo:** ${conclusionDescription}\n\nO chamado foi encerrado devido à reprovação gerencial.`,
-          criadoEm: new Date().toISOString(),
+          criadoEm: new Date(),
           type: isApproval ? 'manager_approval' : 'manager_rejection'
         };
         await messageService.sendMessage(ticketId, approvalMessage);
@@ -754,7 +743,7 @@ const TicketDetailPage = () => {
         remetenteNome: userProfile.nome || user.email,
         conteudo: newMessage.trim(),
         imagens: chatImages,
-        criadoEm: new Date().toISOString()
+        criadoEm: new Date()
       };
       await messageService.sendMessage(ticketId, messageData);
       try {
@@ -784,19 +773,6 @@ const TicketDetailPage = () => {
     } catch {
       return 'Data inválida';
     }
-  };
-
-  const getManagerUidByArea = (managementArea) => {
-    let resultado;
-    switch (managementArea) {
-      case 'gerente_operacional': 
-        resultado = 'I21CyL98Eua2WmkLh50OGjvivb83';
-        break;
-      default: 
-        resultado = user.uid;
-        break;
-    }
-    return resultado;
   };
 
   const getManagerAreaByTicketArea = (ticketArea) => {};
