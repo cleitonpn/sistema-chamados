@@ -5,7 +5,7 @@ import { projectService } from '../services/projectService';
 import { ticketService } from '../services/ticketService';
 import { userService } from '../services/userService';
 import notificationService from '../services/notificationService';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore'; // onSnapshot já está aqui, ótimo!
 import { db } from '../config/firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -65,42 +65,73 @@ const DashboardPage = () => {
   const [expandedProjects, setExpandedProjects] = useState({});
   const [ticketNotifications, setTicketNotifications] = useState({});
   
+  // Estados para ações em lote
   const [selectedTickets, setSelectedTickets] = useState(new Set());
   const [bulkActionMode, setBulkActionMode] = useState(false);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
   const [activeFilter, setActiveFilter] = useState('todos');
 
+  // Função para buscar nome do projeto
   const getProjectName = (projetoId) => {
     return projectNames[projetoId] || 'Projeto não encontrado';
   };
 
+  // Função para filtrar chamados baseado no filtro ativo
   const getFilteredTickets = () => {
     let filteredTickets = [...tickets];
 
     switch (activeFilter) {
-      case 'todos': break;
-      case 'com_notificacao': filteredTickets = filteredTickets.filter(ticket => ticketNotifications[ticket.id]); break;
-      case 'sem_tratativa': filteredTickets = filteredTickets.filter(ticket => ticket.status === 'aberto'); break;
-      case 'em_tratativa': filteredTickets = filteredTickets.filter(ticket => ticket.status === 'em_tratativa'); break;
-      case 'em_execucao': filteredTickets = filteredTickets.filter(ticket => ticket.status === 'em_execucao'); break;
-      case 'escalado': filteredTickets = filteredTickets.filter(ticket => ticket.status === 'enviado_para_area' || ticket.status === 'escalado_para_area'); break;
+      case 'todos':
+        break;
+      case 'com_notificacao':
+        filteredTickets = filteredTickets.filter(ticket => ticketNotifications[ticket.id]);
+        break;
+      case 'sem_tratativa':
+        filteredTickets = filteredTickets.filter(ticket => ticket.status === 'aberto');
+        break;
+      case 'em_tratativa':
+        filteredTickets = filteredTickets.filter(ticket => ticket.status === 'em_tratativa');
+        break;
+      case 'em_execucao':
+        filteredTickets = filteredTickets.filter(ticket => ticket.status === 'em_execucao');
+        break;
+      case 'escalado':
+        filteredTickets = filteredTickets.filter(ticket => 
+          ticket.status === 'enviado_para_area' || ticket.status === 'escalado_para_area'
+        );
+        break;
       case 'escalado_para_mim':
         filteredTickets = filteredTickets.filter(ticket => {
           if (ticket.status === 'escalado_para_outra_area') {
             if (ticket.areaEscalada === userProfile?.area) return true;
-            if (ticket.usuarioEscalado === user?.uid || ticket.usuarioEscalado === userProfile?.email || ticket.usuarioEscalado === userProfile?.nome) return true;
+            if (ticket.usuarioEscalado === user?.uid || 
+                ticket.usuarioEscalado === userProfile?.email ||
+                ticket.usuarioEscalado === userProfile?.nome) return true;
             if (ticket.areasEnvolvidas && ticket.areasEnvolvidas.includes(userProfile?.area)) return true;
           }
           return false;
         });
         break;
-      case 'devolvido': filteredTickets = filteredTickets.filter(ticket => ticket.status === 'devolvido' || (ticket.historico && ticket.historico.some(h => h.acao === 'devolvido'))); break;
-      case 'aguardando_validacao': filteredTickets = filteredTickets.filter(ticket => ticket.status === 'executado_aguardando_validacao'); break;
-      case 'concluidos': filteredTickets = filteredTickets.filter(ticket => ticket.status === 'concluido'); break;
-      default: break;
+      case 'devolvido':
+        filteredTickets = filteredTickets.filter(ticket => 
+          ticket.status === 'devolvido' || 
+          (ticket.historico && ticket.historico.some(h => h.acao === 'devolvido'))
+        );
+        break;
+      case 'aguardando_validacao':
+        filteredTickets = filteredTickets.filter(ticket => 
+          ticket.status === 'executado_aguardando_validacao'
+        );
+        break;
+      case 'concluidos':
+        filteredTickets = filteredTickets.filter(ticket => ticket.status === 'concluido');
+        break;
+      default:
+        break;
     }
 
+    // Ordenar por dataUltimaAtualizacao (mais recente primeiro)
     return filteredTickets.sort((a, b) => {
       const dateA = a.dataUltimaAtualizacao?.toDate?.() || a.createdAt?.toDate?.() || new Date(0);
       const dateB = b.dataUltimaAtualizacao?.toDate?.() || b.createdAt?.toDate?.() || new Date(0);
@@ -108,26 +139,33 @@ const DashboardPage = () => {
     });
   };
 
-  const getTicketCounts = () => ({
-    todos: tickets.length,
-    com_notificacao: Object.keys(ticketNotifications).length,
-    sem_tratativa: tickets.filter(t => t.status === 'aberto').length,
-    em_tratativa: tickets.filter(t => t.status === 'em_tratativa').length,
-    em_execucao: tickets.filter(t => t.status === 'em_execucao').length,
-    escalado: tickets.filter(t => t.status === 'enviado_para_area' || t.status === 'escalado_para_area').length,
-    escalado_para_mim: tickets.filter(t => {
-      if (t.status === 'escalado_para_outra_area') {
-        if (t.areaEscalada === userProfile?.area) return true;
-        if (t.usuarioEscalado === user?.uid || t.usuarioEscalado === userProfile?.email || t.usuarioEscalado === userProfile?.nome) return true;
-        if (t.areasEnvolvidas && t.areasEnvolvidas.includes(userProfile?.area)) return true;
-      }
-      return false;
-    }).length,
-    devolvido: tickets.filter(t => t.status === 'devolvido' || (t.historico && t.historico.some(h => h.acao === 'devolvido'))).length,
-    aguardando_validacao: tickets.filter(t => t.status === 'executado_aguardando_validacao').length,
-    concluidos: tickets.filter(t => t.status === 'concluido').length
-  });
+  // Função para contar chamados por categoria
+  const getTicketCounts = () => {
+    const counts = {
+      todos: tickets.length,
+      com_notificacao: Object.keys(ticketNotifications).length,
+      sem_tratativa: tickets.filter(t => t.status === 'aberto').length,
+      em_tratativa: tickets.filter(t => t.status === 'em_tratativa').length,
+      em_execucao: tickets.filter(t => t.status === 'em_execucao').length,
+      escalado: tickets.filter(t => 
+        t.status === 'enviado_para_area' || t.status === 'escalado_para_area'
+      ).length,
+      escalado_para_mim: tickets.filter(t => {
+        if (t.status === 'escalado_para_outra_area') {
+          if (t.areaEscalada === userProfile?.area) return true;
+          if (t.usuarioEscalado === user?.uid || t.usuarioEscalado === userProfile?.email || t.usuarioEscalado === userProfile?.nome) return true;
+          if (t.areasEnvolvidas && t.areasEnvolvidas.includes(userProfile?.area)) return true;
+        }
+        return false;
+      }).length,
+      devolvido: tickets.filter(t => t.status === 'devolvido' || (t.historico && t.historico.some(h => h.acao === 'devolvido'))).length,
+      aguardando_validacao: tickets.filter(t => t.status === 'executado_aguardando_validacao').length,
+      concluidos: tickets.filter(t => t.status === 'concluido').length
+    };
+    return counts;
+  };
 
+  // Configuração dos cards de filtro
   const filterCards = [
     { id: 'todos', title: 'Todos', icon: FileText, color: 'bg-blue-50 border-blue-200 hover:bg-blue-100', iconColor: 'text-blue-600', activeColor: 'bg-blue-500 text-white border-blue-500' },
     { id: 'com_notificacao', title: 'Notificações', icon: BellRing, color: 'bg-red-50 border-red-200 hover:bg-red-100', iconColor: 'text-red-600', activeColor: 'bg-red-500 text-white border-red-500' },
@@ -183,45 +221,135 @@ const DashboardPage = () => {
     setSelectedTickets(newSelected);
   };
 
-  // ✅ ALTERAÇÃO: O hook principal agora configura o listener em tempo real.
-  // A função `loadDashboardData` será chamada por este listener.
   useEffect(() => {
-    if (authInitialized && user && userProfile && user.uid) {
-      
-      // Define a query base para os chamados.
-      let ticketsQuery;
-      if (userProfile.funcao === 'operador' && userProfile.area) {
-        // Otimização para operadores: busca apenas chamados de sua área.
-        ticketsQuery = query(collection(db, 'tickets'), where('areasEnvolvidas', 'array-contains', userProfile.area));
-      } else {
-        // Para outros, busca todos e filtra no cliente.
-        ticketsQuery = query(collection(db, 'tickets'));
-      }
+    if (authInitialized && !user) {
+      navigate('/login');
+    }
+  }, [authInitialized, user, navigate]);
 
-      // Inicia o listener em tempo real.
-      const unsubscribe = onSnapshot(ticketsQuery, (snapshot) => {
-        // A cada mudança no banco de dados, esta função é chamada.
-        console.log(`🔄 Dados de chamados atualizados em tempo real. ${snapshot.docChanges().length} mudanças detectadas.`);
-        // Chama a sua função original para recarregar e re-filtrar todos os dados.
-        loadDashboardData();
-      }, (error) => {
-        console.error("❌ Erro ao escutar atualizações de chamados:", error);
+  // ✅ NOVO useEffect para carregar dados e configurar listeners em tempo real
+  useEffect(() => {
+    if (!authInitialized || !user || !userProfile) {
+      // Se não estiver autenticado ou o perfil não carregou, não faz nada
+      if (authInitialized && user && !userProfile) setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    console.log('🔄 Configurando listeners em tempo real para:', userProfile.funcao);
+
+    // Carrega dados que não precisam de atualização em tempo real (ou com menor frequência)
+    const loadStaticData = async () => {
+      try {
+        const [allProjects, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          userService.getAllUsers()
+        ]);
+
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+
+        // Filtra projetos baseado na função do usuário
+        let userProjects = allProjects;
+        if (userProfile.funcao === 'produtor') {
+            userProjects = allProjects.filter(p => p.produtorId === user.uid);
+        } else if (userProfile.funcao === 'consultor') {
+            userProjects = allProjects.filter(p => p.consultorId === user.uid);
+        }
+        setProjects(userProjects);
+        setUsers(allUsers);
+
+      } catch (error) {
+        console.error('❌ Erro ao carregar dados estáticos (projetos, usuários):', error);
+      }
+    };
+
+    loadStaticData();
+
+    // Define a consulta (query) base para os chamados
+    const ticketsCollection = collection(db, 'chamados');
+    let ticketsQuery = query(ticketsCollection); // Por padrão, busca todos
+    
+    // Adapta a query de acordo com a função do usuário
+    // IMPORTANTE: Adapte essas regras `where` para corresponderem exatamente às regras de segurança do seu Firestore.
+    if (userProfile.funcao === 'operador') {
+      ticketsQuery = query(ticketsCollection, where('areasEnvolvidas', 'array-contains', userProfile.area));
+    } else if (userProfile.funcao === 'produtor') {
+      // Produtor vê chamados dos seus projetos. Isso requer carregar os projetos primeiro.
+      // A lógica de filtro pós-busca será mantida por simplicidade, mas o ideal seria otimizar a query.
+      // Esta parte continua filtrando no cliente após a busca.
+    } else if (userProfile.funcao === 'consultor') {
+       // Consultor vê chamados que criou ou que são de seus projetos.
+       // O Firestore não permite queries com 'OU' em campos diferentes. 
+       // Manteremos a filtragem no cliente.
+    } else if (userProfile.funcao === 'usuario_padrao') {
+       ticketsQuery = query(ticketsCollection, where('criadoPor', '==', user.uid));
+    }
+    // Admin e Gerente continuam com a query que busca todos os chamados.
+
+    // Configura o listener em tempo real
+    const unsubscribe = onSnapshot(ticketsQuery, (querySnapshot) => {
+      let fetchedTickets = [];
+      querySnapshot.forEach((doc) => {
+        fetchedTickets.push({ id: doc.id, ...doc.data() });
       });
 
-      // Função de limpeza: será chamada quando o usuário sair da página.
-      return () => {
-        console.log("🧹 Desconectando o listener de tempo real do dashboard.");
-        unsubscribe(); // Para o listener para evitar consumo de memória.
+      console.log(`Real-time update: ${fetchedTickets.length} chamados recebidos.`);
+      
+      // ✅ INÍCIO DA LÓGICA DE FILTRAGEM PÓS-BUSCA (já existente)
+      // Esta lógica é necessária para regras complexas que não podem ser feitas em uma única query do Firestore.
+      const filterConfidential = (ticket) => {
+        if (!ticket.isConfidential) return true;
+        const isCreator = ticket.criadoPor === user.uid;
+        const isAdmin = userProfile?.funcao === 'administrador';
+        return isCreator || isAdmin;
       };
 
-    } else if (authInitialized && !user) {
-      navigate('/login');
-    } else if (authInitialized && user && !userProfile) {
-      setLoading(false);
-    }
-  }, [authInitialized, user, userProfile]); // O listener é re-criado se o usuário mudar.
+      let finalTickets = fetchedTickets;
 
-  // NENHUMA ALTERAÇÃO NESTE HOOK
+      if (userProfile.funcao === 'produtor') {
+        const produtorProjectIds = projects.map(p => p.id);
+        finalTickets = fetchedTickets.filter(ticket => 
+            produtorProjectIds.includes(ticket.projetoId) && filterConfidential(ticket)
+        );
+      } else if (userProfile.funcao === 'consultor') {
+          const consultorProjectIds = projects.map(p => p.id);
+          finalTickets = fetchedTickets.filter(ticket => {
+            const isFromConsultorProject = consultorProjectIds.includes(ticket.projetoId);
+            const isOpenedByConsultor = ticket.criadoPor === user.uid;
+            const isEscalatedToConsultor = ticket.escalonamentos?.some(esc => 
+              esc.consultorId === user.uid || esc.responsavelId === user.uid
+            );
+            return (isFromConsultorProject || isOpenedByConsultor || isEscalatedToConsultor) && filterConfidential(ticket);
+        });
+      } else if (userProfile.funcao !== 'operador' && userProfile.funcao !== 'administrador' && userProfile.funcao !== 'gerente') {
+        // Filtro de confidencialidade para outras funções que veem todos os chamados inicialmente
+        finalTickets = fetchedTickets.filter(filterConfidential);
+      }
+      // Operadores já são filtrados pela query e podem ver chamados confidenciais de sua área.
+      // Admins/Gerentes veem tudo.
+
+      setTickets(finalTickets);
+      // ✅ FIM DA LÓGICA DE FILTRAGEM
+
+      if (loading) setLoading(false); // Para o loading inicial apenas na primeira carga
+    }, (error) => {
+      console.error("❌ Erro no listener de chamados: ", error);
+      setLoading(false);
+    });
+
+    // Função de limpeza: será chamada quando o componente for desmontado
+    return () => {
+      console.log('Unsubscribing from ticket updates.');
+      unsubscribe();
+    };
+
+  }, [authInitialized, user, userProfile, navigate, projects]); // `projects` é uma dependência para o filtro de produtor/consultor
+
+
   useEffect(() => {
     if (tickets.length > 0 && user?.uid) {
       const unsubscribe = notificationService.subscribeToNotifications(user.uid, (allNotifications) => {
@@ -240,167 +368,7 @@ const DashboardPage = () => {
       };
     }
   }, [tickets, user?.uid]);
-  
-  // NENHUMA ALTERAÇÃO NESTA FUNÇÃO. ELA CONTINUA SENDO O "CÉREBRO" DA PÁGINA.
-  const loadDashboardData = async () => {
-    try {
-      // setLoading(true) foi movido para o listener para melhor controle visual
-      
-      console.log('🔍 Processando dados do dashboard para:', userProfile?.funcao);
-      
-      const filterConfidential = (ticket) => {
-        if (!ticket.isConfidential) {
-          return true;
-        }
-        const isCreator = ticket.criadoPor === user.uid;
-        const isAdmin = userProfile?.funcao === 'administrador';
-        return isCreator || isAdmin;
-      };
 
-      if (userProfile?.funcao === 'administrador') {
-        console.log('👑 Administrador: carregando TODOS os dados');
-        const [allProjects, allTickets, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          ticketService.getAllTickets(),
-          userService.getAllUsers()
-        ]);
-        setProjects(allProjects);
-        setTickets(allTickets);
-        setUsers(allUsers);
-        
-        const projectNamesMap = {};
-        allProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
-        
-      } else if (userProfile?.funcao === 'produtor') {
-        console.log('🏭 Produtor: carregando projetos próprios e chamados relacionados');
-        const [allProjects, allTickets, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          ticketService.getAllTickets(),
-          userService.getAllUsers()
-        ]);
-        
-        const produtorProjects = allProjects.filter(project => 
-          project.produtorId === user.uid
-        );
-        
-        const produtorProjectIds = produtorProjects.map(p => p.id);
-        
-        const produtorTickets = allTickets.filter(ticket => {
-          const isRelatedToProject = produtorProjectIds.includes(ticket.projetoId);
-          return isRelatedToProject && filterConfidential(ticket);
-        });
-        
-        setProjects(produtorProjects);
-        setTickets(produtorTickets);
-        setUsers(allUsers);
-        
-        const projectNamesMap = {};
-        produtorProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
-        
-      } else if (userProfile?.funcao === 'consultor') {
-        console.log('👨‍💼 Consultor: carregando projetos próprios e chamados específicos');
-        const [allProjects, allTickets, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          ticketService.getAllTickets(),
-          userService.getAllUsers()
-        ]);
-        
-        const consultorProjects = allProjects.filter(project => 
-          project.consultorId === user.uid
-        );
-        
-        const consultorProjectIds = consultorProjects.map(p => p.id);
-        
-        const consultorTickets = allTickets.filter(ticket => {
-          const isFromConsultorProject = consultorProjectIds.includes(ticket.projetoId);
-          const isOpenedByConsultor = ticket.criadoPor === user.uid;
-          const isEscalatedToConsultor = ticket.escalonamentos?.some(esc => 
-            esc.consultorId === user.uid || esc.responsavelId === user.uid
-          );
-          
-          const isRelated = isFromConsultorProject || isOpenedByConsultor || isEscalatedToConsultor;
-          return isRelated && filterConfidential(ticket);
-        });
-        
-        setProjects(consultorProjects);
-        setTickets(consultorTickets);
-        setUsers(allUsers);
-        
-        const projectNamesMap = {};
-        allProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
-        
-      } else if (userProfile?.funcao === 'operador') {
-        console.log('⚙️ Operador: carregando chamados da área');
-        const [allProjects, operatorTickets, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          ticketService.getTicketsByAreaInvolved(userProfile.area),
-          userService.getAllUsers()
-        ]);
-        
-        setProjects(allProjects);
-        setTickets(operatorTickets);
-        setUsers(allUsers);
-        
-        const projectNamesMap = {};
-        allProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
-        
-      } else if (userProfile?.funcao === 'gerente') {
-        console.log('👔 Gerente: carregando TODOS os dados');
-        const [allProjects, allTickets, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          ticketService.getAllTickets(),
-          userService.getAllUsers()
-        ]);
-        
-        setProjects(allProjects);
-        setUsers(allUsers);
-        setTickets(allTickets);
-        
-        const projectNamesMap = {};
-        allProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
-        
-      } else {
-        console.log('👤 Usuário padrão: carregando dados básicos');
-        const [allProjects, userTickets, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          ticketService.getTicketsByUser(user.uid),
-          userService.getAllUsers()
-        ]);
-        
-        setProjects(allProjects);
-        setTickets(userTickets);
-        setUsers(allUsers);
-        
-        const projectNamesMap = {};
-        allProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
-      }
-      
-    } catch (error) {
-      console.error('❌ Erro ao carregar dados do dashboard:', error);
-      setProjects([]);
-      setTickets([]);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   if (!authInitialized || loading) {
     return (
@@ -415,8 +383,11 @@ const DashboardPage = () => {
 
   const counts = getTicketCounts();
 
+  // O RESTANTE DO SEU CÓDIGO JSX CONTINUA IGUAL...
+  // ...
   return (
     <div className="min-h-screen bg-gray-50 flex">
+      {/* ... O seu JSX a partir daqui ... */}
       <div className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0`}>
         <div className="flex items-center justify-between h-16 px-6 border-b">
           <h1 className="text-xl font-semibold text-gray-900">Gestão de Chamados</h1>
