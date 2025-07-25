@@ -110,12 +110,6 @@ const DashboardPage = () => {
           return false;
         });
         break;
-      case 'devolvido':
-        filteredTickets = filteredTickets.filter(ticket => 
-          ticket.status === 'devolvido' || 
-          (ticket.historico && ticket.historico.some(h => h.acao === 'devolvido'))
-        );
-        break;
       case 'aguardando_validacao':
         filteredTickets = filteredTickets.filter(ticket => 
           ticket.status === 'executado_aguardando_validacao'
@@ -123,6 +117,9 @@ const DashboardPage = () => {
         break;
       case 'concluidos':
         filteredTickets = filteredTickets.filter(ticket => ticket.status === 'concluido');
+        break;
+      case 'aguardando_aprovacao':
+        filteredTickets = filteredTickets.filter(ticket => ticket.status === 'aguardando_aprovacao');
         break;
       default:
         break;
@@ -153,22 +150,29 @@ const DashboardPage = () => {
         }
         return false;
       }).length,
-      devolvido: tickets.filter(t => t.status === 'devolvido' || (t.historico && t.historico.some(h => h.acao === 'devolvido'))).length,
       aguardando_validacao: tickets.filter(t => t.status === 'executado_aguardando_validacao').length,
-      concluidos: tickets.filter(t => t.status === 'concluido').length
+      concluidos: tickets.filter(t => t.status === 'concluido').length,
+      aguardando_aprovacao: tickets.filter(t => t.status === 'aguardando_aprovacao').length
     };
     return counts;
   };
 
   const filterCards = [
     { id: 'todos', title: 'Todos', icon: FileText, color: 'bg-blue-50 border-blue-200 hover:bg-blue-100', iconColor: 'text-blue-600', activeColor: 'bg-blue-500 text-white border-blue-500' },
+    ...(userProfile?.funcao === 'gerente' ? [{
+      id: 'aguardando_aprovacao', 
+      title: 'Aguardando Aprovação', 
+      icon: UserCheck, 
+      color: 'bg-orange-50 border-orange-200 hover:bg-orange-100', 
+      iconColor: 'text-orange-600', 
+      activeColor: 'bg-orange-500 text-white border-orange-500' 
+    }] : []),
     { id: 'com_notificacao', title: 'Notificações', icon: BellRing, color: 'bg-red-50 border-red-200 hover:bg-red-100', iconColor: 'text-red-600', activeColor: 'bg-red-500 text-white border-red-500' },
     { id: 'sem_tratativa', title: 'Sem Tratativa', icon: AlertCircle, color: 'bg-orange-50 border-orange-200 hover:bg-orange-100', iconColor: 'text-orange-600', activeColor: 'bg-orange-500 text-white border-orange-500' },
     { id: 'em_tratativa', title: 'Em Tratativa', icon: Clock, color: 'bg-yellow-50 border-yellow-200 hover:bg-yellow-100', iconColor: 'text-yellow-600', activeColor: 'bg-yellow-500 text-white border-yellow-500' },
     { id: 'em_execucao', title: 'Em Execução', icon: Play, color: 'bg-blue-50 border-blue-200 hover:bg-blue-100', iconColor: 'text-blue-600', activeColor: 'bg-blue-500 text-white border-blue-500' },
     { id: 'escalado', title: 'Escalado', icon: ArrowUp, color: 'bg-purple-50 border-purple-200 hover:bg-purple-100', iconColor: 'text-purple-600', activeColor: 'bg-purple-500 text-white border-purple-500' },
     { id: 'escalado_para_mim', title: 'Escalados para Mim', icon: ChevronDown, color: 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100', iconColor: 'text-indigo-600', activeColor: 'bg-indigo-500 text-white border-indigo-500' },
-    { id: 'devolvido', title: 'Devolvido', icon: RotateCcw, color: 'bg-pink-50 border-pink-200 hover:bg-pink-100', iconColor: 'text-pink-600', activeColor: 'bg-pink-500 text-white border-pink-500' },
     { id: 'aguardando_validacao', title: 'Aguardando Validação', icon: Hourglass, color: 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100', iconColor: 'text-indigo-600', activeColor: 'bg-indigo-500 text-white border-indigo-500' },
     { id: 'concluidos', title: 'Concluídos', icon: CheckCircle, color: 'bg-green-50 border-green-200 hover:bg-green-100', iconColor: 'text-green-600', activeColor: 'bg-green-500 text-white border-green-500' }
   ];
@@ -457,7 +461,7 @@ const DashboardPage = () => {
               (userProfile?.funcao === 'operador' && userProfile?.area === 'operacional') ||
               (userProfile?.funcao === 'operador' && userProfile?.area === 'comunicacao_visual') ||
               (userProfile?.funcao === 'operador' && userProfile?.area === 'almoxarifado') ||
-              (userProfile?.funcao === 'operador' && userProfile?.area === 'logistica')) && ( // ✅ ADIÇÃO: Condição para operadores de logística
+              (userProfile?.funcao === 'operador' && userProfile?.area === 'logistica')) && (
               <Button 
                 onClick={() => navigate('/novo-chamado')}
                 className="w-full justify-start mb-4"
