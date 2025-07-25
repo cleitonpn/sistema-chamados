@@ -37,8 +37,7 @@ import {
   Settings,
   AtSign,
   Lock,
-  UserCheck,
-  AlertTriangle // 🔧 NOVO: Ícone para alerta
+  UserCheck
 } from 'lucide-react';
 
 const TicketDetailPage = () => {
@@ -305,30 +304,13 @@ const TicketDetailPage = () => {
     return statusTexts[status] || status;
   };
 
-  // 🔧 FUNÇÃO CORRIGIDA COM VERIFICAÇÃO ESPECÍFICA PARA ÁREA
   const getAvailableStatuses = () => {
     if (!ticket || !userProfile || !user) {
-      console.log('🔍 DEBUG getAvailableStatuses: Dados não carregados ainda');
       return [];
     }
 
     const currentStatus = ticket.status;
     const userRole = userProfile.funcao;
-    
-    // 🔧 DEBUG MELHORADO PARA GERENTE
-    console.log('🔍 DEBUG getAvailableStatuses:', {
-      currentStatus,
-      userRole,
-      userId: user.uid,
-      userArea: userProfile.area,
-      gerenteResponsavelId: ticket.gerenteResponsavelId,
-      isManager: userRole === 'gerente',
-      isEscalatedToThisManager: currentStatus === 'aguardando_aprovacao' && ticket.gerenteResponsavelId === user.uid,
-      ticketData: {
-        status: ticket.status,
-        gerenteResponsavelId: ticket.gerenteResponsavelId
-      }
-    });
 
     if (userRole === 'administrador') {
       if (currentStatus === TICKET_STATUS.OPEN) {
@@ -347,7 +329,6 @@ const TicketDetailPage = () => {
           { value: TICKET_STATUS.COMPLETED, label: 'Concluir', description: 'Finalizar chamado' }
         ];
       }
-      // 🔧 ADICIONADO: Ações de aprovação para administrador
       if (currentStatus === 'aguardando_aprovacao') {
         return [
           { value: TICKET_STATUS.APPROVED, label: 'Aprovar', description: 'Aprovar e retornar para área' },
@@ -389,32 +370,17 @@ const TicketDetailPage = () => {
       }
     }
 
-    // 🔧 BLOCO CORRIGIDO PARA GERENTE COM VERIFICAÇÃO DE ÁREA
     if (userRole === 'gerente') {
-      // 🔧 NOVA LÓGICA: Verificar se o gerente é da área correta OU se é o gerente responsável específico
-      const isManagerOfArea = userProfile.area === 'producao'; // Eduardo é gerente de produção
+      const isManagerOfArea = userProfile.area === 'producao';
       const isEscalatedToThisManager = currentStatus === 'aguardando_aprovacao' && 
                                        (ticket.gerenteResponsavelId === user.uid || 
                                         (!ticket.gerenteResponsavelId && isManagerOfArea));
 
-      console.log('🔍 DEBUG GERENTE ESPECÍFICO:', {
-        isManagerOfArea,
-        isEscalatedToThisManager,
-        currentStatus,
-        gerenteResponsavelId: ticket.gerenteResponsavelId,
-        userId: user.uid,
-        userArea: userProfile.area,
-        match: ticket.gerenteResponsavelId === user.uid
-      });
-
       if (isEscalatedToThisManager) {
-        console.log('✅ GERENTE: Retornando ações de aprovação/reprovação');
         return [
           { value: TICKET_STATUS.APPROVED, label: 'Aprovar', description: 'Aprovar e retornar para área' },
           { value: TICKET_STATUS.REJECTED, label: 'Reprovar', description: 'Reprovar e encerrar chamado' }
         ];
-      } else {
-        console.log('❌ GERENTE: Não é o gerente responsável ou status incorreto');
       }
       return [];
     }
@@ -427,7 +393,6 @@ const TicketDetailPage = () => {
       }
     }
 
-    console.log('🔍 DEBUG: Nenhuma ação disponível para este usuário/status');
     return [];
   };
 
@@ -473,7 +438,6 @@ const TicketDetailPage = () => {
     }
   };
 
-  // 🔧 FUNÇÃO CORRIGIDA PARA DEFINIR O GERENTE RESPONSÁVEL CORRETAMENTE
   const handleManagementEscalation = async () => {
     if (!managementArea) {
       alert('Por favor, selecione uma gerência de destino');
@@ -484,16 +448,8 @@ const TicketDetailPage = () => {
       return;
     }
     
-    // 🔧 CORREÇÃO: Buscar gerente pela área correta
     const targetArea = managementArea.replace('gerente_', '');
     const targetManager = users.find(u => u.funcao === 'gerente' && u.area === targetArea);
-    
-    console.log('🔧 DEBUG Escalação Gerencial:', {
-      managementArea,
-      targetArea,
-      targetManager,
-      allManagers: users.filter(u => u.funcao === 'gerente')
-    });
     
     if (!targetManager) {
       alert(`Erro: Nenhum gerente encontrado para a área "${targetArea}". Verifique o cadastro de usuários.`);
@@ -505,15 +461,13 @@ const TicketDetailPage = () => {
       const updateData = {
         status: 'aguardando_aprovacao',
         areaDeOrigem: ticket.area,
-        gerenteResponsavelId: targetManager.uid, // 🔧 CORREÇÃO: Definir o ID do gerente responsável
+        gerenteResponsavelId: targetManager.uid,
         motivoEscalonamentoGerencial: managementReason,
         escaladoPor: user.uid,
         escaladoEm: new Date(),
         atualizadoPor: user.uid,
         updatedAt: new Date()
       };
-
-      console.log('🔧 DEBUG Update Data:', updateData);
 
       const managementNames = {
         'gerente_operacional': 'Gerência Operacional',
@@ -533,7 +487,6 @@ const TicketDetailPage = () => {
       };
       await messageService.sendMessage(ticketId, escalationMessage);
 
-      // 🔔 NOTIFICAÇÃO: Escalar para gerência
       try {
         await notificationService.notifyManagementEscalation(
           ticketId,
@@ -666,7 +619,6 @@ const TicketDetailPage = () => {
         updateData.area = ticket.areaDeOrigem || ticket.area;
       }
 
-      // 🔧 LÓGICA ESPECÍFICA PARA APROVAÇÃO/REPROVAÇÃO GERENCIAL
       if (newStatus === TICKET_STATUS.APPROVED || newStatus === TICKET_STATUS.REJECTED) {
         if (ticket.status === 'aguardando_aprovacao' && userProfile.funcao === 'gerente') {
           const targetArea = ticket.areaDeOrigem || ticket.area;
@@ -686,7 +638,6 @@ const TicketDetailPage = () => {
 
       await ticketService.updateTicket(ticketId, updateData);
 
-      // Enviar mensagem de atualização
       const managerName = userProfile?.nome || user?.email || 'Gerente';
       const statusMessage = {
         userId: user.uid,
@@ -703,7 +654,6 @@ const TicketDetailPage = () => {
       };
       await messageService.sendMessage(ticketId, statusMessage);
 
-      // 🔔 NOTIFICAÇÃO: Mudança de status
       try {
         await notificationService.notifyStatusChange(
           ticketId,
@@ -746,7 +696,6 @@ const TicketDetailPage = () => {
 
       await messageService.sendMessage(ticketId, messageData);
 
-      // 🔔 NOTIFICAÇÃO: Nova mensagem
       try {
         await notificationService.notifyNewMessage(
           ticketId,
@@ -767,33 +716,6 @@ const TicketDetailPage = () => {
       alert('Erro ao enviar mensagem: ' + error.message);
     } finally {
       setSendingMessage(false);
-    }
-  };
-
-  // 🔧 NOVA FUNÇÃO: Corrigir gerenteResponsavelId para chamados existentes
-  const handleFixManagerId = async () => {
-    if (!ticket || ticket.status !== 'aguardando_aprovacao') return;
-
-    try {
-      // Buscar gerente de produção (Eduardo)
-      const productionManager = users.find(u => u.funcao === 'gerente' && u.area === 'producao');
-      
-      if (productionManager) {
-        const updateData = {
-          gerenteResponsavelId: productionManager.uid,
-          atualizadoPor: user.uid,
-          updatedAt: new Date()
-        };
-
-        await ticketService.updateTicket(ticketId, updateData);
-        await loadTicketData();
-        alert('ID do gerente responsável corrigido com sucesso!');
-      } else {
-        alert('Gerente de produção não encontrado!');
-      }
-    } catch (error) {
-      console.error('Erro ao corrigir ID do gerente:', error);
-      alert('Erro ao corrigir ID do gerente: ' + error.message);
     }
   };
 
@@ -896,59 +818,6 @@ const TicketDetailPage = () => {
             </div>
           </div>
         </div>
-
-        {/* 🔧 CARD DE DEBUG PARA GERENTE */}
-        {userProfile?.funcao === 'gerente' && (
-          <Card className="mb-6 border-blue-200 bg-blue-50">
-            <CardHeader>
-              <CardTitle className="flex items-center text-blue-800">
-                <UserCheck className="h-5 w-5 mr-2" />
-                Debug - Informações do Gerente
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm text-blue-700">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <strong>Status do Chamado:</strong> {ticket.status}
-                </div>
-                <div>
-                  <strong>Gerente Responsável ID:</strong> {ticket.gerenteResponsavelId || 'Não definido'}
-                </div>
-                <div>
-                  <strong>Seu ID:</strong> {user.uid}
-                </div>
-                <div>
-                  <strong>Sua Área:</strong> {userProfile.area}
-                </div>
-                <div>
-                  <strong>É o Gerente Responsável?:</strong> {ticket.gerenteResponsavelId === user.uid ? 'SIM' : 'NÃO'}
-                </div>
-                <div>
-                  <strong>Ações Disponíveis:</strong> {availableStatuses.length}
-                </div>
-              </div>
-              {/* 🔧 BOTÃO PARA CORRIGIR O PROBLEMA */}
-              {ticket.status === 'aguardando_aprovacao' && !ticket.gerenteResponsavelId && userProfile.area === 'producao' && (
-                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertTriangle className="h-4 w-4 text-red-600" />
-                    <span className="font-semibold text-red-800">Problema Detectado!</span>
-                  </div>
-                  <p className="text-red-700 text-xs mb-3">
-                    O campo "gerenteResponsavelId" não está definido. Clique no botão abaixo para corrigir automaticamente.
-                  </p>
-                  <Button 
-                    onClick={handleFixManagerId}
-                    size="sm"
-                    className="bg-red-600 hover:bg-red-700 text-white"
-                  >
-                    🔧 Corrigir ID do Gerente
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
           <div className="lg:col-span-2 space-y-4 sm:space-y-6">
@@ -1376,20 +1245,12 @@ const TicketDetailPage = () => {
               </CardContent>
             </Card>
 
-            {/* 🔧 CARD DE AÇÕES CORRIGIDO */}
             {availableStatuses.length > 0 && (
               <Card>
                 <CardHeader className="pb-3 sm:pb-4">
                   <CardTitle className="flex items-center text-base sm:text-lg">
                     <Settings className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
                     Ações
-                    {/* 🔧 INDICADOR VISUAL PARA GERENTE */}
-                    {userProfile?.funcao === 'gerente' && ticket.status === 'aguardando_aprovacao' && 
-                     (ticket.gerenteResponsavelId === user.uid || (!ticket.gerenteResponsavelId && userProfile.area === 'producao')) && (
-                      <Badge className="ml-2 bg-orange-500 text-white animate-pulse">
-                        APROVAÇÃO PENDENTE
-                      </Badge>
-                    )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 sm:space-y-4">
