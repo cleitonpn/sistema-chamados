@@ -157,7 +157,7 @@ const TVPanel = () => {
   }
 
   return (
-    <div className="min-h-screen h-screen max-h-screen bg-gray-900 text-white p-4 flex flex-col gap-4">
+    <div className="min-h-screen h-screen max-h-screen bg-green-800 text-white p-4 flex flex-col gap-4">
       <header className="flex justify-between items-center flex-shrink-0">
         <div><h1 className="text-4xl font-bold text-white">📊 Painel Operacional</h1></div>
         <div className="text-right"><div className="text-4xl font-mono text-green-400">{currentTime.toLocaleTimeString('pt-BR')}</div><div className="text-lg text-gray-300">{currentTime.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}</div></div>
