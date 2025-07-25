@@ -65,19 +65,16 @@ const DashboardPage = () => {
   const [expandedProjects, setExpandedProjects] = useState({});
   const [ticketNotifications, setTicketNotifications] = useState({});
   
-  // Estados para ações em lote
   const [selectedTickets, setSelectedTickets] = useState(new Set());
   const [bulkActionMode, setBulkActionMode] = useState(false);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
   const [activeFilter, setActiveFilter] = useState('todos');
 
-  // Função para buscar nome do projeto
   const getProjectName = (projetoId) => {
     return projectNames[projetoId] || 'Projeto não encontrado';
   };
 
-  // Função para filtrar chamados baseado no filtro ativo
   const getFilteredTickets = () => {
     let filteredTickets = [...tickets];
 
@@ -127,15 +124,10 @@ const DashboardPage = () => {
       case 'concluidos':
         filteredTickets = filteredTickets.filter(ticket => ticket.status === 'concluido');
         break;
-      // ✅ ADIÇÃO: Novo case para o filtro de aprovação do gerente
-      case 'aguardando_aprovacao':
-        filteredTickets = filteredTickets.filter(ticket => ticket.status === 'aguardando_aprovacao');
-        break;
       default:
         break;
     }
 
-    // Ordenar por dataUltimaAtualizacao (mais recente primeiro)
     return filteredTickets.sort((a, b) => {
       const dateA = a.dataUltimaAtualizacao?.toDate?.() || a.createdAt?.toDate?.() || new Date(0);
       const dateB = b.dataUltimaAtualizacao?.toDate?.() || b.createdAt?.toDate?.() || new Date(0);
@@ -143,7 +135,6 @@ const DashboardPage = () => {
     });
   };
 
-  // Função para contar chamados por categoria
   const getTicketCounts = () => {
     const counts = {
       todos: tickets.length,
@@ -164,25 +155,13 @@ const DashboardPage = () => {
       }).length,
       devolvido: tickets.filter(t => t.status === 'devolvido' || (t.historico && t.historico.some(h => h.acao === 'devolvido'))).length,
       aguardando_validacao: tickets.filter(t => t.status === 'executado_aguardando_validacao').length,
-      concluidos: tickets.filter(t => t.status === 'concluido').length,
-      // ✅ ADIÇÃO: Nova linha para contar os chamados aguardando aprovação
-      aguardando_aprovacao: tickets.filter(t => t.status === 'aguardando_aprovacao').length
+      concluidos: tickets.filter(t => t.status === 'concluido').length
     };
     return counts;
   };
 
-  // Configuração dos cards de filtro
   const filterCards = [
     { id: 'todos', title: 'Todos', icon: FileText, color: 'bg-blue-50 border-blue-200 hover:bg-blue-100', iconColor: 'text-blue-600', activeColor: 'bg-blue-500 text-white border-blue-500' },
-    // ✅ ADIÇÃO: Card condicional para gerentes
-    ...(userProfile?.funcao === 'gerente' ? [{
-      id: 'aguardando_aprovacao', 
-      title: 'Aguardando Aprovação', 
-      icon: UserCheck, 
-      color: 'bg-orange-50 border-orange-200 hover:bg-orange-100', 
-      iconColor: 'text-orange-600', 
-      activeColor: 'bg-orange-500 text-white border-orange-500' 
-    }] : []),
     { id: 'com_notificacao', title: 'Notificações', icon: BellRing, color: 'bg-red-50 border-red-200 hover:bg-red-100', iconColor: 'text-red-600', activeColor: 'bg-red-500 text-white border-red-500' },
     { id: 'sem_tratativa', title: 'Sem Tratativa', icon: AlertCircle, color: 'bg-orange-50 border-orange-200 hover:bg-orange-100', iconColor: 'text-orange-600', activeColor: 'bg-orange-500 text-white border-orange-500' },
     { id: 'em_tratativa', title: 'Em Tratativa', icon: Clock, color: 'bg-yellow-50 border-yellow-200 hover:bg-yellow-100', iconColor: 'text-yellow-600', activeColor: 'bg-yellow-500 text-white border-yellow-500' },
@@ -477,7 +456,8 @@ const DashboardPage = () => {
             {(userProfile?.funcao === 'produtor' || userProfile?.funcao === 'consultor' || userProfile?.funcao === 'administrador' || 
               (userProfile?.funcao === 'operador' && userProfile?.area === 'operacional') ||
               (userProfile?.funcao === 'operador' && userProfile?.area === 'comunicacao_visual') ||
-              (userProfile?.funcao === 'operador' && userProfile?.area === 'almoxarifado')) && (
+              (userProfile?.funcao === 'operador' && userProfile?.area === 'almoxarifado') ||
+              (userProfile?.funcao === 'operador' && userProfile?.area === 'logistica')) && ( // ✅ ADIÇÃO: Condição para operadores de logística
               <Button 
                 onClick={() => navigate('/novo-chamado')}
                 className="w-full justify-start mb-4"
@@ -636,7 +616,7 @@ const DashboardPage = () => {
                   const isActive = activeFilter === card.id;
                   const count = counts[card.id];
                   
-                  if (!count && card.id === 'aguardando_aprovacao') return null; // Não renderiza o card de gerente se não houver chamados
+                  if (!count && card.id === 'aguardando_aprovacao') return null;
                   
                   return (
                     <Card
@@ -748,7 +728,6 @@ const DashboardPage = () => {
                                   )}
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
-                                      {/* ✅ ADIÇÃO: Ícone de cadeado para chamados confidenciais */}
                                       {ticket.isConfidential && (
                                         <Lock className="h-4 w-4 text-orange-500 flex-shrink-0" title="Chamado Confidencial" />
                                       )}
