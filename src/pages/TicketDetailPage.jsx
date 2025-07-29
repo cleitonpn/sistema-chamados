@@ -37,7 +37,11 @@ import {
   Settings,
   AtSign,
   Lock,
-  UserCheck
+  UserCheck,
+  PlusCircle, // ✅ Ícone adicionado para o histórico
+  Shield,       // ✅ Ícone adicionado para o histórico
+  ThumbsUp,     // ✅ Ícone adicionado para o histórico
+  ThumbsDown,   // ✅ Ícone adicionado para o histórico
 } from 'lucide-react';
 
 const TicketDetailPage = () => {
@@ -80,8 +84,9 @@ const TicketDetailPage = () => {
   const [consultorReason, setConsultorReason] = useState('');
   const [isEscalatingToConsultor, setIsEscalatingToConsultor] = useState(false);
 
-  // Estados para menções de usuários
+  // Estados para menções de usuários e histórico
   const [users, setUsers] = useState([]);
+  const [historyEvents, setHistoryEvents] = useState([]); // ✅ Estado para o novo histórico
   const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
   const [mentionSuggestions, setMentionSuggestions] = useState([]);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -175,6 +180,84 @@ const TicketDetailPage = () => {
 
     loadUsers();
   }, []);
+
+  // ✅ INÍCIO DA ALTERAÇÃO: Lógica para construir o histórico detalhado
+  const getUserNameById = (userId) => {
+      if (!users || !userId) return 'Sistema';
+      const userFound = users.find(u => u.uid === userId || u.id === userId);
+      return userFound?.nome || 'Usuário desconhecido';
+  };
+
+  useEffect(() => {
+    if (ticket && users.length > 0) {
+        const events = [];
+
+        // 1. Criação
+        if (ticket.criadoEm) {
+            events.push({
+                date: ticket.criadoEm,
+                description: 'Chamado criado por',
+                userName: ticket.criadoPorNome || getUserNameById(ticket.criadoPor),
+                Icon: PlusCircle,
+                color: 'text-blue-500'
+            });
+        }
+
+        // 2. Escalação para Gerência
+        if (ticket.escaladoEm && ticket.motivoEscalonamentoGerencial) {
+             events.push({
+                date: ticket.escaladoEm,
+                description: 'Escalado para gerência por',
+                userName: getUserNameById(ticket.escaladoPor),
+                Icon: Shield,
+                color: 'text-purple-500'
+            });
+        }
+
+        // 3. Aprovação
+        if (ticket.aprovadoEm) {
+            events.push({
+                date: ticket.aprovadoEm,
+                description: 'Aprovado por',
+                userName: getUserNameById(ticket.aprovadoPor),
+                Icon: ThumbsUp,
+                color: 'text-green-500'
+            });
+        }
+
+        // 4. Rejeição / Devolução
+        if (ticket.rejeitadoEm) {
+            events.push({
+                date: ticket.rejeitadoEm,
+                description: 'Rejeitado / Devolvido por',
+                userName: getUserNameById(ticket.rejeitadoPor),
+                Icon: ThumbsDown,
+                color: 'text-red-500'
+            });
+        }
+
+        // 5. Conclusão
+        if (ticket.concluidoEm) {
+            events.push({
+                date: ticket.concluidoEm,
+                description: 'Concluído por',
+                userName: getUserNameById(ticket.concluidoPor),
+                Icon: CheckCircle,
+                color: 'text-green-600'
+            });
+        }
+
+        // Ordena os eventos por data
+        const sortedEvents = events.sort((a, b) => {
+            const dateA = a.date.toDate ? a.date.toDate() : new Date(a.date);
+            const dateB = b.date.toDate ? b.date.toDate() : new Date(b.date);
+            return dateA - dateB;
+        });
+
+        setHistoryEvents(sortedEvents);
+    }
+  }, [ticket, users]);
+  // ✅ FIM DA ALTERAÇÃO
 
   const detectMentions = (text, position) => {
     const beforeCursor = text.substring(0, position);
@@ -313,22 +396,13 @@ const TicketDetailPage = () => {
     const userRole = userProfile.funcao;
     const isCreator = ticket.criadoPor === user.uid;
 
-    // ===================================================================================
-    // ✅ INÍCIO DA CORREÇÃO: Lógica unificada para validação pelo criador do chamado.
-    // Este é o "elo perdido". Esta regra agora se aplica a QUALQUER usuário (consultor, 
-    // produtor, operador) que tenha criado o chamado, quando o status for 
-    // 'executado_aguardando_validacao'.
-    // ===================================================================================
     if (isCreator && currentStatus === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION) {
         return [
             { value: TICKET_STATUS.COMPLETED, label: 'Validar e Concluir', description: 'O chamado foi resolvido corretamente.' },
             { value: TICKET_STATUS.SENT_TO_AREA, label: 'Rejeitar / Devolver', description: 'Devolver para a área responsável com um motivo.' }
         ];
     }
-    // ===================================================================================
-    // ✅ FIM DA CORREÇÃO
-    // ===================================================================================
-
+    
     if (userRole === 'administrador') {
       if (currentStatus === TICKET_STATUS.OPEN) {
         return [
@@ -340,8 +414,6 @@ const TicketDetailPage = () => {
           { value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Executado', description: 'Marcar como executado para validação' }
         ];
       }
-      // A validação pelo admin (se ele for o criador) já é coberta pela regra unificada acima.
-      // Se ele não for o criador, ele pode ter outras ações, como forçar conclusão.
       if (currentStatus === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION && !isCreator) {
         return [
           { value: TICKET_STATUS.COMPLETED, label: 'Forçar Conclusão (Admin)', description: 'Finalizar chamado como administrador.' }
@@ -372,7 +444,6 @@ const TicketDetailPage = () => {
           ];
         }
       }
-      // A lógica de validação para o operador que criou o chamado foi removida daqui e agora é coberta pela regra unificada no topo.
     }
 
     if (userRole === 'gerente') {
@@ -390,8 +461,6 @@ const TicketDetailPage = () => {
       return [];
     }
     
-    // A lógica de validação para o consultor que criou o chamado foi removida daqui e agora é coberta pela regra unificada no topo.
-    // A lógica abaixo pode permanecer para uma ação de "finalizar" um chamado já concluído, se necessário.
     if (userRole === 'consultor' && isCreator) {
       if (currentStatus === TICKET_STATUS.COMPLETED) {
         return [
@@ -1249,6 +1318,21 @@ const TicketDetailPage = () => {
                     <p className="text-sm sm:text-base text-gray-900 break-words">{project.local}</p>
                   </div>
                 )}
+                {/* ✅ INÍCIO DA ALTERAÇÃO: Botão para acessar o projeto */}
+                {project && (
+                  <div className="pt-3 mt-3 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => navigate(`/projeto/${project.id}`)}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Acessar Detalhes do Projeto
+                    </Button>
+                  </div>
+                )}
+                {/* ✅ FIM DA ALTERAÇÃO */}
               </CardContent>
             </Card>
 
@@ -1321,38 +1405,47 @@ const TicketDetailPage = () => {
               </Card>
             )}
 
+            {/* ✅ INÍCIO DA ALTERAÇÃO: Card de Histórico reformulado */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Clock className="h-5 w-5 mr-2" />
-                  Histórico
+                  Histórico do Chamado
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-3">
-                    <div className="flex-shrink-0">
-                      <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm text-gray-900">Chamado criado</p>
-                      <p className="text-xs text-gray-500">{formatDate(ticket.criadoEm)}</p>
-                    </div>
-                  </div>
-                  {ticket.atualizadoEm && ticket.atualizadoEm !== ticket.criadoEm && (
-                    <div className="flex items-center space-x-3">
-                      <div className="flex-shrink-0">
-                        <div className="h-2 w-2 bg-green-500 rounded-full"></div>
+                <div className="space-y-4">
+                  {historyEvents.length > 0 ? (
+                    historyEvents.map((event, index) => (
+                      <div key={index} className="flex items-start space-x-3">
+                        <div className="flex flex-col items-center">
+                          <span className={`flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 ${event.color}`}>
+                            <event.Icon className="h-5 w-5" />
+                          </span>
+                          {index < historyEvents.length - 1 && (
+                            <div className="h-6 w-px bg-gray-200" />
+                          )}
+                        </div>
+                        <div className="flex-1 pt-1.5">
+                          <p className="text-sm text-gray-800">
+                            {event.description}{' '}
+                            <span className="font-semibold text-gray-900">{event.userName}</span>
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {formatDate(event.date)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <p className="text-sm text-gray-900">Última atualização</p>
-                        <p className="text-xs text-gray-500">{formatDate(ticket.atualizadoEm)}</p>
-                      </div>
-                    </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-gray-500 text-center py-4">
+                      Nenhum evento de histórico registrado.
+                    </p>
                   )}
                 </div>
               </CardContent>
             </Card>
+            {/* ✅ FIM DA ALTERAÇÃO */}
           </div>
         </div>
       </div>
