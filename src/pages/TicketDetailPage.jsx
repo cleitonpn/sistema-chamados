@@ -191,7 +191,6 @@ const TicketDetailPage = () => {
     if (ticket && users.length > 0) {
         const events = [];
 
-        // 1. Criação
         if (ticket.criadoEm) {
             events.push({
                 date: ticket.criadoEm,
@@ -202,7 +201,6 @@ const TicketDetailPage = () => {
             });
         }
 
-        // 2. Escalação para Gerência
         if (ticket.escaladoEm && ticket.motivoEscalonamentoGerencial) {
              events.push({
                 date: ticket.escaladoEm,
@@ -213,7 +211,6 @@ const TicketDetailPage = () => {
             });
         }
 
-        // 3. Aprovação
         if (ticket.aprovadoEm) {
             events.push({
                 date: ticket.aprovadoEm,
@@ -224,7 +221,6 @@ const TicketDetailPage = () => {
             });
         }
 
-        // 4. Rejeição / Devolução
         if (ticket.rejeitadoEm) {
             events.push({
                 date: ticket.rejeitadoEm,
@@ -235,7 +231,6 @@ const TicketDetailPage = () => {
             });
         }
 
-        // 5. Conclusão
         if (ticket.concluidoEm) {
             events.push({
                 date: ticket.concluidoEm,
@@ -246,7 +241,6 @@ const TicketDetailPage = () => {
             });
         }
 
-        // Ordena os eventos por data
         const sortedEvents = events.sort((a, b) => {
             const dateA = a.date.toDate ? a.date.toDate() : new Date(a.date);
             const dateB = b.date.toDate ? b.date.toDate() : new Date(b.date);
@@ -397,7 +391,6 @@ const TicketDetailPage = () => {
     const isProjectProducer = userProfile.funcao === 'produtor' && project && project.produtorId === user.uid;
     const isConsultantTicketForProducer = ticket.criadoPorFuncao === 'consultor';
 
-    // ✅ INÍCIO DA ALTERAÇÃO: Lógica para desbloquear o fluxo do Produtor com a nova ação
     if (isProjectProducer && isConsultantTicketForProducer && (ticket.status === 'aberto' || ticket.status === 'em_tratativa')) {
         const producerActions = [];
         if (ticket.status === 'aberto') {
@@ -405,12 +398,10 @@ const TicketDetailPage = () => {
         }
         producerActions.push({ value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Executado', description: 'Marcar como executado para validação do consultor' });
         
-        // Adiciona a ação "Enviar para a Área" diretamente no card de Ações
         producerActions.push({ value: 'send_to_area', label: 'Enviar para a Área', description: 'Encaminhar o chamado para a área final' });
 
         return producerActions;
     }
-    // ✅ FIM DA ALTERAÇÃO
 
     if (isCreator && currentStatus === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION) {
         return [
@@ -689,18 +680,26 @@ const TicketDetailPage = () => {
 
     setUpdating(true);
     try {
-      // ✅ INÍCIO DA ALTERAÇÃO: Lógica para tratar a nova ação "send_to_area"
       let updateData = {};
       let systemMessageContent = '';
 
+      // ✅ INÍCIO DA CORREÇÃO: Lógica para tratar a nova ação "send_to_area" e direcionar corretamente
       if (newStatus === 'send_to_area') {
+        if (!ticket.areaDestinoOriginal) {
+            alert('Erro Crítico: A área de destino original não foi encontrada neste chamado. O chamado não pode ser enviado. Por favor, contate o suporte. (O campo areaDestinoOriginal está faltando no ticket).');
+            setUpdating(false);
+            return;
+        }
+
         updateData = {
-          status: TICKET_STATUS.OPEN, // Libera o chamado para a área de destino
+          status: TICKET_STATUS.OPEN, // Reabre o chamado para a área de destino
+          area: ticket.areaDestinoOriginal, // Roteia para a área correta
           atualizadoPor: user.uid,
           updatedAt: new Date(),
         };
-        systemMessageContent = `📲 **Chamado enviado para a área de destino (${ticket.area.replace('_', ' ').toUpperCase()}) pelo produtor.**`;
-      } else {
+        systemMessageContent = `📲 **Chamado enviado pelo produtor para a área de destino: ${ticket.areaDestinoOriginal.replace('_', ' ').toUpperCase()}.**`;
+      
+      } else { // Lógica original para as outras mudanças de status
         updateData = {
           status: newStatus,
           atualizadoPor: user.uid,
@@ -739,7 +738,7 @@ const TicketDetailPage = () => {
             systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(newStatus)}`;
         }
       }
-      // ✅ FIM DA ALTERAÇÃO
+      // ✅ FIM DA CORREÇÃO
 
       await ticketService.updateTicket(ticketId, updateData);
 
@@ -756,7 +755,7 @@ const TicketDetailPage = () => {
         await notificationService.notifyStatusChange(
           ticketId,
           ticket,
-          updateData.status, // Usa o status final que foi salvo
+          updateData.status,
           ticket.status,
           user.uid
         );
@@ -1131,7 +1130,6 @@ const TicketDetailPage = () => {
               </CardContent>
             </Card>
 
-            {/* ✅ INÍCIO DA ALTERAÇÃO: Card de escalação agora é oculto para o Produtor */}
             {userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador') && (
               <Card className="mt-6">
                 <CardHeader>
@@ -1191,10 +1189,7 @@ const TicketDetailPage = () => {
                 </CardContent>
               </Card>
             )}
-            {/* ✅ FIM DA ALTERAÇÃO */}
 
-
-            {/* Escalação para Consultor */}
             {userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador') && project?.consultorId && (userProfile.funcao === 'administrador' || ticket.area === userProfile.area) && (
               <Card className="mt-6">
                 <CardHeader>
@@ -1234,7 +1229,6 @@ const TicketDetailPage = () => {
               </Card>
             )}
 
-            {/* Escalação para Gerência */}
             {userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador') && (userProfile.funcao === 'administrador' || ticket.area === userProfile.area) && (
               <Card className="mt-6">
                 <CardHeader>
@@ -1287,7 +1281,6 @@ const TicketDetailPage = () => {
               </Card>
             )}
 
-            {/* Transferir para Produtor */}
             {userProfile && userProfile.funcao === 'operador' && project?.produtorId && (
               <Card className="mt-6">
                 <CardHeader>
