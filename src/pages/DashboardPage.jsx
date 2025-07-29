@@ -363,7 +363,7 @@ const DashboardPage = () => {
       setTickets(fetchedTickets);
       setProjects(fetchedProjects);
 
-    } catch (error) {
+    } catch (error) => {
       console.error('❌ Erro ao carregar dados do dashboard:', error);
       setProjects([]);
       setTickets([]);
