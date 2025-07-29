@@ -1,15 +1,21 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.uploadImage = exports.onTicketUpdated = void 0;
+// ATUALIZAÇÃO: Adicionado 'onDocumentDeleted' para a nova função
+exports.cleanupDeletedTicket = exports.uploadImage = exports.onTicketUpdated = void 0;
 const admin = require("firebase-admin");
-const firestore_1 = require("firebase-functions/v2/firestore");
-const https_1 = require("firebase-functions/v2/https");
+// ATUALIZAÇÃO: Importado 'onDocumentDeleted'
+const { onDocumentUpdated, onDocumentDeleted } = require("firebase-functions/v2/firestore");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
+
 // Inicializar Firebase Admin
 admin.initializeApp();
+
 // URL da aplicação
 const APP_URL = 'https://nbzeukei.manus.space';
+
 // URL do serviço SendGrid
 const SENDGRID_SERVICE_URL = 'https://p9hwiqcl8p89.manus.space';
+
 // Função auxiliar para buscar dados do projeto
 async function getProjectData(projectId) {
     try {
@@ -27,6 +33,7 @@ async function getProjectData(projectId) {
         return null;
     }
 }
+
 // Função auxiliar para buscar dados do usuário
 async function getUserData(userId) {
     try {
@@ -44,6 +51,7 @@ async function getUserData(userId) {
         return null;
     }
 }
+
 // Função auxiliar para buscar usuários por área
 async function getUsersByArea(area) {
     try {
@@ -65,6 +73,7 @@ async function getUsersByArea(area) {
         return [];
     }
 }
+
 // Função auxiliar para buscar gerentes por função
 async function getManagersByFunction(funcao) {
     try {
@@ -86,6 +95,7 @@ async function getManagersByFunction(funcao) {
         return [];
     }
 }
+
 // Função auxiliar para enviar e-mail via SendGrid
 async function sendEmailViaSendGrid(recipients, subject, eventType, ticketData, projectData, additionalData = {}) {
     try {
@@ -111,8 +121,9 @@ async function sendEmailViaSendGrid(recipients, subject, eventType, ticketData, 
         throw error;
     }
 }
+
 // Função principal para monitorar atualizações de chamados
-exports.onTicketUpdated = (0, firestore_1.onDocumentUpdated)('chamados/{ticketId}', async (event) => {
+exports.onTicketUpdated = onDocumentUpdated('chamados/{ticketId}', async (event) => {
     var _a, _b;
     const beforeSnap = (_a = event.data) === null || _a === void 0 ? void 0 : _a.before;
     const afterSnap = (_b = event.data) === null || _b === void 0 ? void 0 : _b.after;
@@ -167,6 +178,7 @@ exports.onTicketUpdated = (0, firestore_1.onDocumentUpdated)('chamados/{ticketId
         console.error(`❌ Erro ao processar atualização do chamado ${ticketId}:`, error);
     }
 });
+
 // 1. Função para tratar início de tratativa
 async function handleTicketStartedTreatment(ticket, project) {
     console.log('📋 Processando início de tratativa');
@@ -189,6 +201,7 @@ async function handleTicketStartedTreatment(ticket, project) {
         await sendEmailViaSendGrid(recipients, `Chamado em Andamento: ${ticket.titulo}`, 'ticket_started_treatment', ticket, project);
     }
 }
+
 // 2. Função para tratar escalação para área
 async function handleTicketEscalatedToArea(before, after, project) {
     console.log(`🔄 Processando escalação de área: ${before.area} → ${after.area}`);
@@ -223,6 +236,7 @@ async function handleTicketEscalatedToArea(before, after, project) {
         });
     }
 }
+
 // 3. Função para tratar escalação para gerente
 async function handleTicketEscalatedToManager(ticket, project) {
     console.log('👔 Processando escalação para gerente');
@@ -274,6 +288,7 @@ async function handleTicketEscalatedToManager(ticket, project) {
         await sendEmailViaSendGrid(recipients, `Aprovação Necessária: ${ticket.titulo}`, 'ticket_escalated_to_manager', ticket, project, { managerFunction });
     }
 }
+
 // 4. Função para tratar decisão do gerente
 async function handleManagerDecision(before, after, project) {
     console.log(`✅ Processando decisão do gerente: ${after.status}`);
@@ -299,7 +314,9 @@ async function handleManagerDecision(before, after, project) {
             previousStatus: before.status
         });
     }
-} // 5. Função para tratar chamado executado pelo operador
+} 
+
+// 5. Função para tratar chamado executado pelo operador
 async function handleTicketExecuted(ticket, project) {
     console.log('🎯 Processando chamado executado');
     // NOVO FLUXO CONDICIONAL: Verificar se foi criado por operador
@@ -347,6 +364,7 @@ async function handleTicketExecuted(ticket, project) {
         await handleTicketExecutedStandardFlow(ticket, project);
     }
 }
+
 // Função auxiliar para fluxo padrão (produtor/consultor)
 async function handleTicketExecutedStandardFlow(ticket, project) {
     const recipients = [];
@@ -368,15 +386,16 @@ async function handleTicketExecutedStandardFlow(ticket, project) {
         await sendEmailViaSendGrid(recipients, `Chamado Concluído - Aguardando sua Validação: ${ticket.titulo}`, 'ticket_executed', ticket, project);
     }
 }
+
 // Função para upload de imagens
-exports.uploadImage = (0, https_1.onCall)(async (request) => {
+exports.uploadImage = onCall(async (request) => {
     // Verificar autenticação
     if (!request.auth) {
-        throw new https_1.HttpsError("unauthenticated", "Usuário não autenticado");
+        throw new HttpsError("unauthenticated", "Usuário não autenticado");
     }
     const { imageData, fileName, ticketId } = request.data;
     if (!imageData || !fileName || !ticketId) {
-        throw new https_1.HttpsError("invalid-argument", "Dados inválidos");
+        throw new HttpsError("invalid-argument", "Dados inválidos");
     }
     try {
         // Converter base64 para buffer
@@ -402,7 +421,42 @@ exports.uploadImage = (0, https_1.onCall)(async (request) => {
     }
     catch (error) {
         console.error("Erro no upload da imagem:", error);
-        throw new https_1.HttpsError("internal", "Erro interno do servidor");
+        throw new HttpsError("internal", "Erro interno do servidor");
+    }
+});
+
+// =================================================================
+// ||        NOVA FUNÇÃO PARA LIMPEZA DE NOTIFICAÇÕES ÓRFÃS       ||
+// =================================================================
+// Esta função é acionada sempre que um chamado é deletado.
+// Ela busca e deleta todas as notificações associadas a esse chamado.
+exports.cleanupDeletedTicket = onDocumentDeleted('chamados/{ticketId}', async (event) => {
+    const ticketId = event.params.ticketId;
+    const db = admin.firestore();
+
+    console.log(`🗑️ Iniciando limpeza de dados para o chamado deletado: ${ticketId}`);
+
+    // Busca por notificações associadas ao chamado deletado
+    const notificationsRef = db.collection('notifications').where('ticketId', '==', ticketId);
+    const notificationsSnapshot = await notificationsRef.get();
+
+    if (notificationsSnapshot.empty) {
+        console.log('Nenhuma notificação encontrada para este chamado. Limpeza não necessária.');
+        return;
+    }
+
+    // Usa um 'batch' para deletar todas as notificações encontradas de uma só vez
+    const batch = db.batch();
+    notificationsSnapshot.forEach(doc => {
+        console.log(`Agendando para deletar notificação órfã: ${doc.id}`);
+        batch.delete(doc.ref);
+    });
+
+    try {
+        await batch.commit();
+        console.log(`✅ Sucesso! ${notificationsSnapshot.size} notificações órfãs foram limpas.`);
+    } catch (error) {
+        console.error('❌ Erro ao deletar notificações em lote:', error);
     }
 });
 //# sourceMappingURL=index.js.map
