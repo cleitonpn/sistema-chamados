@@ -248,7 +248,7 @@ class DynamicAITemplateService {
       'almoxarifado': '📦',
       'operacional': '⚙️',
       'logistica': '🚚',
-      'locacao': '�',
+      'locacao': '🏢',
       'compras': '🛒',
       'financeiro': '💰'
     };
@@ -551,6 +551,8 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
     setLoading(true);
     setError('');
 
+    let ticketId = null; 
+
     try {
       let finalTicketData = { ...formData };
       
@@ -584,15 +586,19 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
       };
 
       if (selectedOperator) {
-        ticketData.atribuidoA = selectedOperator;
-        ticketData.status = 'em_tratativa';
-        ticketData.atribuidoEm = new Date();
-        ticketData.atribuidoPor = user.uid;
+        Object.assign(ticketData, { atribuidoA: selectedOperator, status: 'em_tratativa', atribuidoEm: new Date(), atribuidoPor: user.uid });
       }
 
-      const ticketId = await ticketService.createTicket(ticketData);
+      ticketId = await ticketService.createTicket(ticketData);
 
-      await notificationService.notifyNewTicket(ticketId, ticketData, user.uid);
+      // ✅ INÍCIO DA CORREÇÃO: Isola a falha da notificação
+      try {
+        await notificationService.notifyNewTicket(ticketId, ticketData, user.uid);
+      } catch (notificationError) {
+        console.error('Falha não-crítica ao enviar notificação:', notificationError);
+      }
+      // ✅ FIM DA CORREÇÃO
+      
       setTimeout(() => updateAITemplates(), 2000);
 
       if (images.length > 0) {
@@ -612,12 +618,13 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         navigate('/dashboard');
       }
     } catch (error) {
+      console.error('Erro ao criar chamado:', error);
       setError('Erro ao criar chamado. Tente novamente.');
     } finally {
       setLoading(false);
     }
   };
-
+  
   const areaOptions = [
     { value: AREAS.LOGISTICS, label: 'Logística' },
     { value: AREAS.WAREHOUSE, label: 'Almoxarifado' },
@@ -815,7 +822,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
                             </span>
                             {template.generatedAt && (
                               <span className="text-xs text-gray-400 ml-2">
-                                🕒 {new Date(template.generatedAt.seconds * 1000).toLocaleDateString()}
+                                � {new Date(template.generatedAt.seconds * 1000).toLocaleDateString()}
                               </span>
                             )}
                           </div>
@@ -895,7 +902,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
                 </SelectContent>
               </Select>
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="tipo">Tipo *</Label>
               <Select 
@@ -920,11 +926,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
                   ))}
                 </SelectContent>
               </Select>
-              {formData.area && availableTypes.length === 0 && (
-                <p className="text-sm text-amber-600">
-                  ⚠️ Nenhum tipo disponível para esta área
-                </p>
-              )}
             </div>
           </div>
 
@@ -949,47 +950,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
             </div>
           </div>
 
-          {formData.area && formData.tipo && (
-            <div className="space-y-2 p-4 border border-gray-200 rounded-lg bg-gray-50">
-              <label htmlFor="operator-select" className="block text-sm font-medium text-gray-700 mb-1">
-                Atribuir a um operador (Opcional):
-              </label>
-              <div className="text-xs text-gray-500 mb-2">
-                Área: {formData.area} | Tipo: {formData.tipo} | Operadores encontrados: {operators.length}
-              </div>
-              {operators.length > 0 ? (
-                <select 
-                  id="operator-select"
-                  value={selectedOperator || ''} 
-                  onChange={(e) => setSelectedOperator(e.target.value)}
-                  className="block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white text-black"
-                >
-                  <option value="">Enviar para a área toda</option>
-                  {operators.map(operator => {
-                    if (!operator || !operator.id || !operator.nome) {
-                      console.error('❌ Operador inválido:', operator);
-                      return null;
-                    }
-                    return (
-                      <option key={operator.id} value={operator.id}>
-                        {operator.nome} - {operator.area?.replace('_', ' ').toUpperCase() || 'SEM_ÁREA'}
-                      </option>
-                    );
-                  })}
-                </select>
-              ) : (
-                <div className="text-sm text-gray-500 p-2 border rounded bg-white">
-                  Carregando operadores da área {formData.area}...
-                </div>
-              )}
-              {selectedOperator && (
-                <p className="text-sm text-blue-600 mt-2">
-                  ℹ️ O chamado será enviado diretamente para o operador selecionado
-                </p>
-              )}
-            </div>
-          )}
-
           <div className="space-y-4 pt-4 border-t">
             <div className="flex items-center space-x-2">
               <Switch
@@ -1002,7 +962,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
                 Este é um pedido extra
               </Label>
             </div>
-
             {formData.isExtra && (
               <div className="space-y-2">
                 <Label htmlFor="motivoExtra">Motivo do Pedido Extra *</Label>
@@ -1017,7 +976,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
                 />
               </div>
             )}
-
             <div className="flex items-center space-x-2 pt-4 border-t">
               <Switch
                 id="isConfidential"
@@ -1030,16 +988,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
                 <span className="text-orange-700">Tornar este chamado confidencial</span>
               </Label>
             </div>
-
-            {formData.isConfidential && (
-              <div className="p-3 bg-orange-50 border-l-4 border-orange-400 text-orange-800 text-sm rounded-r-lg">
-                <p className="font-semibold">Atenção: Chamado Confidencial</p>
-                <p className="mt-1">
-                  Este chamado será visível apenas para você (criador), para a área de destino ({formData.area ? areaOptions.find(a => a.value === formData.area)?.label : 'N/A'}) e para administradores.
-                </p>
-                <p className="font-bold mt-2">Ele não aparecerá para o consultor ou produtor do projeto.</p>
-              </div>
-            )}
           </div>
 
           <div className="space-y-2">
@@ -1062,7 +1010,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
                 <span className="text-sm">Clique para adicionar imagens</span>
               </label>
             </div>
-
             {images.length > 0 && (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
                 {images.map((image) => (
