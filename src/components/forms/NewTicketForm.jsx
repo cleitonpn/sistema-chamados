@@ -286,7 +286,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
   const { user, userProfile } = useAuth();
   const navigate = useNavigate();
   
-  // ✅ ADIÇÃO: Campo `isConfidential` adicionado ao estado inicial do formulário.
   const [formData, setFormData] = useState({
     titulo: '',
     descricao: '',
@@ -295,7 +294,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
     prioridade: 'media',
     isExtra: false,
     motivoExtra: '',
-    isConfidential: false, // <-- NOVO CAMPO
+    isConfidential: false,
     observacoes: ''
   });
   
@@ -638,15 +637,21 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
     try {
       let finalTicketData = { ...formData };
       
+      // ✅ INÍCIO DA ALTERAÇÃO: Salva a área de destino original antes de redirecionar para a produção
       if (userProfile?.funcao === 'consultor' && 
           (formData.tipo === TICKET_TYPES.MAINTENANCE || 
            formData.tipo === TICKET_TYPES.MAINTENANCE_PRODUCTION ||
            formData.tipo === TICKET_TYPES.MAINTENANCE_FURNITURE ||
            formData.tipo === TICKET_TYPES.MAINTENANCE_VISUAL)) {
         
+        // Salva a área que o consultor realmente escolheu.
+        finalTicketData.areaDestinoOriginal = formData.area; 
+        
+        // Redireciona o chamado para a produção para o filtro do produtor.
         finalTicketData.area = AREAS.PRODUCTION;
         finalTicketData.observacoes = `${finalTicketData.observacoes || ''}\n\n[CHAMADO DE CONSULTOR] - Direcionado para o produtor avaliar e tratar ou escalar para área específica.`.trim();
       }
+      // ✅ FIM DA ALTERAÇÃO
 
       // 🤖 Adicionar informação se foi usado template IA
       if (selectedAITemplate) {
@@ -658,8 +663,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
 
       const ticketData = {
         ...finalTicketData,
-        // ✅ ADIÇÃO: Campo `isConfidential` incluído nos dados do chamado a ser criado.
-        isConfidential: formData.isConfidential, // <-- NOVO CAMPO
+        isConfidential: formData.isConfidential,
         projetoId: selectedProject,
         criadoPor: user.uid,
         criadoPorNome: userProfile?.nome || user.email,
@@ -958,7 +962,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
                               {template.prioridade}
                             </Badge>
                             <span className="text-xs text-gray-500 ml-2">
-                              📊 {template.frequency} chamados similares
+                              � {template.frequency} chamados similares
                             </span>
                             {template.generatedAt && (
                               <span className="text-xs text-gray-400 ml-2">
