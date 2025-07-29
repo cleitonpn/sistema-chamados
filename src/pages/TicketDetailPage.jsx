@@ -1,9 +1,9 @@
-// TicketDetailPage com ERRO FIRESTORE CORRIGIDO
-// Correção: Tratamento de campos undefined nas consultas
+// TicketDetailPage VERSÃO SIMPLIFICADA - SEM CONSULTAS PROBLEMÁTICAS
+// Foco: Eliminar erros de undefined e carregar dados de forma segura
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, getDoc, updateDoc, collection, addDoc, query, where, orderBy, onSnapshot, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Badge } from '../components/ui/badge';
 import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { ArrowLeft, MessageCircle, Clock, User, Building, FileText, AlertCircle, Send, Paperclip } from 'lucide-react';
+import { ArrowLeft, MessageCircle, Clock, User, Building, FileText, AlertCircle, Send } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -30,245 +30,125 @@ const TicketDetailPage = () => {
   const [selectedManager, setSelectedManager] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [users, setUsers] = useState([]);
   const [managers, setManagers] = useState([]);
 
-  // ✅ FUNÇÃO CORRIGIDA - Verifica se produtor pode concluir chamado
+  // ✅ FUNÇÃO SIMPLIFICADA - Verifica se produtor pode concluir chamado
   const canProducerComplete = (ticket, user, userProfile) => {
     if (!ticket || !user || !userProfile || userProfile?.funcao !== 'produtor') return false;
     
-    try {
-      // SITUAÇÃO 1: Chamado criado pelo próprio produtor (após áreas executarem)
-      if (ticket.criadoPor === user.uid) {
-        return ticket.status === 'executado';
-      }
-      
-      // SITUAÇÃO 2: Chamado criado por consultor (produtor pode concluir)
-      if (ticket.consultorId === user.uid || ticket.produtorId === user.uid) {
-        return ['aberto', 'em_tratativa', 'executado'].includes(ticket.status);
-      }
-      
-      // SITUAÇÃO 3: Produtor responsável pelo chamado
-      if (ticket.produtorResponsavel === user.uid) {
-        return ['executado', 'em_tratativa'].includes(ticket.status);
-      }
-      
-      return false;
-    } catch (error) {
-      console.error('Erro ao verificar permissões do produtor:', error);
-      return false;
+    // SITUAÇÃO 1: Chamado criado pelo próprio produtor (após áreas executarem)
+    if (ticket.criadoPor === user.uid && ticket.status === 'executado') {
+      return true;
     }
-  };
-
-  // ✅ FUNÇÃO CORRIGIDA - Verifica se usuário pode alterar status
-  const canUserChangeStatus = (ticket, user, userProfile, newStatus) => {
-    if (!ticket || !user || !userProfile || !newStatus) return false;
     
-    try {
-      // Administrador pode tudo
-      if (userProfile.funcao === 'administrador') return true;
-      
-      // PRODUTOR - Lógica específica corrigida
-      if (userProfile.funcao === 'produtor') {
-        // Pode concluir chamados conforme regras de negócio
-        if (newStatus === 'concluido') {
-          return canProducerComplete(ticket, user, userProfile);
-        }
-        
-        // Pode escalar sempre (se for responsável pelo chamado)
-        if (['escalado_area', 'escalado_gerencia'].includes(newStatus)) {
-          return ticket.criadoPor === user.uid || 
-                 ticket.consultorId === user.uid || 
-                 ticket.produtorId === user.uid ||
-                 ticket.produtorResponsavel === user.uid;
-        }
-        
-        // Pode colocar em tratativa
-        if (newStatus === 'em_tratativa') {
-          return ticket.status === 'aberto' && 
-                 (ticket.criadoPor === user.uid || 
-                  ticket.consultorId === user.uid || 
-                  ticket.produtorId === user.uid ||
-                  ticket.produtorResponsavel === user.uid);
-        }
-        
-        return false;
-      }
-      
-      // CONSULTOR - Pode concluir apenas chamados que criou
-      if (userProfile.funcao === 'consultor') {
-        if (newStatus === 'concluido') {
-          return ticket.criadoPor === user.uid && ticket.status === 'executado';
-        }
-        
-        if (['escalado_area', 'escalado_gerencia'].includes(newStatus)) {
-          return ticket.criadoPor === user.uid;
-        }
-        
-        return false;
-      }
-      
-      // OPERADOR - Pode executar e escalar
-      if (userProfile.funcao === 'operador') {
-        if (newStatus === 'executado') {
-          return ticket.area === userProfile.area && 
-                 ['aberto', 'em_tratativa'].includes(ticket.status);
-        }
-        
-        if (['escalado_area', 'escalado_gerencia'].includes(newStatus)) {
-          return ticket.area === userProfile.area;
-        }
-        
-        if (newStatus === 'em_tratativa') {
-          return ticket.area === userProfile.area && ticket.status === 'aberto';
-        }
-        
-        return false;
-      }
-      
-      // GERENTE - Pode aprovar/reprovar quando escalado para ele
-      if (userProfile.funcao === 'gerente') {
-        if (['aprovado', 'reprovado'].includes(newStatus)) {
-          return ticket.status === 'aguardando_aprovacao' && 
-                 ticket.gerenteResponsavelId === user.uid;
-        }
-        
-        return false;
-      }
-      
-      return false;
-    } catch (error) {
-      console.error('Erro ao verificar permissões:', error);
-      return false;
+    // SITUAÇÃO 2: Chamado criado por consultor (produtor pode concluir)
+    if ((ticket.consultorId === user.uid || ticket.produtorId === user.uid) && 
+        ['aberto', 'em_tratativa', 'executado'].includes(ticket.status)) {
+      return true;
     }
+    
+    return false;
   };
 
-  // ✅ FUNÇÃO CORRIGIDA - Retorna status disponíveis para o usuário
+  // ✅ FUNÇÃO SIMPLIFICADA - Status disponíveis para o usuário
   const getAvailableStatuses = (ticket, userProfile) => {
     if (!ticket || !userProfile) return [];
     
-    try {
-      const statuses = [];
-      
-      // PRODUTOR - Status disponíveis corrigidos
-      if (userProfile.funcao === 'produtor') {
-        // Pode concluir se atende às regras
-        if (canProducerComplete(ticket, user, userProfile)) {
-          statuses.push({ value: 'concluido', label: 'Concluído' });
-        }
-        
-        // Pode escalar sempre
-        if (canUserChangeStatus(ticket, user, userProfile, 'escalado_area')) {
-          statuses.push({ value: 'escalado_area', label: 'Escalar para Área' });
-        }
-        
-        if (canUserChangeStatus(ticket, user, userProfile, 'escalado_gerencia')) {
-          statuses.push({ value: 'escalado_gerencia', label: 'Escalar para Gerência' });
-        }
-        
-        // Pode colocar em tratativa
-        if (canUserChangeStatus(ticket, user, userProfile, 'em_tratativa')) {
-          statuses.push({ value: 'em_tratativa', label: 'Em Tratativa' });
-        }
-      }
-      
-      // CONSULTOR - Status disponíveis
-      else if (userProfile.funcao === 'consultor') {
-        if (canUserChangeStatus(ticket, user, userProfile, 'concluido')) {
-          statuses.push({ value: 'concluido', label: 'Concluído' });
-        }
-        
-        if (canUserChangeStatus(ticket, user, userProfile, 'escalado_area')) {
-          statuses.push({ value: 'escalado_area', label: 'Escalar para Área' });
-        }
-        
-        if (canUserChangeStatus(ticket, user, userProfile, 'escalado_gerencia')) {
-          statuses.push({ value: 'escalado_gerencia', label: 'Escalar para Gerência' });
-        }
-      }
-      
-      // OPERADOR - Status disponíveis
-      else if (userProfile.funcao === 'operador') {
-        if (canUserChangeStatus(ticket, user, userProfile, 'executado')) {
-          statuses.push({ value: 'executado', label: 'Executado' });
-        }
-        
-        if (canUserChangeStatus(ticket, user, userProfile, 'em_tratativa')) {
-          statuses.push({ value: 'em_tratativa', label: 'Em Tratativa' });
-        }
-        
-        if (canUserChangeStatus(ticket, user, userProfile, 'escalado_area')) {
-          statuses.push({ value: 'escalado_area', label: 'Escalar para Área' });
-        }
-        
-        if (canUserChangeStatus(ticket, user, userProfile, 'escalado_gerencia')) {
-          statuses.push({ value: 'escalado_gerencia', label: 'Escalar para Gerência' });
-        }
-      }
-      
-      // GERENTE - Status disponíveis
-      else if (userProfile.funcao === 'gerente') {
-        if (canUserChangeStatus(ticket, user, userProfile, 'aprovado')) {
-          statuses.push({ value: 'aprovado', label: 'Aprovado' });
-        }
-        
-        if (canUserChangeStatus(ticket, user, userProfile, 'reprovado')) {
-          statuses.push({ value: 'reprovado', label: 'Reprovado' });
-        }
-      }
-      
-      // ADMINISTRADOR - Todos os status
-      else if (userProfile.funcao === 'administrador') {
-        statuses.push(
-          { value: 'aberto', label: 'Aberto' },
-          { value: 'em_tratativa', label: 'Em Tratativa' },
-          { value: 'executado', label: 'Executado' },
-          { value: 'concluido', label: 'Concluído' },
-          { value: 'escalado_area', label: 'Escalar para Área' },
-          { value: 'escalado_gerencia', label: 'Escalar para Gerência' },
-          { value: 'aguardando_aprovacao', label: 'Aguardando Aprovação' },
-          { value: 'aprovado', label: 'Aprovado' },
-          { value: 'reprovado', label: 'Reprovado' }
-        );
-      }
-      
-      return statuses;
-    } catch (error) {
-      console.error('Erro ao obter status disponíveis:', error);
-      return [];
+    const statuses = [];
+    
+    // ADMINISTRADOR - Todos os status
+    if (userProfile.funcao === 'administrador') {
+      return [
+        { value: 'aberto', label: 'Aberto' },
+        { value: 'em_tratativa', label: 'Em Tratativa' },
+        { value: 'executado', label: 'Executado' },
+        { value: 'concluido', label: 'Concluído' },
+        { value: 'escalado_area', label: 'Escalar para Área' },
+        { value: 'escalado_gerencia', label: 'Escalar para Gerência' }
+      ];
     }
+    
+    // PRODUTOR - Status específicos
+    if (userProfile.funcao === 'produtor') {
+      // Pode concluir se atende às regras
+      if (canProducerComplete(ticket, user, userProfile)) {
+        statuses.push({ value: 'concluido', label: 'Concluído' });
+      }
+      
+      // Pode escalar sempre
+      statuses.push({ value: 'escalado_area', label: 'Escalar para Área' });
+      statuses.push({ value: 'escalado_gerencia', label: 'Escalar para Gerência' });
+      
+      // Pode colocar em tratativa se aberto
+      if (ticket.status === 'aberto') {
+        statuses.push({ value: 'em_tratativa', label: 'Em Tratativa' });
+      }
+    }
+    
+    // CONSULTOR - Status específicos
+    else if (userProfile.funcao === 'consultor') {
+      if (ticket.criadoPor === user.uid && ticket.status === 'executado') {
+        statuses.push({ value: 'concluido', label: 'Concluído' });
+      }
+      
+      if (ticket.criadoPor === user.uid) {
+        statuses.push({ value: 'escalado_area', label: 'Escalar para Área' });
+        statuses.push({ value: 'escalado_gerencia', label: 'Escalar para Gerência' });
+      }
+    }
+    
+    // OPERADOR - Status específicos
+    else if (userProfile.funcao === 'operador') {
+      if (ticket.area === userProfile.area && ['aberto', 'em_tratativa'].includes(ticket.status)) {
+        statuses.push({ value: 'executado', label: 'Executado' });
+      }
+      
+      if (ticket.area === userProfile.area && ticket.status === 'aberto') {
+        statuses.push({ value: 'em_tratativa', label: 'Em Tratativa' });
+      }
+      
+      if (ticket.area === userProfile.area) {
+        statuses.push({ value: 'escalado_area', label: 'Escalar para Área' });
+        statuses.push({ value: 'escalado_gerencia', label: 'Escalar para Gerência' });
+      }
+    }
+    
+    // GERENTE - Status específicos
+    else if (userProfile.funcao === 'gerente') {
+      if (ticket.status === 'aguardando_aprovacao' && ticket.gerenteResponsavelId === user.uid) {
+        statuses.push({ value: 'aprovado', label: 'Aprovado' });
+        statuses.push({ value: 'reprovado', label: 'Reprovado' });
+      }
+    }
+    
+    return statuses;
   };
 
-  // ✅ FUNÇÃO CORRIGIDA - Buscar dados do usuário com tratamento de erro
+  // ✅ FUNÇÃO SIMPLIFICADA - Buscar dados do usuário
   const fetchUserProfile = async () => {
-    if (!user?.uid) {
-      setError('Usuário não autenticado');
-      return;
-    }
+    if (!user?.uid) return;
     
     try {
       console.log('🔍 Buscando perfil do usuário:', user.uid);
       const userDoc = await getDoc(doc(db, 'usuarios', user.uid));
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        console.log('✅ Perfil do usuário carregado:', userData);
+        console.log('✅ Perfil carregado:', userData);
         setUserProfile(userData);
+        return userData;
       } else {
-        console.error('❌ Perfil do usuário não encontrado');
-        setError('Perfil do usuário não encontrado');
+        throw new Error('Perfil do usuário não encontrado');
       }
     } catch (error) {
-      console.error('❌ Erro ao buscar perfil do usuário:', error);
+      console.error('❌ Erro ao buscar perfil:', error);
       setError('Erro ao carregar perfil do usuário');
+      return null;
     }
   };
 
-  // ✅ FUNÇÃO CORRIGIDA - Buscar dados do chamado com tratamento de erro
+  // ✅ FUNÇÃO SIMPLIFICADA - Buscar dados do chamado
   const fetchTicket = async () => {
-    if (!id) {
-      setError('ID do chamado não fornecido');
-      return;
-    }
+    if (!id) return;
     
     try {
       console.log('🔍 Buscando chamado:', id);
@@ -277,78 +157,70 @@ const TicketDetailPage = () => {
         const ticketData = { id: ticketDoc.id, ...ticketDoc.data() };
         console.log('✅ Chamado carregado:', ticketData);
         setTicket(ticketData);
+        return ticketData;
       } else {
-        console.error('❌ Chamado não encontrado');
-        setError('Chamado não encontrado');
+        throw new Error('Chamado não encontrado');
       }
     } catch (error) {
       console.error('❌ Erro ao buscar chamado:', error);
-      setError('Erro ao carregar chamado');
-    }
-  };
-
-  // ✅ FUNÇÃO CORRIGIDA - Buscar mensagens com tratamento de erro
-  const fetchMessages = () => {
-    if (!id) {
-      console.error('❌ ID do chamado não fornecido para buscar mensagens');
-      return;
-    }
-    
-    try {
-      console.log('🔍 Configurando listener de mensagens para chamado:', id);
-      
-      const messagesQuery = query(
-        collection(db, 'mensagens'),
-        where('chamadoId', '==', id),
-        orderBy('criadoEm', 'asc')
-      );
-      
-      const unsubscribe = onSnapshot(
-        messagesQuery, 
-        (snapshot) => {
-          try {
-            const messagesData = snapshot.docs.map(doc => ({
-              id: doc.id,
-              ...doc.data()
-            }));
-            console.log('✅ Mensagens carregadas:', messagesData.length);
-            setMessages(messagesData);
-          } catch (error) {
-            console.error('❌ Erro ao processar mensagens:', error);
-          }
-        },
-        (error) => {
-          console.error('❌ Erro no listener de mensagens:', error);
-          // Não definir como erro crítico, apenas log
-        }
-      );
-      
-      return unsubscribe;
-    } catch (error) {
-      console.error('❌ Erro ao configurar listener de mensagens:', error);
+      setError('Chamado não encontrado');
       return null;
     }
   };
 
-  // ✅ FUNÇÃO CORRIGIDA - Buscar usuários com tratamento de erro
-  const fetchUsers = async () => {
+  // ✅ FUNÇÃO SIMPLIFICADA - Buscar mensagens SEM LISTENER PROBLEMÁTICO
+  const fetchMessages = async () => {
+    if (!id) return;
+    
     try {
-      console.log('🔍 Buscando usuários...');
-      const usersSnapshot = await getDocs(collection(db, 'usuarios'));
-      const usersData = usersSnapshot.docs.map(doc => ({
+      console.log('🔍 Buscando mensagens para chamado:', id);
+      
+      // Buscar todas as mensagens da coleção e filtrar manualmente
+      const messagesSnapshot = await getDocs(collection(db, 'mensagens'));
+      const allMessages = messagesSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      console.log('✅ Usuários carregados:', usersData.length);
-      setUsers(usersData);
       
-      // Filtrar gerentes
-      const managersData = usersData.filter(user => user.funcao === 'gerente');
+      // Filtrar mensagens do chamado específico
+      const ticketMessages = allMessages
+        .filter(msg => msg.chamadoId === id)
+        .sort((a, b) => {
+          const dateA = a.criadoEm?.toDate ? a.criadoEm.toDate() : new Date(0);
+          const dateB = b.criadoEm?.toDate ? b.criadoEm.toDate() : new Date(0);
+          return dateA - dateB;
+        });
+      
+      console.log('✅ Mensagens carregadas:', ticketMessages.length);
+      setMessages(ticketMessages);
+      return ticketMessages;
+    } catch (error) {
+      console.error('❌ Erro ao buscar mensagens:', error);
+      // Não definir como erro crítico
+      setMessages([]);
+      return [];
+    }
+  };
+
+  // ✅ FUNÇÃO SIMPLIFICADA - Buscar gerentes
+  const fetchManagers = async () => {
+    try {
+      console.log('🔍 Buscando gerentes...');
+      const usersSnapshot = await getDocs(collection(db, 'usuarios'));
+      const allUsers = usersSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      // Filtrar apenas gerentes
+      const managersData = allUsers.filter(user => user.funcao === 'gerente');
       console.log('✅ Gerentes encontrados:', managersData.length);
       setManagers(managersData);
+      return managersData;
     } catch (error) {
-      console.error('❌ Erro ao buscar usuários:', error);
-      // Não definir como erro crítico
+      console.error('❌ Erro ao buscar gerentes:', error);
+      setManagers([]);
+      return [];
     }
   };
 
@@ -368,6 +240,9 @@ const TicketDetailPage = () => {
       
       setNewMessage('');
       toast.success('Mensagem enviada');
+      
+      // Recarregar mensagens
+      fetchMessages();
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
       toast.error('Erro ao enviar mensagem');
@@ -377,12 +252,6 @@ const TicketDetailPage = () => {
   // Função para atualizar status do chamado
   const handleStatusChange = async () => {
     if (!newStatus) return;
-    
-    // Verificar permissão antes de alterar
-    if (!canUserChangeStatus(ticket, user, userProfile, newStatus)) {
-      toast.error('Você não tem permissão para alterar para este status');
-      return;
-    }
     
     try {
       const updateData = {
@@ -428,7 +297,8 @@ const TicketDetailPage = () => {
       toast.success('Status atualizado com sucesso');
       
       // Recarregar dados
-      fetchTicket();
+      await fetchTicket();
+      await fetchMessages();
     } catch (error) {
       console.error('Erro ao atualizar status:', error);
       toast.error('Erro ao atualizar status');
@@ -469,9 +339,9 @@ const TicketDetailPage = () => {
     return colorMap[status] || 'bg-gray-100 text-gray-800';
   };
 
-  // ✅ useEffect CORRIGIDO - Carregamento sequencial com tratamento de erro
+  // ✅ useEffect SIMPLIFICADO - Carregamento sequencial
   useEffect(() => {
-    const loadData = async () => {
+    const loadAllData = async () => {
       try {
         setLoading(true);
         setError(null);
@@ -481,40 +351,34 @@ const TicketDetailPage = () => {
           return;
         }
         
-        console.log('🚀 Iniciando carregamento de dados...');
+        if (!id) {
+          setError('ID do chamado não fornecido');
+          return;
+        }
+        
+        console.log('🚀 Iniciando carregamento completo...');
         
         // Carregar dados sequencialmente
-        await fetchUserProfile();
-        await fetchTicket();
-        await fetchUsers();
+        const userData = await fetchUserProfile();
+        if (!userData) return;
         
-        console.log('✅ Dados básicos carregados');
+        const ticketData = await fetchTicket();
+        if (!ticketData) return;
+        
+        await fetchMessages();
+        await fetchManagers();
+        
+        console.log('✅ Todos os dados carregados com sucesso');
+        setLoading(false);
       } catch (error) {
-        console.error('❌ Erro no carregamento inicial:', error);
+        console.error('❌ Erro no carregamento:', error);
         setError('Erro ao carregar dados');
+        setLoading(false);
       }
     };
     
-    loadData();
+    loadAllData();
   }, [user, id]);
-
-  // ✅ useEffect CORRIGIDO - Configurar listener de mensagens após dados carregados
-  useEffect(() => {
-    if (id && ticket && userProfile) {
-      console.log('🔄 Configurando listener de mensagens...');
-      const unsubscribe = fetchMessages();
-      
-      // Definir loading como false após tudo carregado
-      setLoading(false);
-      
-      return () => {
-        if (unsubscribe) {
-          console.log('🧹 Limpando listener de mensagens');
-          unsubscribe();
-        }
-      };
-    }
-  }, [id, ticket, userProfile]);
 
   // Renderização de loading
   if (loading) {
@@ -523,8 +387,12 @@ const TicketDetailPage = () => {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Carregando chamado...</p>
-          {user && <p className="text-sm text-gray-500">Usuário: {user.email}</p>}
-          {id && <p className="text-sm text-gray-500">Chamado: {id}</p>}
+          <div className="mt-2 text-sm text-gray-500 space-y-1">
+            <p>Usuário: {user?.email || 'Não logado'}</p>
+            <p>Chamado: {id || 'ID não fornecido'}</p>
+            <p>Perfil: {userProfile ? '✅ Carregado' : '⏳ Carregando...'}</p>
+            <p>Dados: {ticket ? '✅ Carregado' : '⏳ Carregando...'}</p>
+          </div>
         </div>
       </div>
     );
@@ -800,31 +668,6 @@ const TicketDetailPage = () => {
                   <label className="text-sm font-medium text-gray-500">Local</label>
                   <p className="font-medium">{ticket.projetoLocal || 'Não definido'}</p>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Histórico de Status */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                Histórico
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {messages
-                  .filter(msg => msg.tipo === 'sistema')
-                  .slice(-5)
-                  .map((message) => (
-                    <div key={message.id} className="text-sm">
-                      <p className="font-medium text-gray-900">{message.conteudo}</p>
-                      <p className="text-gray-500 text-xs">
-                        {message.criadoEm?.toDate ? format(message.criadoEm.toDate(), 'dd/MM/yyyy HH:mm', { locale: ptBR }) : 'Data não disponível'}
-                      </p>
-                    </div>
-                  ))}
               </div>
             </CardContent>
           </Card>
