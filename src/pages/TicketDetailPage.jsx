@@ -8,7 +8,7 @@ import { TICKET_CATEGORIES } from '../constants/ticketCategories';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-// Definir constantes de status localmente (já que não existe o arquivo ticketStatus)
+// Definir constantes de status localmente
 const TICKET_STATUS = {
   OPEN: 'aberto',
   IN_TREATMENT: 'em_tratativa',
@@ -62,6 +62,7 @@ const TicketDetailPage = () => {
   const [selectedManager, setSelectedManager] = useState('');
   const [escalationType, setEscalationType] = useState('');
   const [statusHistory, setStatusHistory] = useState([]);
+  const [error, setError] = useState(null);
 
   // Função para verificar se produtor pode concluir
   const canProducerComplete = (ticket, user, userProfile) => {
@@ -99,36 +100,117 @@ const TicketDetailPage = () => {
     return false;
   };
 
+  // Função para verificar se usuário pode acessar o chamado
+  const canUserAccessTicket = (ticket, user, userProfile) => {
+    if (!ticket || !user || !userProfile) return false;
+    
+    console.log('🔍 Verificando acesso:', {
+      ticketId: ticket.id,
+      userId: user.uid,
+      userRole: userProfile.funcao,
+      userArea: userProfile.area
+    });
+
+    // Administrador pode acessar tudo
+    if (userProfile.funcao === 'administrador') {
+      console.log('✅ Acesso permitido: Administrador');
+      return true;
+    }
+
+    // Criador do chamado
+    if (ticket.criadoPor === user.uid) {
+      console.log('✅ Acesso permitido: Criador do chamado');
+      return true;
+    }
+
+    // Consultor ou produtor responsável
+    if (ticket.consultorId === user.uid || ticket.produtorId === user.uid) {
+      console.log('✅ Acesso permitido: Consultor/Produtor responsável');
+      return true;
+    }
+
+    // Operador da área do chamado
+    if (userProfile.funcao === 'operador' && userProfile.area === ticket.area) {
+      console.log('✅ Acesso permitido: Operador da área');
+      return true;
+    }
+
+    // Gerente responsável
+    if (userProfile.funcao === 'gerente' && 
+        (ticket.gerenteResponsavelId === user.uid || userProfile.area === ticket.areaEscalada)) {
+      console.log('✅ Acesso permitido: Gerente responsável');
+      return true;
+    }
+
+    // Produtor da área
+    if (userProfile.funcao === 'produtor') {
+      console.log('✅ Acesso permitido: Produtor');
+      return true;
+    }
+
+    console.log('❌ Acesso negado');
+    return false;
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
         console.log('🔍 Iniciando carregamento de dados...');
-        console.log('👤 Usuário:', user?.email);
+        console.log('👤 Usuário:', user?.email || 'Não autenticado');
         console.log('🎫 ID do chamado:', id);
 
-        if (!user || !id) {
-          console.error('❌ Usuário ou ID do chamado não fornecido');
+        // Verificar se usuário está autenticado
+        if (!user || !user.uid) {
+          console.error('❌ Usuário não autenticado');
+          setError('Usuário não autenticado. Faça login novamente.');
           setLoading(false);
           return;
         }
 
-        // Buscar perfil do usuário
+        // Verificar se ID do chamado foi fornecido
+        if (!id) {
+          console.error('❌ ID do chamado não fornecido');
+          setError('ID do chamado não fornecido.');
+          setLoading(false);
+          return;
+        }
+
+        // Buscar perfil do usuário primeiro
         console.log('📋 Buscando perfil do usuário...');
         const userDoc = await getDoc(doc(db, 'usuarios', user.uid));
-        if (userDoc.exists()) {
-          const profile = userDoc.data();
-          setUserProfile(profile);
-          console.log('✅ Perfil carregado:', profile);
+        if (!userDoc.exists()) {
+          console.error('❌ Perfil do usuário não encontrado');
+          setError('Perfil do usuário não encontrado.');
+          setLoading(false);
+          return;
         }
+
+        const profile = userDoc.data();
+        setUserProfile(profile);
+        console.log('✅ Perfil carregado:', profile);
 
         // Buscar dados do chamado
         console.log('🎫 Buscando dados do chamado...');
         const ticketDoc = await getDoc(doc(db, 'chamados', id));
-        if (ticketDoc.exists()) {
-          const ticketData = { id: ticketDoc.id, ...ticketDoc.data() };
-          setTicket(ticketData);
-          console.log('✅ Chamado carregado:', ticketData);
+        if (!ticketDoc.exists()) {
+          console.error('❌ Chamado não encontrado');
+          setError('Chamado não encontrado.');
+          setLoading(false);
+          return;
         }
+
+        const ticketData = { id: ticketDoc.id, ...ticketDoc.data() };
+        console.log('✅ Chamado carregado:', ticketData);
+
+        // Verificar se usuário pode acessar o chamado
+        if (!canUserAccessTicket(ticketData, user, profile)) {
+          console.error('❌ Usuário não tem permissão para acessar este chamado');
+          setError('Você não tem permissão para visualizar este chamado.');
+          setLoading(false);
+          return;
+        }
+
+        setTicket(ticketData);
 
         // Buscar todos os usuários
         console.log('👥 Buscando usuários...');
@@ -140,34 +222,49 @@ const TicketDetailPage = () => {
         setManagers(managersData);
         console.log('✅ Usuários carregados:', usersData.length);
 
-        // Buscar mensagens
+        // Buscar mensagens - SEM usar where com valores undefined
         console.log('💬 Buscando mensagens...');
-        const messagesSnapshot = await getDocs(
-          query(
-            collection(db, 'mensagens'),
-            where('chamadoId', '==', id),
-            orderBy('timestamp', 'asc')
-          )
-        );
-        const messagesData = messagesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setMessages(messagesData);
-        console.log('✅ Mensagens carregadas:', messagesData.length);
+        try {
+          const messagesSnapshot = await getDocs(collection(db, 'mensagens'));
+          const allMessages = messagesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          // Filtrar mensagens manualmente para evitar erro de undefined
+          const ticketMessages = allMessages.filter(msg => msg.chamadoId === id);
+          // Ordenar manualmente
+          ticketMessages.sort((a, b) => {
+            const dateA = new Date(a.timestamp || 0);
+            const dateB = new Date(b.timestamp || 0);
+            return dateA - dateB;
+          });
+          setMessages(ticketMessages);
+          console.log('✅ Mensagens carregadas:', ticketMessages.length);
+        } catch (msgError) {
+          console.error('⚠️ Erro ao carregar mensagens:', msgError);
+          setMessages([]); // Continuar sem mensagens
+        }
 
-        // Buscar histórico de status
+        // Buscar histórico de status - SEM usar where com valores undefined
         console.log('📊 Buscando histórico...');
-        const historySnapshot = await getDocs(
-          query(
-            collection(db, 'statusHistory'),
-            where('chamadoId', '==', id),
-            orderBy('timestamp', 'asc')
-          )
-        );
-        const historyData = historySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setStatusHistory(historyData);
-        console.log('✅ Histórico carregado:', historyData.length);
+        try {
+          const historySnapshot = await getDocs(collection(db, 'statusHistory'));
+          const allHistory = historySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          // Filtrar histórico manualmente
+          const ticketHistory = allHistory.filter(hist => hist.chamadoId === id);
+          // Ordenar manualmente
+          ticketHistory.sort((a, b) => {
+            const dateA = new Date(a.timestamp || 0);
+            const dateB = new Date(b.timestamp || 0);
+            return dateA - dateB;
+          });
+          setStatusHistory(ticketHistory);
+          console.log('✅ Histórico carregado:', ticketHistory.length);
+        } catch (histError) {
+          console.error('⚠️ Erro ao carregar histórico:', histError);
+          setStatusHistory([]); // Continuar sem histórico
+        }
 
       } catch (error) {
         console.error('❌ Erro ao carregar dados:', error);
+        setError('Erro ao carregar dados do chamado. Tente novamente.');
       } finally {
         setLoading(false);
       }
@@ -232,11 +329,11 @@ const TicketDetailPage = () => {
     return people.sort((a, b) => {
       if (a.tipo === 'Criador') return -1;
       if (b.tipo === 'Criador') return 1;
-      return new Date(a.timestamp) - new Date(b.timestamp);
+      return new Date(a.timestamp || 0) - new Date(b.timestamp || 0);
     });
   };
 
-  // Função para obter status disponíveis - CORRIGIDA COM TODAS AS REGRAS
+  // Função para obter status disponíveis
   const getAvailableStatuses = () => {
     if (!ticket || !userProfile) return [];
 
@@ -315,8 +412,9 @@ const TicketDetailPage = () => {
         });
       }
       
-      // Pode iniciar tratativa
-      if (currentStatus === TICKET_STATUS.OPEN || currentStatus === TICKET_STATUS.SENT_TO_AREA) {
+      // Pode iniciar tratativa se for da área do chamado
+      if ((currentStatus === TICKET_STATUS.OPEN || currentStatus === TICKET_STATUS.SENT_TO_AREA) &&
+          userProfile.area === ticket.area) {
         statuses.push({ 
           value: TICKET_STATUS.IN_TREATMENT, 
           label: 'Tratativa', 
@@ -324,8 +422,8 @@ const TicketDetailPage = () => {
         });
       }
       
-      // Pode marcar como executado
-      if (currentStatus === TICKET_STATUS.IN_TREATMENT) {
+      // Pode marcar como executado se estiver em tratativa
+      if (currentStatus === TICKET_STATUS.IN_TREATMENT && userProfile.area === ticket.area) {
         statuses.push({ 
           value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, 
           label: 'Executado', 
@@ -357,7 +455,7 @@ const TicketDetailPage = () => {
       
       if (currentStatus === TICKET_STATUS.AWAITING_APPROVAL && 
           (ticket.gerenteResponsavelId === user.uid || 
-           users.find(u => u.id === user.uid)?.area === ticket.areaEscalada)) {
+           userProfile.area === ticket.areaEscalada)) {
         statuses.push(
           { value: TICKET_STATUS.APPROVED, label: 'Aprovar', description: 'Aprovar chamado' },
           { value: TICKET_STATUS.REJECTED, label: 'Reprovar', description: 'Reprovar chamado' }
@@ -370,7 +468,7 @@ const TicketDetailPage = () => {
     return [];
   };
 
-  // Função para obter opções de escalação - AJUSTE 6: Incluir "Enviar para Produtor"
+  // Função para obter opções de escalação
   const getEscalationOptions = () => {
     const options = [];
     
@@ -493,6 +591,24 @@ const TicketDetailPage = () => {
             <p>Perfil: {userProfile ? '✅ Carregado' : '⏳ Carregando...'}</p>
             <p>Dados: {ticket ? '✅ Carregado' : '⏳ Carregando...'}</p>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Erro de Acesso</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+          >
+            Voltar ao Dashboard
+          </button>
         </div>
       </div>
     );
@@ -671,6 +787,12 @@ const TicketDetailPage = () => {
                       timestamp: new Date().toISOString()
                     });
                     setNewMessage('');
+                    // Recarregar mensagens
+                    const messagesSnapshot = await getDocs(collection(db, 'mensagens'));
+                    const allMessages = messagesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    const ticketMessages = allMessages.filter(msg => msg.chamadoId === id);
+                    ticketMessages.sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+                    setMessages(ticketMessages);
                   } catch (error) {
                     console.error('Erro ao enviar mensagem:', error);
                   }
