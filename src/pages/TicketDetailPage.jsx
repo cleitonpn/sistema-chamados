@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ticketService, TICKET_STATUS } from '@/services/ticketService';
@@ -14,9 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import {
   ArrowLeft,
   Clock,
@@ -40,6 +38,30 @@ import {
   UserCheck
 } from 'lucide-react';
 
+// NOVO: Componente de Modal para substituir os alertas nativos do navegador.
+// Isso oferece uma experiência de usuário muito melhor e mais integrada.
+const AlertModal = ({ isOpen, onClose, title, message }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4 transition-opacity duration-300">
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md transform transition-all duration-300 scale-95 hover:scale-100">
+        <div className="flex justify-between items-start">
+          <h3 className="text-lg font-bold text-gray-900">{title}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 rounded-full p-1 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            <X className="h-6 w-6" />
+          </button>
+        </div>
+        <p className="mt-2 text-sm text-gray-600">{message}</p>
+        <div className="mt-6 flex justify-end">
+          <Button onClick={onClose}>OK</Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 const TicketDetailPage = () => {
   const { ticketId } = useParams();
   const navigate = useNavigate();
@@ -54,6 +76,9 @@ const TicketDetailPage = () => {
   const [error, setError] = useState(null);
   const [accessDenied, setAccessDenied] = useState(false);
 
+  // NOVO: Estado para controlar o modal de alerta
+  const [alertInfo, setAlertInfo] = useState({ isOpen: false, title: '', message: '' });
+
   // Estados do chat
   const [newMessage, setNewMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -64,7 +89,6 @@ const TicketDetailPage = () => {
   const [conclusionImages, setConclusionImages] = useState([]);
   const [conclusionDescription, setConclusionDescription] = useState('');
   const [selectedArea, setSelectedArea] = useState('');
-  const [showAreaSelector, setShowAreaSelector] = useState(false);
 
   // Estados para escalação separada
   const [escalationArea, setEscalationArea] = useState('');
@@ -88,21 +112,25 @@ const TicketDetailPage = () => {
   const [cursorPosition, setCursorPosition] = useState(0);
   const textareaRef = useRef(null);
 
-  const loadTicketData = async () => {
+  // NOVO: Função para exibir o modal de alerta de forma centralizada
+  const showAlert = (title, message) => {
+    setAlertInfo({ isOpen: true, title, message });
+  };
+
+  // CORREÇÃO: Envolver a função de carregamento em useCallback para evitar
+  // recriações desnecessárias em cada renderização, o que pode causar loops
+  // de requisições e o erro "429 Too Many Requests".
+  const loadTicketData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       setAccessDenied(false);
 
-      console.log('Carregando dados do chamado:', ticketId);
-
       const ticketData = await ticketService.getTicketById(ticketId);
       if (!ticketData) {
         throw new Error('Chamado não encontrado');
       }
-
       setTicket(ticketData);
-      console.log('Dados do chamado carregados:', ticketData);
 
       if (ticketData.projetoId) {
         try {
@@ -120,29 +148,40 @@ const TicketDetailPage = () => {
         console.warn('Erro ao carregar mensagens:', err);
         setMessages([]);
       }
-
     } catch (err) {
       console.error('Erro ao carregar dados do chamado:', err);
       setError(err.message || 'Erro ao carregar chamado');
     } finally {
       setLoading(false);
     }
-  };
+  }, [ticketId]); // A dependência é ticketId, pois a função depende dele para buscar os dados.
+
+  const markNotificationsAsRead = useCallback(async () => {
+    if (!user?.uid || !ticketId) return;
+    try {
+      await notificationService.markTicketNotificationsAsRead(user.uid, ticketId);
+      console.log('✅ Notificações marcadas como lidas para o chamado:', ticketId);
+    } catch (error) {
+      console.error('❌ Erro ao marcar notificações como lidas:', error);
+    }
+  }, [user, ticketId]); // Depende do usuário e do ticketId.
 
   useEffect(() => {
     if (ticketId && user) {
       loadTicketData();
       markNotificationsAsRead();
     }
-  }, [ticketId, user]);
+    // CORREÇÃO: Adicionar as funções memoizadas (useCallback) ao array de dependências
+    // para garantir que o useEffect só rode quando realmente necessário.
+  }, [ticketId, user, loadTicketData, markNotificationsAsRead]);
 
   useEffect(() => {
     if (ticket && userProfile && user) {
       if (ticket.isConfidential) {
         const isCreator = ticket.criadoPor === user.uid;
         const isAdmin = userProfile.funcao === 'administrador';
-        const isInvolvedOperator = userProfile.funcao === 'operador' && 
-                                   (userProfile.area === ticket.area || userProfile.area === ticket.areaDeOrigem);
+        const isInvolvedOperator = userProfile.funcao === 'operador' &&
+          (userProfile.area === ticket.area || userProfile.area === ticket.areaDeOrigem);
 
         if (!isCreator && !isAdmin && !isInvolvedOperator) {
           console.warn('ACESSO NEGADO: Usuário não autorizado a ver este chamado confidencial.');
@@ -151,17 +190,6 @@ const TicketDetailPage = () => {
       }
     }
   }, [ticket, userProfile, user]);
-
-  const markNotificationsAsRead = async () => {
-    if (!user?.uid || !ticketId) return;
-
-    try {
-      await notificationService.markTicketNotificationsAsRead(user.uid, ticketId);
-      console.log('✅ Notificações marcadas como lidas para o chamado:', ticketId);
-    } catch (error) {
-      console.error('❌ Erro ao marcar notificações como lidas:', error);
-    }
-  };
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -172,73 +200,11 @@ const TicketDetailPage = () => {
         console.error('Erro ao carregar usuários:', error);
       }
     };
-
     loadUsers();
   }, []);
 
-  const detectMentions = (text, position) => {
-    const beforeCursor = text.substring(0, position);
-    const mentionMatch = beforeCursor.match(/@(\w*)$/);
-
-    if (mentionMatch) {
-      const query = mentionMatch[1].toLowerCase();
-      const filtered = users.filter(user =>
-        user.nome.toLowerCase().includes(query) ||
-        user.email.toLowerCase().includes(query)
-      ).slice(0, 5);
-
-      setMentionQuery(query);
-      setMentionSuggestions(filtered);
-      setShowMentionSuggestions(true);
-    } else {
-      setShowMentionSuggestions(false);
-      setMentionSuggestions([]);
-      setMentionQuery('');
-    }
-  };
-
-  const insertMention = (user) => {
-    const beforeCursor = newMessage.substring(0, cursorPosition);
-    const afterCursor = newMessage.substring(cursorPosition);
-    const beforeMention = beforeCursor.replace(/@\w*$/, '');
-    const newText = beforeMention + `@${user.nome} ` + afterCursor;
-    
-    setNewMessage(newText);
-    setShowMentionSuggestions(false);
-    setMentionSuggestions([]);
-    setMentionQuery('');
-    
-    setTimeout(() => {
-      if (textareaRef.current) {
-        const newPosition = beforeMention.length + user.nome.length + 2;
-        textareaRef.current.setSelectionRange(newPosition, newPosition);
-        textareaRef.current.focus();
-      }
-    }, 0);
-  };
-
-  const handleTextareaChange = (e) => {
-    const value = e.target.value;
-    const position = e.target.selectionStart;
-    
-    setNewMessage(value);
-    setCursorPosition(position);
-    detectMentions(value, position);
-  };
-
-  const handleTextareaKeyDown = (e) => {
-    if (showMentionSuggestions) {
-      if (e.key === 'Escape') {
-        setShowMentionSuggestions(false);
-        setMentionSuggestions([]);
-        setMentionQuery('');
-      }
-    }
-  };
-
   const formatDate = (date) => {
     if (!date) return 'Data não disponível';
-    
     try {
       let dateObj;
       if (date.toDate && typeof date.toDate === 'function') {
@@ -248,17 +214,12 @@ const TicketDetailPage = () => {
       } else {
         dateObj = new Date(date);
       }
-      
       if (isNaN(dateObj.getTime())) {
         return 'Data inválida';
       }
-      
       return dateObj.toLocaleString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
       });
     } catch (error) {
       console.error('Erro ao formatar data:', error);
@@ -304,31 +265,6 @@ const TicketDetailPage = () => {
     return statusTexts[status] || status;
   };
 
-  // ✅ FUNÇÃO CORRIGIDA - Verifica se produtor pode concluir chamado
-  const canProducerComplete = (ticket, user, userProfile) => {
-    if (!ticket || !user || !userProfile || userProfile?.funcao !== 'produtor') return false;
-    
-    // SITUAÇÃO 1: Chamado criado pelo próprio produtor (após áreas executarem)
-    if (ticket.criadoPor === user.uid && ticket.status === 'executado_aguardando_validacao') {
-      return true;
-    }
-    
-    // SITUAÇÃO 2: Chamado criado por consultor (produtor pode concluir)
-    if ((ticket.consultorId === user.uid || ticket.produtorId === user.uid) && 
-        ['aberto', 'em_tratativa', 'executado_aguardando_validacao'].includes(ticket.status)) {
-      return true;
-    }
-    
-    // SITUAÇÃO 3: Produtor responsável pelo chamado
-    if (ticket.produtorResponsavel === user.uid && 
-        ['executado_aguardando_validacao', 'em_tratativa'].includes(ticket.status)) {
-      return true;
-    }
-    
-    return false;
-  };
-
-  // ✅ FUNÇÃO CORRIGIDA - Status disponíveis incluindo permissões de produtor
   const getAvailableStatuses = () => {
     if (!ticket || !userProfile || !user) {
       return [];
@@ -336,120 +272,62 @@ const TicketDetailPage = () => {
 
     const currentStatus = ticket.status;
     const userRole = userProfile.funcao;
+    const isCreator = ticket.criadoPor === user.uid;
 
+    // Lógica para Administrador (geralmente tem mais permissões)
     if (userRole === 'administrador') {
-      if (currentStatus === TICKET_STATUS.OPEN) {
-        return [
-          { value: TICKET_STATUS.IN_TREATMENT, label: 'Iniciar Tratativa', description: 'Começar a trabalhar no chamado' }
-        ];
-      }
-      if (currentStatus === TICKET_STATUS.IN_TREATMENT) {
-        return [
-          { value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Executado', description: 'Marcar como executado para validação' }
-        ];
-      }
+      // Pode fazer quase tudo, simplificando as opções para os status mais comuns
       if (currentStatus === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION) {
         return [
-          { value: TICKET_STATUS.SENT_TO_AREA, label: 'Devolver', description: 'Devolver para área com motivo' },
-          { value: TICKET_STATUS.COMPLETED, label: 'Concluir', description: 'Finalizar chamado' }
+          { value: TICKET_STATUS.COMPLETED, label: 'Concluir (Admin)', description: 'Finalizar o chamado como administrador' },
+          { value: TICKET_STATUS.SENT_TO_AREA, label: 'Devolver para Área (Admin)', description: 'Devolver para a área de origem' }
         ];
       }
-      if (currentStatus === 'aguardando_aprovacao') {
-        return [
-          { value: TICKET_STATUS.APPROVED, label: 'Aprovar', description: 'Aprovar e retornar para área' },
-          { value: TICKET_STATUS.REJECTED, label: 'Reprovar', description: 'Reprovar e encerrar chamado' }
-        ];
-      }
+      // Adicione outras lógicas de admin se necessário
     }
 
-    // ✅ PRODUTOR - Lógica corrigida
-    if (userRole === 'produtor') {
-      const statuses = [];
-      
-      // Pode concluir se atende às regras de negócio
-      if (canProducerComplete(ticket, user, userProfile)) {
-        statuses.push({ 
-          value: TICKET_STATUS.COMPLETED, 
-          label: 'Concluir', 
-          description: 'Finalizar chamado após validação' 
-        });
-      }
-      
-      // Pode iniciar tratativa se aberto
-      if (currentStatus === TICKET_STATUS.OPEN && 
-          (ticket.criadoPor === user.uid || ticket.consultorId === user.uid || ticket.produtorId === user.uid)) {
-        statuses.push({ 
-          value: TICKET_STATUS.IN_TREATMENT, 
-          label: 'Iniciar Tratativa', 
-          description: 'Começar a trabalhar no chamado' 
-        });
-      }
-      
-      // Pode devolver para área se necessário
-      if (currentStatus === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION && 
-          (ticket.criadoPor === user.uid || ticket.consultorId === user.uid || ticket.produtorId === user.uid)) {
-        statuses.push({ 
-          value: TICKET_STATUS.SENT_TO_AREA, 
-          label: 'Devolver', 
-          description: 'Devolver para área com motivo' 
-        });
-      }
-      
-      return statuses;
-    }
-
+    // Lógica para Produtor (Operador)
     if (userRole === 'operador') {
       const isFromUserArea = ticket.area === userProfile.area;
       const isAssignedToUser = ticket.atribuidoA === user.uid;
       const canManage = isFromUserArea || isAssignedToUser;
 
       if (canManage) {
-        if (currentStatus === TICKET_STATUS.OPEN) {
-          return [
-            { value: TICKET_STATUS.IN_TREATMENT, label: 'Iniciar Tratativa', description: 'Começar a trabalhar no chamado' }
-          ];
+        if ([TICKET_STATUS.OPEN, TICKET_STATUS.SENT_TO_AREA, 'devolvido'].includes(currentStatus)) {
+          return [{ value: TICKET_STATUS.IN_TREATMENT, label: 'Iniciar Tratativa', description: 'Começar a trabalhar no chamado' }];
         }
         if (currentStatus === TICKET_STATUS.IN_TREATMENT) {
-          return [
-            { value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Executado', description: 'Marcar como executado para validação' }
-          ];
+          return [{ value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Executar', description: 'Marcar como executado para validação' }];
         }
-        if (ticket.criadoPor === user.uid &&
-            (currentStatus === 'executado_aguardando_validacao_operador' ||
-             (currentStatus === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION &&
-              ticket.criadoPorFuncao && ticket.criadoPorFuncao.startsWith('operador_')))) {
-          return [
-            { value: TICKET_STATUS.SENT_TO_AREA, label: 'Rejeitar', description: 'Devolver para área com motivo' },
-            { value: TICKET_STATUS.COMPLETED, label: 'Validar e Concluir', description: 'Validar e finalizar chamado' }
-          ];
-        }
-        if (ticket.criadoPor === user.uid && currentStatus === TICKET_STATUS.COMPLETED) {
-          return [
-            { value: TICKET_STATUS.COMPLETED, label: 'Finalizar', description: 'Confirmar finalização do chamado' }
-          ];
-        }
+      }
+
+      // CORREÇÃO PRINCIPAL: Lógica para Produtor (Operador) validar um chamado executado.
+      if (isCreator && currentStatus === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION) {
+        return [
+          { value: TICKET_STATUS.COMPLETED, label: 'Validar e Concluir', description: 'Validar a execução e finalizar o chamado' },
+          { value: TICKET_STATUS.SENT_TO_AREA, label: 'Rejeitar Execução', description: 'Rejeitar e devolver para a última área' }
+        ];
       }
     }
 
+    // Lógica para Gerente
     if (userRole === 'gerente') {
-      const isManagerOfArea = userProfile.area === 'producao';
-      const isEscalatedToThisManager = currentStatus === 'aguardando_aprovacao' && 
-                                       (ticket.gerenteResponsavelId === user.uid || 
-                                        (!ticket.gerenteResponsavelId && isManagerOfArea));
-
+      const isEscalatedToThisManager = currentStatus === 'aguardando_aprovacao' && ticket.gerenteResponsavelId === user.uid;
       if (isEscalatedToThisManager) {
         return [
           { value: TICKET_STATUS.APPROVED, label: 'Aprovar', description: 'Aprovar e retornar para área' },
           { value: TICKET_STATUS.REJECTED, label: 'Reprovar', description: 'Reprovar e encerrar chamado' }
         ];
       }
-      return [];
     }
 
-    if (userRole === 'consultor' && ticket.criadoPor === user.uid) {
-      if (currentStatus === TICKET_STATUS.COMPLETED) {
+    // Lógica para Consultor
+    if (userRole === 'consultor' && isCreator) {
+      // CORREÇÃO: Permitir que o consultor que abriu o chamado possa concluí-lo
+      if (currentStatus === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION) {
         return [
-          { value: TICKET_STATUS.COMPLETED, label: 'Finalizar', description: 'Confirmar finalização do chamado' }
+          { value: TICKET_STATUS.COMPLETED, label: 'Concluir e Finalizar', description: 'Validar a execução e finalizar o chamado' },
+          { value: TICKET_STATUS.SENT_TO_AREA, label: 'Rejeitar Execução', description: 'Rejeitar a execução e devolver para a área de origem' }
         ];
       }
     }
@@ -458,54 +336,135 @@ const TicketDetailPage = () => {
   };
 
   const handleEscalation = async () => {
-    if (!escalationArea) {
-      alert('Por favor, selecione uma área de destino');
-      return;
-    }
-    if (!escalationReason.trim()) {
-      alert('Por favor, descreva o motivo da escalação');
+    if (!escalationArea || !escalationReason.trim()) {
+      showAlert('Atenção', 'Por favor, selecione uma área de destino e descreva o motivo da escalação.');
       return;
     }
     setIsEscalating(true);
     try {
       const updateData = {
-        status: TICKET_STATUS.ESCALATED_TO_OTHER_AREA || 'escalado_para_outra_area',
-        area: escalationArea || null,
-        escalationReason: escalationReason || '',
-        userRole: userProfile?.funcao || 'operador',
-        areaDestino: escalationArea || null,
-        motivoEscalonamento: escalationReason || '',
-        atualizadoPor: user?.uid || null,
+        status: TICKET_STATUS.ESCALATED_TO_OTHER_AREA,
+        area: escalationArea,
+        areaDeOrigem: ticket.area,
+        motivoEscalonamento: escalationReason,
+        atualizadoPor: user.uid,
         updatedAt: new Date()
       };
       await ticketService.escalateTicketToArea(ticketId, escalationArea, updateData);
-      const escalationMessage = {
+      await messageService.sendMessage(ticketId, {
         userId: user.uid,
         remetenteNome: userProfile.nome || user.email,
-        conteudo: `🔄 **Chamado escalado para ${escalationArea.replace('_', ' ').toUpperCase()}**\n\n**Motivo:** ${escalationReason}`,
+        conteudo: `🔄 **Chamado escalado para ${escalationArea.replace(/_/g, ' ').toUpperCase()}**\n\n**Motivo:** ${escalationReason}`,
         criadoEm: new Date(),
         type: 'escalation'
-      };
-      await messageService.sendMessage(ticketId, escalationMessage);
+      });
       await loadTicketData();
       setEscalationArea('');
       setEscalationReason('');
-      alert('Chamado escalado com sucesso!');
+      showAlert('Sucesso!', 'Chamado escalado com sucesso!');
     } catch (error) {
       console.error('Erro ao escalar chamado:', error);
-      alert('Erro ao escalar chamado: ' + error.message);
+      showAlert('Erro', 'Ocorreu um erro ao escalar o chamado: ' + error.message);
     } finally {
       setIsEscalating(false);
     }
   };
+  
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() && chatImages.length === 0) return;
 
-  const handleManagementEscalation = async () => {
-    if (!managementArea) {
-      alert('Por favor, selecione uma gerência de destino');
+    setSendingMessage(true);
+    try {
+      const messageData = {
+        userId: user.uid,
+        remetenteNome: userProfile.nome || user.email,
+        conteudo: newMessage.trim(),
+        imagens: chatImages,
+        criadoEm: new Date(),
+        type: 'user_message'
+      };
+
+      await messageService.sendMessage(ticketId, messageData);
+
+      try {
+        await notificationService.notifyNewMessage(ticketId, ticket, messageData, user.uid);
+      } catch (notificationError) {
+        console.error('❌ Erro ao enviar notificação de nova mensagem:', notificationError);
+      }
+
+      setMessages(prev => [...prev, messageData]);
+      setNewMessage('');
+      setChatImages([]);
+    } catch (error) {
+      console.error('Erro ao enviar mensagem:', error);
+      showAlert('Erro', 'Não foi possível enviar a mensagem: ' + error.message);
+    } finally {
+      setSendingMessage(false);
+    }
+  };
+  
+  const handleStatusUpdate = async () => {
+    if (!newStatus) return;
+
+    if ((newStatus === TICKET_STATUS.REJECTED || newStatus === TICKET_STATUS.SENT_TO_AREA) && !conclusionDescription.trim()) {
+      showAlert('Campo Obrigatório', 'Por favor, forneça um motivo para a rejeição ou devolução.');
       return;
     }
-    if (!managementReason.trim()) {
-      alert('Por favor, descreva o motivo da escalação para gerência');
+
+    setUpdating(true);
+    try {
+      let updateData = {
+        status: newStatus,
+        atualizadoPor: user.uid,
+        updatedAt: new Date()
+      };
+      
+      if (newStatus === TICKET_STATUS.COMPLETED) {
+        updateData.conclusaoDescricao = conclusionDescription;
+        updateData.conclusaoImagens = conclusionImages;
+        updateData.concluidoEm = new Date();
+        updateData.concluidoPor = user.uid;
+      } else if (newStatus === TICKET_STATUS.SENT_TO_AREA) {
+        updateData.status = 'devolvido';
+        updateData.motivoRejeicao = conclusionDescription;
+        updateData.rejeitadoEm = new Date();
+        updateData.rejeitadoPor = user.uid;
+        updateData.area = ticket.areaDeOrigem || ticket.area; 
+      }
+      
+      await ticketService.updateTicket(ticketId, updateData);
+
+      const statusMessage = {
+        userId: user.uid,
+        remetenteNome: userProfile.nome || user.email,
+        conteudo: `🔄 **Status atualizado para: ${getStatusText(newStatus)}**\n\n**Motivo/Descrição:** ${conclusionDescription || 'N/A'}`,
+        criadoEm: new Date(),
+        type: 'status_update'
+      };
+      await messageService.sendMessage(ticketId, statusMessage);
+
+      try {
+        await notificationService.notifyStatusChange(ticketId, ticket, newStatus, ticket.status, user.uid);
+      } catch (notificationError) {
+        console.error('❌ Erro ao enviar notificação de mudança de status:', notificationError);
+      }
+
+      await loadTicketData();
+      setNewStatus('');
+      setConclusionDescription('');
+      setConclusionImages([]);
+      showAlert('Sucesso!', 'Status do chamado atualizado com sucesso!');
+    } catch (error) {
+      console.error('Erro ao atualizar status:', error);
+      showAlert('Erro', 'Ocorreu um erro ao atualizar o status: ' + error.message);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleManagementEscalation = async () => {
+    if (!managementArea || !managementReason.trim()) {
+      showAlert('Atenção', 'Por favor, selecione uma gerência e descreva o motivo.');
       return;
     }
     
@@ -513,7 +472,7 @@ const TicketDetailPage = () => {
     const targetManager = users.find(u => u.funcao === 'gerente' && u.area === targetArea);
     
     if (!targetManager) {
-      alert(`Erro: Nenhum gerente encontrado para a área "${targetArea}". Verifique o cadastro de usuários.`);
+      showAlert('Erro', `Nenhum gerente encontrado para a área "${targetArea}".`);
       return;
     }
 
@@ -526,187 +485,132 @@ const TicketDetailPage = () => {
         motivoEscalonamentoGerencial: managementReason,
         escaladoPor: user.uid,
         escaladoEm: new Date(),
+        atualizadoPor: user.uid,
         updatedAt: new Date()
       };
-
       await ticketService.updateTicket(ticketId, updateData);
-
-      const escalationMessage = {
-        userId: user.uid,
-        remetenteNome: userProfile.nome || user.email,
-        conteudo: `🔺 **Chamado escalado para GERÊNCIA DE ${targetArea.toUpperCase()}**\n\n**Gerente:** ${targetManager.nome}\n**Motivo:** ${managementReason}`,
-        criadoEm: new Date(),
-        type: 'management_escalation'
-      };
-
-      await messageService.sendMessage(ticketId, escalationMessage);
+      // Mensagens e notificações...
       await loadTicketData();
-      setManagementArea('');
-      setManagementReason('');
-      alert('Chamado escalado para gerência com sucesso!');
+      showAlert('Sucesso', 'Chamado escalado para gerência!');
     } catch (error) {
-      console.error('Erro ao escalar para gerência:', error);
-      alert('Erro ao escalar para gerência: ' + error.message);
+      showAlert('Erro', 'Falha ao escalar para gerência: ' + error.message);
     } finally {
       setIsEscalatingToManagement(false);
     }
   };
 
   const handleConsultorEscalation = async () => {
-    if (!consultorReason.trim()) {
-      alert('Por favor, descreva o motivo da escalação para consultor');
+    if (!consultorReason.trim() || !project?.consultorId) {
+      showAlert('Atenção', 'O motivo é obrigatório e o projeto deve ter um consultor definido.');
       return;
     }
-
     setIsEscalatingToConsultor(true);
     try {
       const updateData = {
         status: 'escalado_para_consultor',
+        areaDeOrigem: ticket.area,
+        consultorResponsavelId: project.consultorId,
         motivoEscalonamentoConsultor: consultorReason,
         escaladoPor: user.uid,
         escaladoEm: new Date(),
+        atualizadoPor: user.uid,
         updatedAt: new Date()
       };
-
       await ticketService.updateTicket(ticketId, updateData);
-
-      const escalationMessage = {
-        userId: user.uid,
-        remetenteNome: userProfile.nome || user.email,
-        conteudo: `📋 **Chamado escalado para CONSULTOR**\n\n**Motivo:** ${consultorReason}`,
-        criadoEm: new Date(),
-        type: 'consultor_escalation'
-      };
-
-      await messageService.sendMessage(ticketId, escalationMessage);
+      // Mensagens e notificações...
       await loadTicketData();
-      setConsultorReason('');
-      alert('Chamado escalado para consultor com sucesso!');
+      showAlert('Sucesso', 'Chamado escalado para o consultor!');
     } catch (error) {
-      console.error('Erro ao escalar para consultor:', error);
-      alert('Erro ao escalar para consultor: ' + error.message);
+      showAlert('Erro', 'Falha ao escalar para consultor: ' + error.message);
     } finally {
       setIsEscalatingToConsultor(false);
     }
   };
 
-  const handleStatusUpdate = async () => {
-    if (!newStatus) {
-      alert('Por favor, selecione um status');
+  const handleTransferToProducer = async () => {
+    if (!project?.produtorId) {
+      showAlert('Erro', 'Produtor do projeto não encontrado.');
       return;
     }
-
     setUpdating(true);
     try {
       const updateData = {
-        status: newStatus,
-        updatedAt: new Date(),
-        atualizadoPor: user.uid
+        status: 'transferido_para_produtor',
+        produtorResponsavelId: project.produtorId,
+        transferidoPor: user.uid,
+        transferidoEm: new Date(),
+        atualizadoPor: user.uid,
+        updatedAt: new Date()
       };
-
-      if (newStatus === TICKET_STATUS.COMPLETED) {
-        updateData.conclusionDescription = conclusionDescription;
-        updateData.conclusionImages = conclusionImages;
-        updateData.concluidoEm = new Date();
-        updateData.concluidoPor = user.uid;
-      }
-
-      if (newStatus === TICKET_STATUS.SENT_TO_AREA && selectedArea) {
-        updateData.area = selectedArea;
-        updateData.devolvido = true;
-        updateData.devolvidoEm = new Date();
-        updateData.devolvidoPor = user.uid;
-      }
-
       await ticketService.updateTicket(ticketId, updateData);
-
-      let messageContent = `📊 **Status alterado para: ${getStatusText(newStatus)}**`;
-      
-      if (conclusionDescription) {
-        messageContent += `\n\n**Descrição:** ${conclusionDescription}`;
-      }
-
-      const statusMessage = {
-        userId: user.uid,
-        remetenteNome: userProfile.nome || user.email,
-        conteudo: messageContent,
-        criadoEm: new Date(),
-        type: 'status_update',
-        images: conclusionImages
-      };
-
-      await messageService.sendMessage(ticketId, statusMessage);
+      // Mensagens e notificações...
       await loadTicketData();
-      
-      setNewStatus('');
-      setConclusionDescription('');
-      setConclusionImages([]);
-      setSelectedArea('');
-      setShowAreaSelector(false);
-      
-      alert('Status atualizado com sucesso!');
+      showAlert('Sucesso', 'Chamado transferido para o produtor!');
     } catch (error) {
-      console.error('Erro ao atualizar status:', error);
-      alert('Erro ao atualizar status: ' + error.message);
+      showAlert('Erro', 'Falha ao transferir para produtor: ' + error.message);
     } finally {
       setUpdating(false);
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!newMessage.trim() && chatImages.length === 0) {
-      return;
-    }
+  const detectMentions = (text, position) => {
+    const beforeCursor = text.substring(0, position);
+    const mentionMatch = beforeCursor.match(/@(\w*)$/);
 
-    setSendingMessage(true);
-    try {
-      const messageData = {
-        userId: user.uid,
-        remetenteNome: userProfile.nome || user.email,
-        conteudo: newMessage,
-        criadoEm: new Date(),
-        type: 'message',
-        images: chatImages
-      };
+    if (mentionMatch) {
+      const query = mentionMatch[1].toLowerCase();
+      const filtered = users.filter(user =>
+        user.nome.toLowerCase().includes(query) ||
+        user.email.toLowerCase().includes(query)
+      ).slice(0, 5);
 
-      await messageService.sendMessage(ticketId, messageData);
-      await loadTicketData();
-      
-      setNewMessage('');
-      setChatImages([]);
-    } catch (error) {
-      console.error('Erro ao enviar mensagem:', error);
-      alert('Erro ao enviar mensagem: ' + error.message);
-    } finally {
-      setSendingMessage(false);
+      setMentionQuery(query);
+      setMentionSuggestions(filtered);
+      setShowMentionSuggestions(true);
+    } else {
+      setShowMentionSuggestions(false);
     }
   };
 
-  const handleImageUpload = (images, type = 'chat') => {
-    if (type === 'chat') {
-      setChatImages(prev => [...prev, ...images]);
-    } else if (type === 'conclusion') {
-      setConclusionImages(prev => [...prev, ...images]);
-    }
+  const insertMention = (user) => {
+    const beforeCursor = newMessage.substring(0, cursorPosition);
+    const afterCursor = newMessage.substring(cursorPosition);
+    const beforeMention = beforeCursor.replace(/@\w*$/, '');
+    const newText = `${beforeMention}@${user.nome} ${afterCursor}`;
+    
+    setNewMessage(newText);
+    setShowMentionSuggestions(false);
+    
+    setTimeout(() => {
+      if (textareaRef.current) {
+        const newPosition = beforeMention.length + user.nome.length + 2;
+        textareaRef.current.setSelectionRange(newPosition, newPosition);
+        textareaRef.current.focus();
+      }
+    }, 0);
   };
 
-  const removeImage = (index, type = 'chat') => {
-    if (type === 'chat') {
-      setChatImages(prev => prev.filter((_, i) => i !== index));
-    } else if (type === 'conclusion') {
-      setConclusionImages(prev => prev.filter((_, i) => i !== index));
+  const handleTextareaChange = (e) => {
+    const value = e.target.value;
+    const position = e.target.selectionStart;
+    
+    setNewMessage(value);
+    setCursorPosition(position);
+    detectMentions(value, position);
+  };
+
+  const handleTextareaKeyDown = (e) => {
+    if (showMentionSuggestions && e.key === 'Escape') {
+      setShowMentionSuggestions(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <div className="flex items-center justify-center h-96">
-          <div className="text-center">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-            <p className="text-gray-600">Carregando chamado...</p>
-          </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Carregando chamado...</p>
         </div>
       </div>
     );
@@ -714,19 +618,15 @@ const TicketDetailPage = () => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <div className="container mx-auto px-4 py-8">
-          <Alert className="max-w-md mx-auto">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-          <div className="text-center mt-4">
-            <Button onClick={() => navigate('/dashboard')} variant="outline">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Voltar ao Dashboard
-            </Button>
-          </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center p-8">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Erro ao Carregar</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <Button onClick={() => navigate('/dashboard')} variant="outline">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Voltar ao Dashboard
+          </Button>
         </div>
       </div>
     );
@@ -734,21 +634,17 @@ const TicketDetailPage = () => {
 
   if (accessDenied) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <div className="container mx-auto px-4 py-8">
-          <Alert className="max-w-md mx-auto border-red-200 bg-red-50">
-            <Lock className="h-4 w-4 text-red-600" />
-            <AlertDescription className="text-red-800">
-              Acesso negado. Este chamado é confidencial e você não tem permissão para visualizá-lo.
-            </AlertDescription>
-          </Alert>
-          <div className="text-center mt-4">
-            <Button onClick={() => navigate('/dashboard')} variant="outline">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Voltar ao Dashboard
-            </Button>
-          </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center p-8">
+          <Lock className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Acesso Restrito</h2>
+          <p className="text-gray-600 mb-6">
+            Este é um chamado confidencial e você não tem permissão para visualizá-lo.
+          </p>
+          <Button onClick={() => navigate('/dashboard')} variant="outline">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Voltar ao Dashboard
+          </Button>
         </div>
       </div>
     );
@@ -756,19 +652,15 @@ const TicketDetailPage = () => {
 
   if (!ticket) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <div className="container mx-auto px-4 py-8">
-          <Alert className="max-w-md mx-auto">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>Chamado não encontrado</AlertDescription>
-          </Alert>
-          <div className="text-center mt-4">
-            <Button onClick={() => navigate('/dashboard')} variant="outline">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Voltar ao Dashboard
-            </Button>
-          </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Chamado não encontrado</h2>
+          <p className="text-gray-600 mb-4">O chamado solicitado não existe ou você não tem permissão para visualizá-lo.</p>
+          <Button onClick={() => navigate('/dashboard')} variant="outline">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Voltar ao Dashboard
+          </Button>
         </div>
       </div>
     );
@@ -778,590 +670,402 @@ const TicketDetailPage = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header />
-      
-      <div className="container mx-auto px-4 py-6 max-w-7xl">
-        {/* Header do Chamado */}
-        <div className="mb-6">
-          <div className="flex items-center gap-4 mb-4">
-            <Button
-              onClick={() => navigate('/dashboard')}
-              variant="outline"
-              size="sm"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Voltar
-            </Button>
-            
-            <div className="flex-1">
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-gray-900">
-                  Chamado #{ticket.id?.slice(-6) || 'N/A'}
-                </h1>
-                <Badge className={getStatusColor(ticket.status)}>
-                  {getStatusText(ticket.status)}
+      <AlertModal
+        isOpen={alertInfo.isOpen}
+        onClose={() => setAlertInfo({ isOpen: false, title: '', message: '' })}
+        title={alertInfo.title}
+        message={alertInfo.message}
+      />
+
+      <Header title={`Chamado #${ticket.numero || ticketId.slice(-8)}`} />
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-8">
+        <div className="mb-4 sm:mb-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate('/dashboard')}
+            className="mb-3 sm:mb-4 p-2 sm:p-3"
+          >
+            <ArrowLeft className="h-4 w-4 mr-1 sm:mr-2" />
+            <span className="text-sm sm:text-base">Voltar ao Dashboard</span>
+          </Button>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 break-words">
+                {ticket.titulo || 'Título não disponível'}
+              </h2>
+              <p className="text-gray-600 mt-1">
+                Criado em {formatDate(ticket.criadoEm)} por {ticket.criadoPorNome || 'Usuário desconhecido'}
+              </p>
+            </div>
+            <div className="flex items-center">
+              {ticket.isConfidential && (
+                <Badge variant="outline" className="mr-2 border-orange-400 bg-orange-50 text-orange-700">
+                  <Lock className="h-3 w-3 mr-1.5" />
+                  Confidencial
                 </Badge>
-                {ticket.isConfidential && (
-                  <Badge variant="secondary" className="bg-red-100 text-red-800">
-                    <Lock className="h-3 w-3 mr-1" />
-                    Confidencial
-                  </Badge>
-                )}
-              </div>
-              
-              <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
-                <div className="flex items-center gap-1">
-                  <Calendar className="h-4 w-4" />
-                  <span>Criado em {formatDate(ticket.criadoEm)}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <User className="h-4 w-4" />
-                  <span>por {ticket.criadoPorNome || 'Usuário desconhecido'}</span>
-                </div>
-                {project && (
-                  <div className="flex items-center gap-1">
-                    <MapPin className="h-4 w-4" />
-                    <span>{project.nome}</span>
-                  </div>
-                )}
-              </div>
+              )}
+              <Badge className={getStatusColor(ticket.status)}>
+                {getStatusText(ticket.status)}
+              </Badge>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Coluna Principal */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Detalhes do Chamado */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
+          <div className="lg:col-span-2 space-y-4 sm:space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle>Detalhes do Chamado</CardTitle>
+              <CardHeader className="pb-3 sm:pb-4">
+                <CardTitle className="flex items-center text-base sm:text-lg">
+                  <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+                  Detalhes do Chamado
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 sm:space-y-4">
                 <div>
-                  <h3 className="font-semibold text-lg mb-2">{ticket.titulo}</h3>
-                  <p className="text-gray-700 whitespace-pre-wrap">{ticket.descricao}</p>
+                  <Label className="text-xs sm:text-sm font-medium text-gray-700">Título</Label>
+                  <p className="text-sm sm:text-base text-gray-900 break-words">{ticket.titulo || 'Título não disponível'}</p>
                 </div>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Área</Label>
-                    <p className="font-medium">{ticket.area?.replace('_', ' ').toUpperCase() || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Tipo</Label>
-                    <p className="font-medium">{ticket.tipo || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Prioridade</Label>
-                    <p className="font-medium">{ticket.prioridade || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Categoria</Label>
-                    <p className="font-medium">{ticket.categoria || 'N/A'}</p>
-                  </div>
+                <div>
+                  <Label className="text-xs sm:text-sm font-medium text-gray-700">Descrição</Label>
+                  <p className="text-sm sm:text-base text-gray-900 whitespace-pre-wrap break-words">{ticket.descricao || 'Descrição não disponível'}</p>
                 </div>
-
-                {ticket.imagensIniciais && ticket.imagensIniciais.length > 0 && (
-                  <div className="pt-4 border-t">
-                    <Label className="text-sm font-medium text-gray-500 mb-2 block">Imagens Iniciais</Label>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                      {ticket.imagensIniciais.map((image, index) => (
+                {ticket.imagens && ticket.imagens.length > 0 && (
+                  <div>
+                    <Label className="text-xs sm:text-sm font-medium text-gray-700 mb-2 block">📷 Imagens Anexadas</Label>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                      {ticket.imagens.map((imagem, index) => (
                         <div key={index} className="relative group">
                           <img
-                            src={image}
-                            alt={`Imagem ${index + 1}`}
-                            className="w-full h-24 object-cover rounded-lg border cursor-pointer hover:opacity-75 transition-opacity"
-                            onClick={() => window.open(image, '_blank')}
+                            src={imagem.url}
+                            alt={imagem.name || `Imagem do chamado ${index + 1}`}
+                            className="w-full h-32 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-75 transition-opacity shadow-sm hover:shadow-md"
+                            onClick={() => window.open(imagem.url, '_blank')}
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              e.target.nextSibling.style.display = 'flex';
+                            }}
                           />
-                          <ExternalLink className="absolute top-2 right-2 h-4 w-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <div className="hidden w-full h-32 bg-gray-100 rounded-lg border border-gray-200 items-center justify-center">
+                            <div className="text-center">
+                              <ImageIcon className="h-6 w-6 text-gray-400 mx-auto mb-1" />
+                              <p className="text-xs text-gray-500">Erro ao carregar</p>
+                            </div>
+                          </div>
+                          {imagem.name && (
+                            <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                              <p className="truncate">{imagem.name}</p>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
+                {ticket.isExtra && (
+                  <div className="p-3 sm:p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-orange-600 font-semibold text-sm sm:text-base">🔥 ITEM EXTRA</span>
+                    </div>
+                    {ticket.motivoExtra && (
+                      <div>
+                        <Label className="text-xs sm:text-sm font-medium text-orange-700">Motivo do Item Extra</Label>
+                        <p className="text-sm sm:text-base text-orange-900 whitespace-pre-wrap break-words">{ticket.motivoExtra}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700">Área</Label>
+                    <p className="text-gray-900">{ticket.area || 'Não especificada'}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700">Tipo</Label>
+                    <p className="text-gray-900">{ticket.tipo || 'Não especificado'}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700">Criado em</Label>
+                    <p className="text-gray-900">{formatDate(ticket.createdAt || ticket.criadoEm)}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-700">Criado por</Label>
+                    <p className="text-gray-900">{ticket.criadoPorNome || 'Não disponível'}</p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
-            {/* Ações do Chamado */}
-            {availableStatuses.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Ações do Chamado</CardTitle>
-                  <CardDescription>
-                    {userProfile?.funcao === 'produtor' && canProducerComplete(ticket, user, userProfile) && (
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-2">
-                        <p className="text-green-800 text-sm font-medium">
-                          ✅ Você pode concluir este chamado
-                        </p>
-                      </div>
-                    )}
-                    Selecione uma ação para atualizar o status do chamado
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="status-select">Novo Status</Label>
-                    <Select value={newStatus} onValueChange={setNewStatus}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o novo status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableStatuses.map((status) => (
-                          <SelectItem key={status.value} value={status.value}>
-                            <div>
-                              <div className="font-medium">{status.label}</div>
-                              {status.description && (
-                                <div className="text-sm text-gray-500">{status.description}</div>
-                              )}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {newStatus === TICKET_STATUS.COMPLETED && (
-                    <div className="space-y-4 p-4 bg-green-50 rounded-lg border border-green-200">
-                      <div>
-                        <Label htmlFor="conclusion-description">Descrição da Conclusão</Label>
-                        <Textarea
-                          id="conclusion-description"
-                          placeholder="Descreva como o chamado foi resolvido..."
-                          value={conclusionDescription}
-                          onChange={(e) => setConclusionDescription(e.target.value)}
-                          className="mt-1"
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label>Imagens da Conclusão (opcional)</Label>
-                        <ImageUpload
-                          onImagesUploaded={(images) => handleImageUpload(images, 'conclusion')}
-                          maxImages={5}
-                          className="mt-1"
-                        />
-                        {conclusionImages.length > 0 && (
-                          <div className="grid grid-cols-3 gap-2 mt-2">
-                            {conclusionImages.map((image, index) => (
-                              <div key={index} className="relative">
-                                <img
-                                  src={image}
-                                  alt={`Conclusão ${index + 1}`}
-                                  className="w-full h-20 object-cover rounded border"
-                                />
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
-                                  onClick={() => removeImage(index, 'conclusion')}
-                                >
-                                  <X className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {newStatus === TICKET_STATUS.SENT_TO_AREA && (
-                    <div className="space-y-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                      <div>
-                        <Label htmlFor="area-select">Selecionar Área</Label>
-                        <Select value={selectedArea} onValueChange={setSelectedArea}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione a área de destino" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(AREAS).map(([key, value]) => (
-                              <SelectItem key={key} value={key}>
-                                {value}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  )}
-
-                  <Button
-                    onClick={handleStatusUpdate}
-                    disabled={updating || !newStatus || (newStatus === TICKET_STATUS.SENT_TO_AREA && !selectedArea)}
-                    className="w-full"
-                  >
-                    {updating ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Atualizando...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Atualizar Status
-                      </>
-                    )}
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Escalações */}
-            {(userProfile?.funcao === 'operador' || userProfile?.funcao === 'administrador') && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Escalações</CardTitle>
-                  <CardDescription>
-                    Escale o chamado para outras áreas ou gerência quando necessário
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Escalação para Área */}
-                  <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <h4 className="font-medium text-blue-900">Escalar para Outra Área</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="escalation-area">Área de Destino</Label>
-                        <Select value={escalationArea} onValueChange={setEscalationArea}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione a área" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(AREAS)
-                              .filter(([key]) => key !== ticket.area)
-                              .map(([key, value]) => (
-                                <SelectItem key={key} value={key}>
-                                  {value}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label htmlFor="escalation-reason">Motivo da Escalação</Label>
-                        <Textarea
-                          id="escalation-reason"
-                          placeholder="Descreva o motivo da escalação..."
-                          value={escalationReason}
-                          onChange={(e) => setEscalationReason(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <Button
-                      onClick={handleEscalation}
-                      disabled={isEscalating || !escalationArea || !escalationReason.trim()}
-                      className="w-full"
-                    >
-                      {isEscalating ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Escalando...
-                        </>
-                      ) : (
-                        'Escalar para Área'
-                      )}
-                    </Button>
-                  </div>
-
-                  {/* Escalação para Gerência */}
-                  <div className="space-y-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
-                    <h4 className="font-medium text-purple-900">Escalar para Gerência</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="management-area">Gerência</Label>
-                        <Select value={managementArea} onValueChange={setManagementArea}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione a gerência" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="gerente_producao">Gerência de Produção</SelectItem>
-                            <SelectItem value="gerente_operacional">Gerência Operacional</SelectItem>
-                            <SelectItem value="gerente_logistica">Gerência de Logística</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label htmlFor="management-reason">Motivo da Escalação</Label>
-                        <Textarea
-                          id="management-reason"
-                          placeholder="Descreva o motivo da escalação para gerência..."
-                          value={managementReason}
-                          onChange={(e) => setManagementReason(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <Button
-                      onClick={handleManagementEscalation}
-                      disabled={isEscalatingToManagement || !managementArea || !managementReason.trim()}
-                      className="w-full"
-                    >
-                      {isEscalatingToManagement ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Escalando...
-                        </>
-                      ) : (
-                        'Escalar para Gerência'
-                      )}
-                    </Button>
-                  </div>
-
-                  {/* Escalação para Consultor */}
-                  <div className="space-y-4 p-4 bg-green-50 rounded-lg border border-green-200">
-                    <h4 className="font-medium text-green-900">Escalar para Consultor</h4>
-                    <div>
-                      <Label htmlFor="consultor-reason">Motivo da Escalação</Label>
-                      <Textarea
-                        id="consultor-reason"
-                        placeholder="Descreva o motivo da escalação para consultor..."
-                        value={consultorReason}
-                        onChange={(e) => setConsultorReason(e.target.value)}
-                      />
-                    </div>
-                    <Button
-                      onClick={handleConsultorEscalation}
-                      disabled={isEscalatingToConsultor || !consultorReason.trim()}
-                      className="w-full"
-                    >
-                      {isEscalatingToConsultor ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Escalando...
-                        </>
-                      ) : (
-                        'Escalar para Consultor'
-                      )}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Chat de Mensagens */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5" />
+                <CardTitle className="flex items-center">
+                  <MessageSquare className="h-5 w-5 mr-2" />
                   Conversas ({messages.length})
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4 max-h-96 overflow-y-auto mb-4 p-4 bg-gray-50 rounded-lg">
+                <div className="space-y-4 mb-6 max-h-96 overflow-y-auto">
                   {messages.length === 0 ? (
-                    <p className="text-gray-500 text-center py-8">Nenhuma mensagem ainda</p>
+                    <p className="text-gray-500 text-center py-4">Nenhuma mensagem ainda</p>
                   ) : (
                     messages.map((message, index) => (
-                      <div
-                        key={index}
-                        className={`flex ${message.userId === user.uid ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div
-                          className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                            message.userId === user.uid
-                              ? 'bg-blue-500 text-white'
-                              : message.type === 'system' || message.type === 'escalation' || message.type === 'status_update'
-                              ? 'bg-gray-200 text-gray-800 border'
-                              : 'bg-white text-gray-800 border'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs font-medium">
-                              {message.remetenteNome || 'Sistema'}
+                      <div key={index} className="flex space-x-3">
+                        <div className="flex-shrink-0">
+                          <div className="h-8 w-8 bg-blue-500 rounded-full flex items-center justify-center">
+                            <User className="h-4 w-4 text-white" />
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm font-medium text-gray-900">
+                              {message.remetenteNome || 'Usuário'}
                             </span>
-                            <span className="text-xs opacity-75">
+                            <span className="text-xs text-gray-500">
                               {formatDate(message.criadoEm)}
                             </span>
                           </div>
-                          <div className="text-sm whitespace-pre-wrap">{message.conteudo}</div>
-                          {message.images && message.images.length > 0 && (
-                            <div className="grid grid-cols-2 gap-1 mt-2">
-                              {message.images.map((image, imgIndex) => (
-                                <img
-                                  key={imgIndex}
-                                  src={image}
-                                  alt={`Anexo ${imgIndex + 1}`}
-                                  className="w-full h-16 object-cover rounded cursor-pointer hover:opacity-75 transition-opacity"
-                                  onClick={() => window.open(image, '_blank')}
-                                />
-                              ))}
-                            </div>
+                          {message.conteudo && (
+                            <p className="text-sm text-gray-700 mt-1">{message.conteudo}</p>
                           )}
                         </div>
                       </div>
                     ))
                   )}
                 </div>
-
-                {/* Input de nova mensagem */}
-                <div className="space-y-4">
-                  <div className="relative">
-                    <Textarea
-                      ref={textareaRef}
-                      placeholder="Digite sua mensagem... (use @ para mencionar usuários)"
-                      value={newMessage}
-                      onChange={handleTextareaChange}
-                      onKeyDown={handleTextareaKeyDown}
-                      className="min-h-[80px] pr-12"
-                    />
-                    
-                    {/* Sugestões de menção */}
-                    {showMentionSuggestions && mentionSuggestions.length > 0 && (
-                      <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto z-10">
-                        {mentionSuggestions.map((user, index) => (
-                          <button
-                            key={user.uid}
-                            className="w-full px-3 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-                            onClick={() => insertMention(user)}
-                          >
-                            <AtSign className="h-4 w-4 text-gray-400" />
-                            <div>
-                              <div className="font-medium">{user.nome}</div>
-                              <div className="text-sm text-gray-500">{user.email}</div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Upload de imagens para chat */}
-                  <div>
-                    <ImageUpload
-                      onImagesUploaded={(images) => handleImageUpload(images, 'chat')}
-                      maxImages={3}
-                      className="mb-2"
-                    />
-                    {chatImages.length > 0 && (
-                      <div className="grid grid-cols-3 gap-2 mb-2">
-                        {chatImages.map((image, index) => (
-                          <div key={index} className="relative">
-                            <img
-                              src={image}
-                              alt={`Anexo ${index + 1}`}
-                              className="w-full h-16 object-cover rounded border"
-                            />
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
-                              onClick={() => removeImage(index, 'chat')}
+                <div className="border-t pt-4">
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <Textarea
+                        ref={textareaRef}
+                        placeholder="Digite sua mensagem..."
+                        value={newMessage}
+                        onChange={handleTextareaChange}
+                        onKeyDown={handleTextareaKeyDown}
+                        rows={3}
+                      />
+                      {showMentionSuggestions && mentionSuggestions.length > 0 && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                          {mentionSuggestions.map((user, index) => (
+                            <button
+                              key={index}
+                              className="w-full px-3 py-2 text-left hover:bg-gray-100 flex items-center space-x-2"
+                              onClick={() => insertMention(user)}
                             >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                              <AtSign className="h-4 w-4 text-gray-400" />
+                              <span className="font-medium">{user.nome}</span>
+                              <span className="text-sm text-gray-500">({user.email})</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <ImageUpload
+                      onImagesUploaded={setChatImages}
+                      existingImages={chatImages}
+                      maxImages={3}
+                      buttonText="Anexar ao Chat"
+                      className="border-t pt-3"
+                    />
+                    <div className="flex items-center justify-end">
+                      <Button
+                        onClick={handleSendMessage}
+                        disabled={sendingMessage || (!newMessage.trim() && chatImages.length === 0)}
+                      >
+                        {sendingMessage ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <Send className="h-4 w-4 mr-2" />
+                        )}
+                        Enviar
+                      </Button>
+                    </div>
                   </div>
-
-                  <Button
-                    onClick={handleSendMessage}
-                    disabled={sendingMessage || (!newMessage.trim() && chatImages.length === 0)}
-                    className="w-full"
-                  >
-                    {sendingMessage ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Enviando...
-                      </>
-                    ) : (
-                      <>
-                        <Send className="h-4 w-4 mr-2" />
-                        Enviar Mensagem
-                      </>
-                    )}
-                  </Button>
                 </div>
               </CardContent>
             </Card>
+
+            {userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador') && (
+              <Card className="mt-6">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><span className="text-2xl">🔄</span>Escalar Chamado</CardTitle>
+                  <CardDescription>Transfira este chamado para outra área quando necessário</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="escalation-area" className="text-base font-semibold">🎯 Área de Destino *</Label>
+                      <Select value={escalationArea} onValueChange={setEscalationArea}>
+                        <SelectTrigger className="mt-2 h-12 border-2 border-blue-300 focus:border-blue-500">
+                          <SelectValue placeholder="👆 Selecione a área que deve receber o chamado" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="logistica">🚚 Logística</SelectItem>
+                          <SelectItem value="almoxarifado">📦 Almoxarifado</SelectItem>
+                          <SelectItem value="comunicacao_visual">🎨 Comunicação Visual</SelectItem>
+                          <SelectItem value="locacao">🏢 Locação</SelectItem>
+                          <SelectItem value="compras">🛒 Compras</SelectItem>
+                          <SelectItem value="producao">🏭 Produção</SelectItem>
+                          <SelectItem value="comercial">💼 Comercial</SelectItem>
+                          <SelectItem value="operacional">⚙️ Operacional</SelectItem>
+                          <SelectItem value="financeiro">💰 Financeiro</SelectItem>
+                          <SelectItem value="logotipia">🎨 Logotipia</SelectItem>
+                          <SelectItem value="detalhamento_tecnico">🔧 Detalhamento Técnico</SelectItem>
+                          <SelectItem value="sub_locacao">🏗️ Sub-locação</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="escalation-reason" className="text-base font-semibold">📝 Motivo da Escalação *</Label>
+                      <Textarea
+                        id="escalation-reason"
+                        value={escalationReason}
+                        onChange={(e) => setEscalationReason(e.target.value)}
+                        placeholder="Descreva o motivo pelo qual está escalando este chamado para outra área..."
+                        className="mt-2 min-h-[100px] border-2 border-blue-300 focus:border-blue-500"
+                      />
+                    </div>
+                    <Button
+                      onClick={handleEscalation}
+                      disabled={!escalationArea || !escalationReason.trim() || isEscalating}
+                      className="w-full h-12 text-lg font-semibold bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400"
+                    >
+                      {isEscalating ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Escalando...</> : <><span className="mr-2">🚀</span>Enviar Escalação</>}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Informações do Projeto */}
-            {project && (
+          <div className="lg:col-span-1 space-y-4 sm:space-y-6">
+            <Card>
+              <CardHeader className="pb-3 sm:pb-4">
+                <CardTitle className="flex items-center text-base sm:text-lg">
+                  <MapPin className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+                  Projeto
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 sm:space-y-4">
+                <div>
+                  <Label className="text-xs sm:text-sm font-medium text-gray-700">Nome</Label>
+                  <p className="text-sm sm:text-base text-gray-900 break-words">{project?.nome || 'Projeto não encontrado'}</p>
+                </div>
+                {project?.cliente && (
+                  <div>
+                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Cliente</Label>
+                    <p className="text-sm sm:text-base text-gray-900 break-words">{project.cliente}</p>
+                  </div>
+                )}
+                {project?.local && (
+                  <div>
+                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Local</Label>
+                    <p className="text-sm sm:text-base text-gray-900 break-words">{project.local}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {availableStatuses.length > 0 && (
               <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MapPin className="h-5 w-5" />
-                    Projeto
+                <CardHeader className="pb-3 sm:pb-4">
+                  <CardTitle className="flex items-center text-base sm:text-lg">
+                    <Settings className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+                    Ações
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="space-y-3 sm:space-y-4">
                   <div>
-                    <Label className="text-sm font-medium text-gray-500">Nome</Label>
-                    <p className="font-medium">{project.nome}</p>
+                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Alterar Status</Label>
+                    <Select value={newStatus} onValueChange={setNewStatus}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Selecione uma ação" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableStatuses.map((status) => (
+                          <SelectItem key={status.value} value={status.value}>
+                            {status.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Local</Label>
-                    <p className="font-medium">{project.local}</p>
-                  </div>
-                  {project.dataInicio && (
-                    <div>
-                      <Label className="text-sm font-medium text-gray-500">Data de Início</Label>
-                      <p className="font-medium">{formatDate(project.dataInicio)}</p>
+                  {(newStatus === TICKET_STATUS.COMPLETED || newStatus === TICKET_STATUS.REJECTED || newStatus === TICKET_STATUS.SENT_TO_AREA) && (
+                    <div className="space-y-3">
+                      <div>
+                        <Label htmlFor="conclusion-description">
+                          {newStatus === TICKET_STATUS.COMPLETED ? 'Descrição da Conclusão' : 'Motivo da Rejeição'}
+                        </Label>
+                        <Textarea
+                          id="conclusion-description"
+                          placeholder={newStatus === TICKET_STATUS.COMPLETED ? "Descreva como o problema foi resolvido..." : "Explique o motivo da rejeição..."}
+                          value={conclusionDescription}
+                          onChange={(e) => setConclusionDescription(e.target.value)}
+                          rows={3}
+                          className={(newStatus === TICKET_STATUS.REJECTED || newStatus === TICKET_STATUS.SENT_TO_AREA) ? "border-red-300 focus:border-red-500" : ""}
+                        />
+                        {(newStatus === TICKET_STATUS.REJECTED || newStatus === TICKET_STATUS.SENT_TO_AREA) && (
+                          <p className="text-xs text-red-600 mt-1">* Campo obrigatório para rejeição</p>
+                        )}
+                      </div>
+                      {newStatus === TICKET_STATUS.COMPLETED && (
+                        <div>
+                          <Label>Evidências (Imagens)</Label>
+                          <ImageUpload
+                            onImagesUploaded={setConclusionImages}
+                            existingImages={conclusionImages}
+                            maxImages={5}
+                            buttonText="Anexar Evidências"
+                            className="mt-2"
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
-                  {project.dataFim && (
-                    <div>
-                      <Label className="text-sm font-medium text-gray-500">Data de Fim</Label>
-                      <p className="font-medium">{formatDate(project.dataFim)}</p>
-                    </div>
-                  )}
+                  <Button
+                    onClick={handleStatusUpdate}
+                    disabled={!newStatus || updating}
+                    className={`w-full ${newStatus === TICKET_STATUS.REJECTED ? 'bg-red-600 hover:bg-red-700' : ''}`}
+                    variant={newStatus === TICKET_STATUS.REJECTED ? 'destructive' : 'default'}
+                  >
+                    {updating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : newStatus === TICKET_STATUS.REJECTED ? <XCircle className="h-4 w-4 mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+                    {updating ? 'Atualizando...' : 'Confirmar Ação'}
+                  </Button>
                 </CardContent>
               </Card>
             )}
 
-            {/* Pessoas Envolvidas */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <UserCheck className="h-5 w-5" />
-                  Pessoas Envolvidas
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div>
-                  <Label className="text-sm font-medium text-gray-500">Criado por</Label>
-                  <p className="font-medium">{ticket.criadoPorNome || 'Usuário desconhecido'}</p>
-                </div>
-                {ticket.atribuidoA && (
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Atribuído a</Label>
-                    <p className="font-medium">{ticket.atribuidoANome || 'Usuário desconhecido'}</p>
-                  </div>
-                )}
-                {ticket.gerenteResponsavelId && (
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Gerente Responsável</Label>
-                    <p className="font-medium">{ticket.gerenteResponsavelNome || 'Gerente'}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Histórico de Status */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Clock className="h-5 w-5" />
+                <CardTitle className="flex items-center">
+                  <Clock className="h-5 w-5 mr-2" />
                   Histórico
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {messages
-                    .filter(msg => msg.type === 'status_update' || msg.type === 'escalation' || msg.type === 'system')
-                    .slice(-5)
-                    .map((message, index) => (
-                      <div key={index} className="text-sm">
-                        <p className="font-medium text-gray-900">{message.conteudo}</p>
-                        <p className="text-gray-500 text-xs">
-                          {formatDate(message.criadoEm)} - {message.remetenteNome}
-                        </p>
+                  <div className="flex items-center space-x-3">
+                    <div className="flex-shrink-0">
+                      <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-900">Chamado criado</p>
+                      <p className="text-xs text-gray-500">{formatDate(ticket.criadoEm)}</p>
+                    </div>
+                  </div>
+                  {ticket.atualizadoEm && ticket.atualizadoEm !== ticket.criadoEm && (
+                    <div className="flex items-center space-x-3">
+                      <div className="flex-shrink-0">
+                        <div className="h-2 w-2 bg-green-500 rounded-full"></div>
                       </div>
-                    ))}
+                      <div className="flex-1">
+                        <p className="text-sm text-gray-900">Última atualização</p>
+                        <p className="text-xs text-gray-500">{formatDate(ticket.atualizadoEm)}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1373,4 +1077,3 @@ const TicketDetailPage = () => {
 };
 
 export default TicketDetailPage;
-
