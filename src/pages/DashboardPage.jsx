@@ -5,7 +5,7 @@ import { projectService } from '../services/projectService';
 import { ticketService } from '../services/ticketService';
 import { userService } from '../services/userService';
 import notificationService from '../services/notificationService';
-import { collection, query, where, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -364,49 +364,14 @@ const DashboardPage = () => {
           projectNamesMap[project.id] = project.nome;
         });
         setProjectNames(projectNamesMap);
-
-      // ✅ INÍCIO DA CORREÇÃO: Lógica de busca de chamados para o operador
-      } else if (userProfile?.funcao === 'operador') {
-        console.log('⚙️ Operador: carregando chamados da área', userProfile.area);
         
-        if (!userProfile.area) {
-            console.warn("Área do operador não definida. Aguardando perfil completo para buscar chamados.");
-            setTickets([]);
-            setLoading(false);
-            return;
-        }
-
-        const [allProjects, allUsers] = await Promise.all([
+      } else if (userProfile?.funcao === 'operador') {
+        console.log('⚙️ Operador: carregando chamados da área');
+        const [allProjects, operatorTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
+          ticketService.getTicketsByAreaInvolved(userProfile.area),
           userService.getAllUsers()
         ]);
-        
-        const ticketsByAreaQuery = query(
-            collection(db, 'tickets'), 
-            where('area', '==', userProfile.area)
-        );
-
-        const ticketsByAreaInvolvedQuery = query(
-            collection(db, 'tickets'), 
-            where('areasEnvolvidas', 'array-contains', userProfile.area)
-        );
-
-        const [ticketsByAreaSnapshot, ticketsByAreaInvolvedSnapshot] = await Promise.all([
-            getDocs(ticketsByAreaQuery),
-            getDocs(ticketsByAreaInvolvedQuery)
-        ]);
-
-        const combinedTickets = new Map();
-
-        ticketsByAreaSnapshot.forEach(doc => {
-            combinedTickets.set(doc.id, { id: doc.id, ...doc.data() });
-        });
-
-        ticketsByAreaInvolvedSnapshot.forEach(doc => {
-            combinedTickets.set(doc.id, { id: doc.id, ...doc.data() });
-        });
-        
-        const operatorTickets = Array.from(combinedTickets.values());
         
         setProjects(allProjects);
         setTickets(operatorTickets);
@@ -417,7 +382,6 @@ const DashboardPage = () => {
           projectNamesMap[project.id] = project.nome;
         });
         setProjectNames(projectNamesMap);
-      // ✅ FIM DA CORREÇÃO
         
       } else if (userProfile?.funcao === 'gerente') {
         console.log('👔 Gerente: carregando TODOS os dados');
