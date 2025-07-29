@@ -31,7 +31,7 @@ const DashboardPage = () => {
   const [ticketNotifications, setTicketNotifications] = useState({});
   const [activeFilter, setActiveFilter] = useState('todos');
 
-  // ✅ EFEITO PARA DADOS ESTÁTICOS (CARREGA UMA VEZ)
+  // EFEITO PARA DADOS ESTÁTICOS (CARREGA UMA VEZ)
   useEffect(() => {
     const loadStaticData = async () => {
       try {
@@ -51,7 +51,7 @@ const DashboardPage = () => {
     }
   }, [user]);
 
-  // ✅ EFEITO PARA CHAMADOS EM TEMPO REAL (onSnapshot)
+  // ✅ EFEITO PARA CHAMADOS EM TEMPO REAL COM CORREÇÃO PARA O ERRO
   useEffect(() => {
     if (!user?.uid || !userProfile) {
       setLoading(false);
@@ -68,33 +68,46 @@ const DashboardPage = () => {
       case 'gerente':
         ticketsQuery = query(ticketsRef);
         break;
-      case 'produtor':
-        ticketsQuery = query(ticketsRef, where('projetoId', 'in', projects.filter(p => p.produtorId === user.uid).map(p => p.id)));
+      
+      case 'produtor': {
+        const projectIds = projects.filter(p => p.produtorId === user.uid).map(p => p.id);
+        // CORREÇÃO: Só executa a query se a lista de IDs de projeto não estiver vazia.
+        if (projectIds.length === 0) {
+          setTickets([]);
+          setLoading(false);
+          return; // Sai do efeito para evitar o erro.
+        }
+        ticketsQuery = query(ticketsRef, where('projetoId', 'in', projectIds));
         break;
-      case 'consultor':
-        ticketsQuery = query(ticketsRef, where('projetoId', 'in', projects.filter(p => p.consultorId === user.uid).map(p => p.id)));
+      }
+      
+      case 'consultor': {
+        const projectIds = projects.filter(p => p.consultorId === user.uid).map(p => p.id);
+        // CORREÇÃO: Só executa a query se a lista de IDs de projeto não estiver vazia.
+        if (projectIds.length === 0) {
+          setTickets([]);
+          setLoading(false);
+          return; // Sai do efeito para evitar o erro.
+        }
+        ticketsQuery = query(ticketsRef, where('projetoId', 'in', projectIds));
         break;
+      }
+
       case 'operador':
         ticketsQuery = query(ticketsRef, where('areasEnvolvidas', 'array-contains', userProfile.area));
         break;
+      
       default:
         ticketsQuery = query(ticketsRef, where('criadoPor', '==', user.uid));
         break;
     }
     
-    // Fallback para produtor/consultor caso os projetos ainda não tenham carregado
-    if ((userProfile.funcao === 'produtor' || userProfile.funcao === 'consultor') && projects.length === 0) {
-        // Você pode mostrar um loading ou simplesmente esperar o próximo ciclo de renderização
-        return;
-    }
-
     const unsubscribe = onSnapshot(ticketsQuery, (querySnapshot) => {
       const ticketsData = [];
       querySnapshot.forEach((doc) => {
         ticketsData.push({ id: doc.id, ...doc.data() });
       });
 
-      // Filtro de chamados confidenciais (aplicado no cliente)
       const filterConfidential = (ticket) => {
           if (!ticket.isConfidential) return true;
           const isCreator = ticket.criadoPor === user.uid;
@@ -109,13 +122,12 @@ const DashboardPage = () => {
       setLoading(false);
     });
 
-    // Cleanup
     return () => unsubscribe();
 
-  }, [user, userProfile, projects]); // Depende de projects para re-rodar para produtores/consultores
+  }, [user, userProfile, projects]);
 
 
-  // ✅ EFEITO PARA NOTIFICAÇÕES (SINCRONIZADO COM OS CHAMADOS)
+  // EFEITO PARA NOTIFICAÇÕES (SINCRONIZADO COM OS CHAMADOS)
   useEffect(() => {
     if (user?.uid) {
       const unsubscribe = notificationService.subscribeToNotifications(user.uid, (allNotifications) => {
@@ -132,16 +144,12 @@ const DashboardPage = () => {
   }, [user?.uid]);
   
   // O resto do componente (funções de filtragem, renderização, etc.) permanece o mesmo.
-  // A função de contagem agora funcionará corretamente porque a lista de tickets está sempre atualizada.
-
   const getTicketCounts = () => {
     const existingTicketIds = new Set(tickets.map(t => t.id));
-    let validNotificationsTotal = 0;
     let ticketsWithNotifications = 0;
 
     Object.keys(ticketNotifications).forEach(ticketId => {
       if (existingTicketIds.has(ticketId)) {
-        validNotificationsTotal += ticketNotifications[ticketId];
         ticketsWithNotifications++;
       }
     });
@@ -153,7 +161,7 @@ const DashboardPage = () => {
       em_tratativa: tickets.filter(t => t.status === 'em_tratativa').length,
       em_execucao: tickets.filter(t => t.status === 'em_execucao').length,
       escalado: tickets.filter(t => t.status === 'enviado_para_area' || t.status === 'escalado_para_area').length,
-      escalado_para_mim: tickets.filter(t => (t.status === 'escalado_para_outra_area' && (t.areaEscalada === userProfile?.area || t.usuarioEscalado === user?.uid || t.areasEnvolvidas.includes(userProfile?.area)))).length,
+      escalado_para_mim: tickets.filter(t => (t.status === 'escalado_para_outra_area' && (t.areaEscalada === userProfile?.area || t.usuarioEscalado === user?.uid || (t.areasEnvolvidas && t.areasEnvolvidas.includes(userProfile?.area))))).length,
       aguardando_validacao: tickets.filter(t => t.status === 'executado_aguardando_validacao').length,
       concluidos: tickets.filter(t => t.status === 'concluido').length,
       aguardando_aprovacao: tickets.filter(t => t.status === 'aguardando_aprovacao').length
@@ -170,7 +178,6 @@ const DashboardPage = () => {
       case 'com_notificacao':
         filteredTickets = filteredTickets.filter(ticket => ticketNotifications[ticket.id]);
         break;
-      // ... outros cases de filtro
       case 'sem_tratativa':
         filteredTickets = filteredTickets.filter(ticket => ticket.status === 'aberto');
         break;
@@ -269,16 +276,16 @@ const DashboardPage = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex">
         <div className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0`}>
-            {/* Sidebar content */}
+            {/* O conteúdo da sua Sidebar (barra lateral) vai aqui */}
             <div className="flex items-center justify-between h-16 px-6 border-b">
                 <h1 className="text-xl font-semibold text-gray-900">Gestão de Chamados</h1>
                 <button onClick={() => setMobileMenuOpen(false)} className="lg:hidden"><X className="h-6 w-6" /></button>
             </div>
             <nav className="mt-6 px-3">
-              {/* Navigation items */}
+              {/* Seus itens de navegação (botões, etc) */}
             </nav>
             <div className="absolute bottom-0 w-full p-4 border-t">
-              {/* User menu */}
+              {/* O menu do usuário no final da sidebar */}
             </div>
         </div>
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -326,14 +333,20 @@ const DashboardPage = () => {
                         </div>
                         {activeFilter !== 'todos' && (
                           <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                            {/* Filter active banner */}
+                            {/* Banner de filtro ativo */}
                           </div>
                         )}
                         <div className="space-y-4">
                             {Object.entries(getTicketsByProject()).map(([projectName, projectTickets]) => (
                                 <div key={projectName} className="border rounded-lg">
                                     <button onClick={() => toggleProjectExpansion(projectName)} className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors">
-                                        {/* Project header */}
+                                        <div className="flex items-center space-x-3">
+                                            {expandedProjects[projectName] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                            <div>
+                                                <h3 className="font-medium">{projectName}</h3>
+                                                <p className="text-xs text-gray-500">{projectTickets.length} chamado(s)</p>
+                                            </div>
+                                        </div>
                                     </button>
                                     {expandedProjects[projectName] && (
                                         <div className="border-t bg-gray-50/50 p-4 space-y-3">
@@ -343,6 +356,7 @@ const DashboardPage = () => {
                                                         <div className="flex items-start justify-between">
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="flex items-center gap-2">
+                                                                    {ticket.isConfidential && <Lock className="h-4 w-4 text-orange-500" />}
                                                                     <h3 className="font-medium text-sm md:text-base truncate">{ticket.titulo}</h3>
                                                                     {ticketNotifications[ticket.id] && (
                                                                         <Badge className="bg-red-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
@@ -352,12 +366,12 @@ const DashboardPage = () => {
                                                                 </div>
                                                                 <p className="text-xs md:text-sm text-gray-600 mt-1 line-clamp-2">{ticket.descricao}</p>
                                                             </div>
-                                                            <div className="flex items-center space-x-2 ml-2 flex-shrink-0">
-                                                                {/* Date and eye icon */}
+                                                            <div className="text-right text-xs">
+                                                                {/* Data e ícone */}
                                                             </div>
                                                         </div>
                                                         <div className="flex flex-wrap items-center gap-2 mt-3">
-                                                            {/* Status and priority badges */}
+                                                            {/* Badges de status e prioridade */}
                                                         </div>
                                                     </CardContent>
                                                 </Card>
@@ -369,7 +383,7 @@ const DashboardPage = () => {
                         </div>
                     </TabsContent>
                     <TabsContent value="projetos">
-                        {/* Projects content */}
+                        {/* Conteúdo da aba Projetos */}
                     </TabsContent>
                 </Tabs>
             </main>
