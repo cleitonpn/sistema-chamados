@@ -683,9 +683,11 @@ const TicketDetailPage = () => {
       let updateData = {};
       let systemMessageContent = '';
 
-      // ✅ INÍCIO DA CORREÇÃO: Lógica para tratar a nova ação "send_to_area" e direcionar corretamente
+      // ✅ INÍCIO DA CORREÇÃO: Lógica de rota para "Enviar para a Área"
       if (newStatus === 'send_to_area') {
-        if (!ticket.areaDestinoOriginal) {
+        const targetArea = ticket.areaDestinoOriginal;
+        
+        if (!targetArea) {
             alert('Erro Crítico: A área de destino original não foi encontrada neste chamado. O chamado não pode ser enviado. Por favor, contate o suporte. (O campo areaDestinoOriginal está faltando no ticket).');
             setUpdating(false);
             return;
@@ -693,11 +695,11 @@ const TicketDetailPage = () => {
 
         updateData = {
           status: TICKET_STATUS.OPEN, // Reabre o chamado para a área de destino
-          area: ticket.areaDestinoOriginal, // Roteia para a área correta
+          area: targetArea, // Roteia para a área correta
           atualizadoPor: user.uid,
           updatedAt: new Date(),
         };
-        systemMessageContent = `📲 **Chamado enviado pelo produtor para a área de destino: ${ticket.areaDestinoOriginal.replace('_', ' ').toUpperCase()}.**`;
+        systemMessageContent = `📲 **Chamado enviado pelo produtor para a área de destino: ${targetArea.replace('_', ' ').toUpperCase()}.**`;
       
       } else { // Lógica original para as outras mudanças de status
         updateData = {
@@ -755,7 +757,7 @@ const TicketDetailPage = () => {
         await notificationService.notifyStatusChange(
           ticketId,
           ticket,
-          updateData.status,
+          updateData.status, // Usa o status final que foi salvo
           ticket.status,
           user.uid
         );
@@ -1189,6 +1191,7 @@ const TicketDetailPage = () => {
                 </CardContent>
               </Card>
             )}
+
 
             {userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador') && project?.consultorId && (userProfile.funcao === 'administrador' || ticket.area === userProfile.area) && (
               <Card className="mt-6">
