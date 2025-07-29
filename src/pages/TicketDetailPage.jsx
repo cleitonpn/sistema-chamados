@@ -4,10 +4,43 @@ import { doc, getDoc, updateDoc, collection, addDoc, query, where, orderBy, onSn
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../config/firebase';
 import { ArrowLeft, Send, Paperclip, Clock, User, Users, AlertTriangle, CheckCircle, XCircle, MessageSquare, Building, UserCheck, Calendar, FileText, Flame } from 'lucide-react';
-import { TICKET_STATUS, TICKET_STATUS_LABELS, TICKET_STATUS_COLORS } from '../constants/ticketStatus';
 import { TICKET_CATEGORIES } from '../constants/ticketCategories';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+
+// Definir constantes de status localmente (já que não existe o arquivo ticketStatus)
+const TICKET_STATUS = {
+  OPEN: 'aberto',
+  IN_TREATMENT: 'em_tratativa',
+  EXECUTED_AWAITING_VALIDATION: 'executado_aguardando_validacao',
+  COMPLETED: 'concluido',
+  AWAITING_APPROVAL: 'aguardando_aprovacao',
+  APPROVED: 'aprovado',
+  REJECTED: 'reprovado',
+  SENT_TO_AREA: 'enviado_para_area'
+};
+
+const TICKET_STATUS_LABELS = {
+  'aberto': 'Aberto',
+  'em_tratativa': 'Em Tratativa',
+  'executado_aguardando_validacao': 'Executado',
+  'concluido': 'Concluído',
+  'aguardando_aprovacao': 'Aguardando Aprovação',
+  'aprovado': 'Aprovado',
+  'reprovado': 'Reprovado',
+  'enviado_para_area': 'Enviado para Área'
+};
+
+const TICKET_STATUS_COLORS = {
+  'aberto': 'bg-blue-100 text-blue-800',
+  'em_tratativa': 'bg-yellow-100 text-yellow-800',
+  'executado_aguardando_validacao': 'bg-purple-100 text-purple-800',
+  'concluido': 'bg-green-100 text-green-800',
+  'aguardando_aprovacao': 'bg-orange-100 text-orange-800',
+  'aprovado': 'bg-green-100 text-green-800',
+  'reprovado': 'bg-red-100 text-red-800',
+  'enviado_para_area': 'bg-indigo-100 text-indigo-800'
+};
 
 const TicketDetailPage = () => {
   const { id } = useParams();
