@@ -394,10 +394,10 @@ const TicketDetailPage = () => {
     const userRole = userProfile.funcao;
     const isCreator = ticket.criadoPor === user.uid;
 
-    // ✅ INÍCIO DA ALTERAÇÃO: Lógica para desbloquear o fluxo do Produtor
     const isProjectProducer = userProfile.funcao === 'produtor' && project && project.produtorId === user.uid;
     const isConsultantTicketForProducer = ticket.criadoPorFuncao === 'consultor';
 
+    // ✅ INÍCIO DA ALTERAÇÃO: Lógica para desbloquear o fluxo do Produtor com a nova ação
     if (isProjectProducer && isConsultantTicketForProducer && (ticket.status === 'aberto' || ticket.status === 'em_tratativa')) {
         const producerActions = [];
         if (ticket.status === 'aberto') {
@@ -405,7 +405,9 @@ const TicketDetailPage = () => {
         }
         producerActions.push({ value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Executado', description: 'Marcar como executado para validação do consultor' });
         
-        // A ação "Enviar para Área" é feita pelo card de Escalação, que será habilitado para o produtor.
+        // Adiciona a ação "Enviar para a Área" diretamente no card de Ações
+        producerActions.push({ value: 'send_to_area', label: 'Enviar para a Área', description: 'Encaminhar o chamado para a área final' });
+
         return producerActions;
     }
     // ✅ FIM DA ALTERAÇÃO
@@ -687,58 +689,64 @@ const TicketDetailPage = () => {
 
     setUpdating(true);
     try {
-      let updateData = {
-        status: newStatus,
-        atualizadoPor: user.uid,
-        updatedAt: new Date()
-      };
+      // ✅ INÍCIO DA ALTERAÇÃO: Lógica para tratar a nova ação "send_to_area"
+      let updateData = {};
+      let systemMessageContent = '';
 
-      if (newStatus === TICKET_STATUS.COMPLETED) {
-        updateData.conclusaoDescricao = conclusionDescription;
-        updateData.conclusaoImagens = conclusionImages;
-        updateData.concluidoEm = new Date();
-        updateData.concluidoPor = user.uid;
-      } else if (newStatus === TICKET_STATUS.REJECTED) {
-        updateData.motivoRejeicao = conclusionDescription;
-        updateData.rejeitadoEm = new Date();
-        updateData.rejeitadoPor = user.uid;
-      } else if (newStatus === TICKET_STATUS.SENT_TO_AREA && ticket.status === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION) {
-        updateData.motivoRejeicao = conclusionDescription;
-        updateData.rejeitadoEm = new Date();
-        updateData.rejeitadoPor = user.uid;
-        updateData.area = ticket.areaDeOrigem || ticket.area;
-      }
+      if (newStatus === 'send_to_area') {
+        updateData = {
+          status: TICKET_STATUS.OPEN, // Libera o chamado para a área de destino
+          atualizadoPor: user.uid,
+          updatedAt: new Date(),
+        };
+        systemMessageContent = `📲 **Chamado enviado para a área de destino (${ticket.area.replace('_', ' ').toUpperCase()}) pelo produtor.**`;
+      } else {
+        updateData = {
+          status: newStatus,
+          atualizadoPor: user.uid,
+          updatedAt: new Date()
+        };
 
-      if (newStatus === TICKET_STATUS.APPROVED || newStatus === TICKET_STATUS.REJECTED) {
-        if (ticket.status === 'aguardando_aprovacao' && userProfile.funcao === 'gerente') {
-          const targetArea = ticket.areaDeOrigem || ticket.area;
-
-          if (newStatus === TICKET_STATUS.APPROVED) {
-            updateData.status = 'em_tratativa';
-            updateData.area = targetArea;
-            updateData.aprovadoEm = new Date();
-            updateData.aprovadoPor = user.uid;
-          } else {
-            updateData.rejeitadoEm = new Date();
-            updateData.rejeitadoPor = user.uid;
-            updateData.motivoRejeicao = conclusionDescription;
-          }
+        if (newStatus === TICKET_STATUS.COMPLETED) {
+          updateData.conclusaoDescricao = conclusionDescription;
+          updateData.conclusaoImagens = conclusionImages;
+          updateData.concluidoEm = new Date();
+          updateData.concluidoPor = user.uid;
+          systemMessageContent = `✅ **Chamado concluído**\n\n**Descrição:** ${conclusionDescription}`;
+        } else if (newStatus === TICKET_STATUS.REJECTED) {
+          updateData.motivoRejeicao = conclusionDescription;
+          updateData.rejeitadoEm = new Date();
+          updateData.rejeitadoPor = user.uid;
+          const managerName = userProfile?.nome || user?.email || 'Gerente';
+          systemMessageContent = `❌ **Chamado reprovado pelo gerente ${managerName}**\n\n**Motivo:** ${conclusionDescription}\n\nO chamado foi encerrado devido à reprovação gerencial.`;
+        } else if (newStatus === TICKET_STATUS.SENT_TO_AREA && ticket.status === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION) {
+          updateData.motivoRejeicao = conclusionDescription;
+          updateData.rejeitadoEm = new Date();
+          updateData.rejeitadoPor = user.uid;
+          updateData.area = ticket.areaDeOrigem || ticket.area;
+          systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(newStatus)}`;
+        } else if (newStatus === TICKET_STATUS.APPROVED) {
+            if (ticket.status === 'aguardando_aprovacao' && userProfile.funcao === 'gerente') {
+                const targetArea = ticket.areaDeOrigem || ticket.area;
+                updateData.status = 'em_tratativa';
+                updateData.area = targetArea;
+                updateData.aprovadoEm = new Date();
+                updateData.aprovadoPor = user.uid;
+                const managerName = userProfile?.nome || user?.email || 'Gerente';
+                systemMessageContent = `✅ **Chamado aprovado pelo gerente ${managerName}**\n\nO chamado foi aprovado e retornará para a área responsável para execução.`;
+            }
+        } else {
+            systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(newStatus)}`;
         }
       }
+      // ✅ FIM DA ALTERAÇÃO
 
       await ticketService.updateTicket(ticketId, updateData);
 
-      const managerName = userProfile?.nome || user?.email || 'Gerente';
       const statusMessage = {
         userId: user.uid,
         remetenteNome: userProfile.nome || user.email,
-        conteudo: newStatus === TICKET_STATUS.APPROVED
-          ? `✅ **Chamado aprovado pelo gerente ${managerName}**\n\nO chamado foi aprovado e retornará para a área responsável para execução.`
-          : newStatus === TICKET_STATUS.REJECTED
-            ? `❌ **Chamado reprovado pelo gerente ${managerName}**\n\n**Motivo:** ${conclusionDescription}\n\nO chamado foi encerrado devido à reprovação gerencial.`
-            : newStatus === TICKET_STATUS.COMPLETED
-              ? `✅ **Chamado concluído**\n\n**Descrição:** ${conclusionDescription}`
-              : `🔄 **Status atualizado para:** ${getStatusText(newStatus)}`,
+        conteudo: systemMessageContent,
         criadoEm: new Date(),
         type: 'status_update'
       };
@@ -748,7 +756,7 @@ const TicketDetailPage = () => {
         await notificationService.notifyStatusChange(
           ticketId,
           ticket,
-          newStatus,
+          updateData.status, // Usa o status final que foi salvo
           ticket.status,
           user.uid
         );
@@ -1123,11 +1131,11 @@ const TicketDetailPage = () => {
               </CardContent>
             </Card>
 
-            {/* ✅ INÍCIO DA ALTERAÇÃO: Visibilidade do card de escalação ajustada para o Produtor */}
-            {userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador' || userProfile.funcao === 'produtor') && (
+            {/* ✅ INÍCIO DA ALTERAÇÃO: Card de escalação agora é oculto para o Produtor */}
+            {userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador') && (
               <Card className="mt-6">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><span className="text-2xl">🔄</span>Escalar Chamado / Enviar para Área</CardTitle>
+                  <CardTitle className="flex items-center gap-2"><span className="text-2xl">🔄</span>Escalar Chamado</CardTitle>
                   <CardDescription>Transfira este chamado para outra área quando necessário</CardDescription>
                 </CardHeader>
                 <CardContent>
