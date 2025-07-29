@@ -38,10 +38,10 @@ import {
   AtSign,
   Lock,
   UserCheck,
-  PlusCircle, // ✅ Ícone adicionado para o histórico
-  Shield,       // ✅ Ícone adicionado para o histórico
-  ThumbsUp,     // ✅ Ícone adicionado para o histórico
-  ThumbsDown,   // ✅ Ícone adicionado para o histórico
+  PlusCircle, 
+  Shield,       
+  ThumbsUp,     
+  ThumbsDown,   
 } from 'lucide-react';
 
 const TicketDetailPage = () => {
@@ -86,7 +86,7 @@ const TicketDetailPage = () => {
 
   // Estados para menções de usuários e histórico
   const [users, setUsers] = useState([]);
-  const [historyEvents, setHistoryEvents] = useState([]); // ✅ Estado para o novo histórico
+  const [historyEvents, setHistoryEvents] = useState([]); 
   const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
   const [mentionSuggestions, setMentionSuggestions] = useState([]);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -181,7 +181,6 @@ const TicketDetailPage = () => {
     loadUsers();
   }, []);
 
-  // ✅ INÍCIO DA ALTERAÇÃO: Lógica para construir o histórico detalhado
   const getUserNameById = (userId) => {
       if (!users || !userId) return 'Sistema';
       const userFound = users.find(u => u.uid === userId || u.id === userId);
@@ -257,7 +256,6 @@ const TicketDetailPage = () => {
         setHistoryEvents(sortedEvents);
     }
   }, [ticket, users]);
-  // ✅ FIM DA ALTERAÇÃO
 
   const detectMentions = (text, position) => {
     const beforeCursor = text.substring(0, position);
@@ -395,6 +393,22 @@ const TicketDetailPage = () => {
     const currentStatus = ticket.status;
     const userRole = userProfile.funcao;
     const isCreator = ticket.criadoPor === user.uid;
+
+    // ✅ INÍCIO DA ALTERAÇÃO: Lógica para desbloquear o fluxo do Produtor
+    const isProjectProducer = userProfile.funcao === 'produtor' && project && project.produtorId === user.uid;
+    const isConsultantTicketForProducer = ticket.criadoPorFuncao === 'consultor';
+
+    if (isProjectProducer && isConsultantTicketForProducer && (ticket.status === 'aberto' || ticket.status === 'em_tratativa')) {
+        const producerActions = [];
+        if (ticket.status === 'aberto') {
+            producerActions.push({ value: TICKET_STATUS.IN_TREATMENT, label: 'Iniciar Tratativa', description: 'Começar a trabalhar no chamado' });
+        }
+        producerActions.push({ value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Executado', description: 'Marcar como executado para validação do consultor' });
+        
+        // A ação "Enviar para Área" é feita pelo card de Escalação, que será habilitado para o produtor.
+        return producerActions;
+    }
+    // ✅ FIM DA ALTERAÇÃO
 
     if (isCreator && currentStatus === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION) {
         return [
@@ -1109,11 +1123,11 @@ const TicketDetailPage = () => {
               </CardContent>
             </Card>
 
-            {/* Escalação para Área */}
-            {userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador') && (
+            {/* ✅ INÍCIO DA ALTERAÇÃO: Visibilidade do card de escalação ajustada para o Produtor */}
+            {userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador' || userProfile.funcao === 'produtor') && (
               <Card className="mt-6">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><span className="text-2xl">🔄</span>Escalar Chamado</CardTitle>
+                  <CardTitle className="flex items-center gap-2"><span className="text-2xl">🔄</span>Escalar Chamado / Enviar para Área</CardTitle>
                   <CardDescription>Transfira este chamado para outra área quando necessário</CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -1141,18 +1155,18 @@ const TicketDetailPage = () => {
                       </Select>
                     </div>
                     <div>
-                      <Label htmlFor="escalation-reason" className="text-base font-semibold">📝 Motivo da Escalação *</Label>
+                      <Label htmlFor="escalation-reason" className="text-base font-semibold">📝 Motivo *</Label>
                       <Textarea
                         id="escalation-reason"
                         value={escalationReason}
                         onChange={(e) => setEscalationReason(e.target.value)}
-                        placeholder="Descreva o motivo pelo qual está escalando este chamado para outra área..."
+                        placeholder="Descreva o motivo pelo qual está enviando este chamado para outra área..."
                         className="mt-2 min-h-[100px] border-2 border-blue-300 focus:border-blue-500"
                       />
                     </div>
                     {escalationArea && escalationReason.trim() && (
                       <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <p className="text-sm text-green-800 font-semibold">✅ Pronto para escalar para: <span className="font-bold">{escalationArea}</span></p>
+                        <p className="text-sm text-green-800 font-semibold">✅ Pronto para enviar para: <span className="font-bold">{escalationArea}</span></p>
                       </div>
                     )}
                     <Button
@@ -1160,15 +1174,17 @@ const TicketDetailPage = () => {
                       disabled={!escalationArea || !escalationReason.trim() || isEscalating}
                       className="w-full h-12 text-lg font-semibold bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400"
                     >
-                      {isEscalating ? <><span className="animate-spin mr-2">⏳</span>Escalando...</> : <><span className="mr-2">🚀</span>Enviar Escalação</>}
+                      {isEscalating ? <><span className="animate-spin mr-2">⏳</span>Enviando...</> : <><span className="mr-2">🚀</span>Enviar para Área</>}
                     </Button>
                     <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                      <p className="text-sm text-yellow-800">⚠️ <strong>Atenção:</strong> Ao escalar, o chamado será transferido para a área selecionada e sairá da sua lista de responsabilidades.</p>
+                      <p className="text-sm text-yellow-800">⚠️ <strong>Atenção:</strong> Ao enviar, o chamado será transferido para a área selecionada e sairá da sua lista de responsabilidades.</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             )}
+            {/* ✅ FIM DA ALTERAÇÃO */}
+
 
             {/* Escalação para Consultor */}
             {userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador') && project?.consultorId && (userProfile.funcao === 'administrador' || ticket.area === userProfile.area) && (
@@ -1318,7 +1334,6 @@ const TicketDetailPage = () => {
                     <p className="text-sm sm:text-base text-gray-900 break-words">{project.local}</p>
                   </div>
                 )}
-                {/* ✅ INÍCIO DA ALTERAÇÃO: Botão para acessar o projeto */}
                 {project && (
                   <div className="pt-3 mt-3 border-t">
                     <Button
@@ -1332,7 +1347,6 @@ const TicketDetailPage = () => {
                     </Button>
                   </div>
                 )}
-                {/* ✅ FIM DA ALTERAÇÃO */}
               </CardContent>
             </Card>
 
@@ -1405,7 +1419,6 @@ const TicketDetailPage = () => {
               </Card>
             )}
 
-            {/* ✅ INÍCIO DA ALTERAÇÃO: Card de Histórico reformulado */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
@@ -1445,7 +1458,6 @@ const TicketDetailPage = () => {
                 </div>
               </CardContent>
             </Card>
-            {/* ✅ FIM DA ALTERAÇÃO */}
           </div>
         </div>
       </div>
