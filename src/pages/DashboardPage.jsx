@@ -82,6 +82,7 @@ const DashboardPage = () => {
       case 'todos':
         break;
       case 'com_notificacao':
+        // Este filtro funciona corretamente pois itera sobre os tickets existentes
         filteredTickets = filteredTickets.filter(ticket => ticketNotifications[ticket.id]);
         break;
       case 'sem_tratativa':
@@ -132,10 +133,22 @@ const DashboardPage = () => {
     });
   };
 
+  // ✅ ALTERAÇÃO 1: Lógica de contagem de notificações corrigida
   const getTicketCounts = () => {
+    // Primeiro, criamos um conjunto de IDs dos tickets que realmente existem
+    const existingTicketIds = new Set(tickets.map(t => t.id));
+    
+    // Agora, calculamos o total de notificações APENAS para os tickets existentes
+    let validNotificationsTotal = 0;
+    Object.keys(ticketNotifications).forEach(ticketId => {
+      if (existingTicketIds.has(ticketId)) {
+        validNotificationsTotal += ticketNotifications[ticketId];
+      }
+    });
+
     const counts = {
       todos: tickets.length,
-      com_notificacao: Object.values(ticketNotifications).reduce((acc, count) => acc + count, 0),
+      com_notificacao: validNotificationsTotal, // Usando a contagem corrigida
       sem_tratativa: tickets.filter(t => t.status === 'aberto').length,
       em_tratativa: tickets.filter(t => t.status === 'em_tratativa').length,
       em_execucao: tickets.filter(t => t.status === 'em_execucao').length,
@@ -229,25 +242,18 @@ const DashboardPage = () => {
     }
   }, [user, userProfile, authInitialized, navigate]);
 
-  // #region CORREÇÃO NOTIFICAÇÕES FANTASMAS
+  // ✅ ALTERAÇÃO 2: Listener de notificações simplificado para evitar race conditions
   useEffect(() => {
     if (user?.uid) {
-      // Cria um conjunto com os IDs dos chamados que REALMENTE existem no estado atual.
-      const validTicketIds = new Set(tickets.map(t => t.id));
-
+      // O listener agora busca todas as notificações sem filtro prévio.
+      // Isso garante que novas notificações sejam sempre recebidas.
       const unsubscribe = notificationService.subscribeToNotifications(user.uid, (allNotifications) => {
         const counts = {};
-
-        // Filtra as notificações, mantendo apenas aquelas cujo ticketId existe na lista de chamados válidos.
-        const validNotifications = allNotifications.filter(notification =>
-            notification.ticketId && !notification.lida && validTicketIds.has(notification.ticketId)
-        );
-
-        // Agora, faz a contagem baseada apenas nas notificações válidas.
-        validNotifications.forEach(notification => {
-          counts[notification.ticketId] = (counts[notification.ticketId] || 0) + 1;
+        allNotifications.forEach(notification => {
+          if (notification.ticketId && !notification.lida) {
+            counts[notification.ticketId] = (counts[notification.ticketId] || 0) + 1;
+          }
         });
-
         setTicketNotifications(counts);
       });
 
@@ -257,8 +263,8 @@ const DashboardPage = () => {
         }
       };
     }
-  }, [tickets, user?.uid]); // A dependência de 'tickets' garante que a lógica rode novamente quando a lista de chamados for atualizada.
-  // #endregion
+  }, [user?.uid]); // A dependência agora é apenas o user.uid
+
 
   const loadDashboardData = async () => {
     try {
