@@ -1,8 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onNewMessageCreated = exports.cleanupDeletedTicket = exports.uploadImage = exports.onTicketUpdated = void 0; // ATUALIZAÇÃO: Exportando a nova função
+// ATUALIZAÇÃO: Ordem de exportação ajustada
+exports.onNewMessageCreated = exports.cleanupDeletedTicket = exports.uploadImage = exports.onTicketUpdated = void 0;
 const admin = require("firebase-admin");
-// ATUALIZAÇÃO: Importado 'onDocumentCreated'
 const { onDocumentUpdated, onDocumentDeleted, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 
@@ -11,7 +11,7 @@ admin.initializeApp();
 const APP_URL = 'https://nbzeukei.manus.space';
 const SENDGRID_SERVICE_URL = 'https://p9hwiqcl8p89.manus.space';
 
-// (Funções auxiliares como getProjectData, getUserData, etc. permanecem as mesmas)
+// (As funções auxiliares getProjectData, getUserData, etc. permanecem as mesmas)
 async function getProjectData(projectId) {
     try {
         const projectDoc = await admin.firestore().collection('projetos').doc(projectId).get();
@@ -45,7 +45,7 @@ async function getUsersByArea(area) {
         usersSnapshot.forEach(doc => {
             const userData = doc.data();
             if (userData.email) {
-                users.push({ id: doc.id, ...doc.data() }); // Incluindo o ID do documento do usuário
+                users.push({ id: doc.id, ...doc.data() });
             }
         });
         return users;
@@ -97,10 +97,10 @@ async function sendEmailViaSendGrid(recipients, subject, eventType, ticketData, 
 
 
 // =================================================================
-// ||        NOVA FUNÇÃO PARA NOTIFICAR SOBRE NOVAS MENSAGENS     ||
+// ||        FUNÇÃO DE NOTIFICAÇÃO DE MENSAGENS - VERSÃO CORRIGIDA     ||
 // =================================================================
-// Esta função é acionada sempre que uma nova mensagem é criada em um chamado.
-exports.onNewMessageCreated = onDocumentCreated('chamados/{ticketId}/messages/{messageId}', async (event) => {
+// Gatilho corrigido para escutar a coleção principal 'mensagens'
+exports.onNewMessageCreated = onDocumentCreated('mensagens/{messageId}', async (event) => {
     var _a;
     const messageSnap = (_a = event.data) === null || _a === void 0 ? void 0 : _a;
     if (!messageSnap) {
@@ -109,32 +109,36 @@ exports.onNewMessageCreated = onDocumentCreated('chamados/{ticketId}/messages/{m
     }
 
     const messageData = messageSnap.data();
-    const ticketId = event.params.ticketId;
-    const senderId = messageData.userId;
+    
+    // Lógica corrigida para pegar os dados do documento da mensagem
+    const ticketId = messageData.ticketId;
+    const senderId = messageData.remetenteId; // Corrigido de userId para remetenteId
+
+    // Verificação para garantir que os campos necessários existem
+    if (!ticketId || !senderId) {
+        console.error('Mensagem não possui ticketId ou remetenteId. Abortando notificação.', messageData);
+        return;
+    }
 
     console.log(`💬 Nova mensagem no chamado ${ticketId} por ${senderId}. Iniciando notificação.`);
 
     try {
-        // 1. Buscar os dados do chamado principal
         const ticketDoc = await admin.firestore().collection('chamados').doc(ticketId).get();
         if (!ticketDoc.exists) {
             console.error(`Chamado ${ticketId} não encontrado.`);
             return;
         }
         const ticketData = ticketDoc.data();
-        ticketData.id = ticketId; // Adiciona o ID para uso posterior
+        ticketData.id = ticketId;
 
-        // 2. Montar a lista de destinatários
         const recipients = new Set();
-        // Notifica o criador do chamado (se não for quem enviou a mensagem)
         if (ticketData.criadoPor && ticketData.criadoPor !== senderId) {
             recipients.add(ticketData.criadoPor);
         }
-        // Notifica todos os operadores da área ATUAL do chamado
         if (ticketData.area) {
             const areaUsers = await getUsersByArea(ticketData.area);
             areaUsers.forEach(user => {
-                if (user.id !== senderId) { // Não notificar quem enviou a mensagem
+                if (user.id !== senderId) {
                     recipients.add(user.id);
                 }
             });
@@ -145,7 +149,6 @@ exports.onNewMessageCreated = onDocumentCreated('chamados/{ticketId}/messages/{m
             return;
         }
 
-        // 3. Criar e enviar as notificações em lote
         const notificationData = {
             tipo: 'new_message',
             titulo: `Nova mensagem no chamado #${ticketId.slice(-6)}`,
@@ -158,7 +161,7 @@ exports.onNewMessageCreated = onDocumentCreated('chamados/{ticketId}/messages/{m
         const uniqueUserIds = Array.from(recipients);
 
         uniqueUserIds.forEach(userId => {
-            const notificationRef = admin.firestore().collection('notifications').doc(); // Gera um ID automático
+            const notificationRef = admin.firestore().collection('notifications').doc();
             batch.set(notificationRef, {
                 ...notificationData,
                 userId: userId,
@@ -176,9 +179,8 @@ exports.onNewMessageCreated = onDocumentCreated('chamados/{ticketId}/messages/{m
 });
 
 
-// Função principal para monitorar atualizações de chamados
+// (O resto do seu código, como onTicketUpdated, permanece o mesmo)
 exports.onTicketUpdated = onDocumentUpdated('chamados/{ticketId}', async (event) => {
-    // ... seu código de onTicketUpdated existente permanece aqui, sem alterações
     var _a, _b;
     const beforeSnap = (_a = event.data) === null || _a === void 0 ? void 0 : _a.before;
     const afterSnap = (_b = event.data) === null || _b === void 0 ? void 0 : _b.after;
@@ -192,8 +194,6 @@ exports.onTicketUpdated = onDocumentUpdated('chamados/{ticketId}', async (event)
     after.id = ticketId;
     try {
         console.log(`🔄 Processando atualização do chamado ${ticketId}`);
-        console.log(`Status: ${before.status} → ${after.status}`);
-        console.log(`Área: ${before.area} → ${after.area}`);
         const projectData = await getProjectData(after.projetoId);
         if (!projectData) {
             console.error('Dados do projeto não encontrados');
@@ -226,9 +226,7 @@ exports.onTicketUpdated = onDocumentUpdated('chamados/{ticketId}', async (event)
     }
 });
 
-// (O resto das suas funções handleTicket... permanecem as mesmas)
 async function handleTicketStartedTreatment(ticket, project) {
-    console.log('📋 Processando início de tratativa');
     const recipients = [];
     if (project.produtorId) {
         const producer = await getUserData(project.produtorId);
@@ -247,7 +245,6 @@ async function handleTicketStartedTreatment(ticket, project) {
     }
 }
 async function handleTicketEscalatedToArea(before, after, project) {
-    console.log(`🔄 Processando escalação de área: ${before.area} → ${after.area}`);
     const recipients = [];
     const areaUsers = await getUsersByArea(after.area);
     areaUsers.forEach(user => {
@@ -277,7 +274,6 @@ async function handleTicketEscalatedToArea(before, after, project) {
     }
 }
 async function handleTicketEscalatedToManager(ticket, project) {
-    console.log('👔 Processando escalação para gerente');
     const recipients = [];
     let managerFunction = '';
     switch (ticket.area) {
@@ -323,7 +319,6 @@ async function handleTicketEscalatedToManager(ticket, project) {
     }
 }
 async function handleManagerDecision(before, after, project) {
-    console.log(`✅ Processando decisão do gerente: ${after.status}`);
     const recipients = [];
     if (project.produtorId) {
         const producer = await getUserData(project.produtorId);
@@ -346,10 +341,8 @@ async function handleManagerDecision(before, after, project) {
     }
 }
 async function handleTicketExecuted(ticket, project) {
-    console.log('🎯 Processando chamado executado');
     const isCreatedByOperator = ticket.criadoPorFuncao && ticket.criadoPorFuncao.startsWith('operador_');
     if (isCreatedByOperator) {
-        console.log('🔄 Chamado criado por operador - retornando para validação do operador original');
         try {
             const creatorData = await getUserData(ticket.criadoPor);
             const updateData = {
@@ -364,7 +357,6 @@ async function handleTicketExecuted(ticket, project) {
                 updateData.area = ticket.areaDeOrigem;
             }
             await admin.firestore().collection('chamados').doc(ticket.id).update(updateData);
-            console.log(`✅ Chamado ${ticket.id} retornado para validação do operador ${ticket.criadoPor}`);
             if (creatorData === null || creatorData === void 0 ? void 0 : creatorData.email) {
                 await sendEmailViaSendGrid([creatorData.email], `Chamado Concluído - Aguardando sua Validação: ${ticket.titulo}`, 'ticket_executed_operator_validation', ticket, project);
             }
@@ -375,7 +367,6 @@ async function handleTicketExecuted(ticket, project) {
         }
     }
     else {
-        console.log('📋 Chamado criado por produtor/consultor - seguindo fluxo padrão');
         await handleTicketExecutedStandardFlow(ticket, project);
     }
 }
