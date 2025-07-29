@@ -38,10 +38,10 @@ import {
   AtSign,
   Lock,
   UserCheck,
-  PlusCircle, 
-  Shield,       
-  ThumbsUp,     
-  ThumbsDown,   
+  PlusCircle,
+  Shield,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react';
 
 const TicketDetailPage = () => {
@@ -86,7 +86,7 @@ const TicketDetailPage = () => {
 
   // Estados para menções de usuários e histórico
   const [users, setUsers] = useState([]);
-  const [historyEvents, setHistoryEvents] = useState([]); 
+  const [historyEvents, setHistoryEvents] = useState([]);
   const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
   const [mentionSuggestions, setMentionSuggestions] = useState([]);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -146,7 +146,7 @@ const TicketDetailPage = () => {
       if (ticket.isConfidential) {
         const isCreator = ticket.criadoPor === user.uid;
         const isAdmin = userProfile.funcao === 'administrador';
-        const isInvolvedOperator = userProfile.funcao === 'operador' && 
+        const isInvolvedOperator = userProfile.funcao === 'operador' &&
                                    (userProfile.area === ticket.area || userProfile.area === ticket.areaDeOrigem);
 
         if (!isCreator && !isAdmin && !isInvolvedOperator) {
@@ -277,12 +277,12 @@ const TicketDetailPage = () => {
     const afterCursor = newMessage.substring(cursorPosition);
     const beforeMention = beforeCursor.replace(/@\w*$/, '');
     const newText = beforeMention + `@${user.nome} ` + afterCursor;
-    
+
     setNewMessage(newText);
     setShowMentionSuggestions(false);
     setMentionSuggestions([]);
     setMentionQuery('');
-    
+
     setTimeout(() => {
       if (textareaRef.current) {
         const newPosition = beforeMention.length + user.nome.length + 2;
@@ -295,7 +295,7 @@ const TicketDetailPage = () => {
   const handleTextareaChange = (e) => {
     const value = e.target.value;
     const position = e.target.selectionStart;
-    
+
     setNewMessage(value);
     setCursorPosition(position);
     detectMentions(value, position);
@@ -313,7 +313,7 @@ const TicketDetailPage = () => {
 
   const formatDate = (date) => {
     if (!date) return 'Data não disponível';
-    
+
     try {
       let dateObj;
       if (date.toDate && typeof date.toDate === 'function') {
@@ -323,11 +323,11 @@ const TicketDetailPage = () => {
       } else {
         dateObj = new Date(date);
       }
-      
+
       if (isNaN(dateObj.getTime())) {
         return 'Data inválida';
       }
-      
+
       return dateObj.toLocaleString('pt-BR', {
         day: '2-digit',
         month: '2-digit',
@@ -397,7 +397,7 @@ const TicketDetailPage = () => {
             producerActions.push({ value: TICKET_STATUS.IN_TREATMENT, label: 'Iniciar Tratativa', description: 'Começar a trabalhar no chamado' });
         }
         producerActions.push({ value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Executado', description: 'Marcar como executado para validação do consultor' });
-        
+
         producerActions.push({ value: 'send_to_area', label: 'Enviar para a Área', description: 'Encaminhar o chamado para a área final' });
 
         return producerActions;
@@ -409,7 +409,7 @@ const TicketDetailPage = () => {
             { value: TICKET_STATUS.SENT_TO_AREA, label: 'Rejeitar / Devolver', description: 'Devolver para a área responsável com um motivo.' }
         ];
     }
-    
+
     if (userRole === 'administrador') {
       if (currentStatus === TICKET_STATUS.OPEN) {
         return [
@@ -455,8 +455,8 @@ const TicketDetailPage = () => {
 
     if (userRole === 'gerente') {
       const isManagerOfArea = userProfile.area === 'producao';
-      const isEscalatedToThisManager = currentStatus === 'aguardando_aprovacao' && 
-                                       (ticket.gerenteResponsavelId === user.uid || 
+      const isEscalatedToThisManager = currentStatus === 'aguardando_aprovacao' &&
+                                       (ticket.gerenteResponsavelId === user.uid ||
                                         (!ticket.gerenteResponsavelId && isManagerOfArea));
 
       if (isEscalatedToThisManager) {
@@ -467,7 +467,7 @@ const TicketDetailPage = () => {
       }
       return [];
     }
-    
+
     if (userRole === 'consultor' && isCreator) {
       if (currentStatus === TICKET_STATUS.COMPLETED) {
         return [
@@ -530,10 +530,10 @@ const TicketDetailPage = () => {
       alert('Por favor, descreva o motivo da escalação para gerência');
       return;
     }
-    
+
     const targetArea = managementArea.replace('gerente_', '');
     const targetManager = users.find(u => u.funcao === 'gerente' && u.area === targetArea);
-    
+
     if (!targetManager) {
       alert(`Erro: Nenhum gerente encontrado para a área "${targetArea}". Verifique o cadastro de usuários.`);
       return;
@@ -683,25 +683,27 @@ const TicketDetailPage = () => {
       let updateData = {};
       let systemMessageContent = '';
 
-      // ✅ INÍCIO DA CORREÇÃO: Lógica de rota para "Enviar para a Área"
       if (newStatus === 'send_to_area') {
         const targetArea = ticket.areaDestinoOriginal;
-        
+
         if (!targetArea) {
             alert('Erro Crítico: A área de destino original não foi encontrada neste chamado. O chamado não pode ser enviado. Por favor, contate o suporte. (O campo areaDestinoOriginal está faltando no ticket).');
             setUpdating(false);
             return;
         }
 
+        const newAreasEnvolvidas = [...new Set([...(ticket.areasEnvolvidas || []), targetArea])];
+
         updateData = {
-          status: TICKET_STATUS.OPEN, // Reabre o chamado para a área de destino
-          area: targetArea, // Roteia para a área correta
+          status: TICKET_STATUS.OPEN,
+          area: targetArea,
+          areasEnvolvidas: newAreasEnvolvidas,
           atualizadoPor: user.uid,
           updatedAt: new Date(),
         };
         systemMessageContent = `📲 **Chamado enviado pelo produtor para a área de destino: ${targetArea.replace('_', ' ').toUpperCase()}.**`;
-      
-      } else { // Lógica original para as outras mudanças de status
+
+      } else {
         updateData = {
           status: newStatus,
           atualizadoPor: user.uid,
@@ -740,7 +742,6 @@ const TicketDetailPage = () => {
             systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(newStatus)}`;
         }
       }
-      // ✅ FIM DA CORREÇÃO
 
       await ticketService.updateTicket(ticketId, updateData);
 
@@ -757,7 +758,7 @@ const TicketDetailPage = () => {
         await notificationService.notifyStatusChange(
           ticketId,
           ticket,
-          updateData.status, // Usa o status final que foi salvo
+          updateData.status,
           ticket.status,
           user.uid
         );
