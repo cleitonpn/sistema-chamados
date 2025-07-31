@@ -36,7 +36,7 @@ import {
   ChevronRight,
   CheckSquare,
   MoreVertical,
-  Archive, // ✅ ÍCONE ADICIONADO
+  Archive,
   Trash2,
   Edit,
   Eye,
@@ -76,18 +76,7 @@ const DashboardPage = () => {
   };
 
   const getFilteredTickets = () => {
-    // ✅ LÓGICA ATUALIZADA AQUI
-    // Se o filtro 'arquivados' estiver ativo, mostre apenas eles.
-    if (activeFilter === 'arquivados') {
-        return tickets.filter(ticket => ticket.status === 'arquivado').sort((a, b) => {
-            const dateA = a.arquivadoEm?.toDate?.() || new Date(0);
-            const dateB = b.arquivadoEm?.toDate?.() || new Date(0);
-            return dateB - dateA;
-        });
-    }
-
-    // Para todos os outros filtros, pegue apenas os tickets NÃO arquivados.
-    let filteredTickets = tickets.filter(ticket => ticket.status !== 'arquivado');
+    let filteredTickets = [...tickets];
 
     switch (activeFilter) {
       case 'todos':
@@ -108,6 +97,18 @@ const DashboardPage = () => {
         filteredTickets = filteredTickets.filter(ticket => 
           ticket.status === 'enviado_para_area' || ticket.status === 'escalado_para_area'
         );
+        break;
+      case 'escalado_para_mim':
+        filteredTickets = filteredTickets.filter(ticket => {
+          if (ticket.status === 'escalado_para_outra_area') {
+            if (ticket.areaEscalada === userProfile?.area) return true;
+            if (ticket.usuarioEscalado === user?.uid || 
+                ticket.usuarioEscalado === userProfile?.email ||
+                ticket.usuarioEscalado === userProfile?.nome) return true;
+            if (ticket.areasEnvolvidas && ticket.areasEnvolvidas.includes(userProfile?.area)) return true;
+          }
+          return false;
+        });
         break;
       case 'aguardando_validacao':
         filteredTickets = filteredTickets.filter(ticket => 
@@ -132,73 +133,315 @@ const DashboardPage = () => {
   };
 
   const getTicketCounts = () => {
-    // ✅ LÓGICA ATUALIZADA AQUI
-    const activeTickets = tickets.filter(t => t.status !== 'arquivado');
-    
     const counts = {
-      todos: activeTickets.length,
+      todos: tickets.length,
       com_notificacao: Object.keys(ticketNotifications).length,
-      sem_tratativa: activeTickets.filter(t => t.status === 'aberto').length,
-      em_tratativa: activeTickets.filter(t => t.status === 'em_tratativa').length,
-      em_execucao: activeTickets.filter(t => t.status === 'em_execucao').length,
-      escalado: activeTickets.filter(t => 
+      sem_tratativa: tickets.filter(t => t.status === 'aberto').length,
+      em_tratativa: tickets.filter(t => t.status === 'em_tratativa').length,
+      em_execucao: tickets.filter(t => t.status === 'em_execucao').length,
+      escalado: tickets.filter(t => 
         t.status === 'enviado_para_area' || t.status === 'escalado_para_area'
       ).length,
-      aguardando_validacao: activeTickets.filter(t => t.status === 'executado_aguardando_validacao').length,
-      concluidos: activeTickets.filter(t => t.status === 'concluido').length,
-      aguardando_aprovacao: activeTickets.filter(t => t.status === 'aguardando_aprovacao').length,
-      arquivados: tickets.filter(t => t.status === 'arquivado').length // Contagem dos arquivados
+      escalado_para_mim: tickets.filter(t => {
+        if (t.status === 'escalado_para_outra_area') {
+          if (t.areaEscalada === userProfile?.area) return true;
+          if (t.usuarioEscalado === user?.uid || t.usuarioEscalado === userProfile?.email || t.usuarioEscalado === userProfile?.nome) return true;
+          if (t.areasEnvolvidas && t.areasEnvolvidas.includes(userProfile?.area)) return true;
+        }
+        return false;
+      }).length,
+      aguardando_validacao: tickets.filter(t => t.status === 'executado_aguardando_validacao').length,
+      concluidos: tickets.filter(t => t.status === 'concluido').length,
+      aguardando_aprovacao: tickets.filter(t => t.status === 'aguardando_aprovacao').length
     };
     return counts;
   };
 
-  // ✅ NOVO CARD DE FILTRO ADICIONADO
   const filterCards = [
     { id: 'todos', title: 'Todos', icon: FileText, color: 'bg-blue-50 border-blue-200 hover:bg-blue-100', iconColor: 'text-blue-600', activeColor: 'bg-blue-500 text-white border-blue-500' },
     ...(userProfile?.funcao === 'gerente' ? [{
       id: 'aguardando_aprovacao', 
-      title: 'Aprovação', 
+      title: 'Aguardando Aprovação', 
       icon: UserCheck, 
       color: 'bg-orange-50 border-orange-200 hover:bg-orange-100', 
       iconColor: 'text-orange-600', 
       activeColor: 'bg-orange-500 text-white border-orange-500' 
     }] : []),
     { id: 'com_notificacao', title: 'Notificações', icon: BellRing, color: 'bg-red-50 border-red-200 hover:bg-red-100', iconColor: 'text-red-600', activeColor: 'bg-red-500 text-white border-red-500' },
-    { id: 'sem_tratativa', title: 'Abertos', icon: AlertCircle, color: 'bg-orange-50 border-orange-200 hover:bg-orange-100', iconColor: 'text-orange-600', activeColor: 'bg-orange-500 text-white border-orange-500' },
+    { id: 'sem_tratativa', title: 'Sem Tratativa', icon: AlertCircle, color: 'bg-orange-50 border-orange-200 hover:bg-orange-100', iconColor: 'text-orange-600', activeColor: 'bg-orange-500 text-white border-orange-500' },
     { id: 'em_tratativa', title: 'Em Tratativa', icon: Clock, color: 'bg-yellow-50 border-yellow-200 hover:bg-yellow-100', iconColor: 'text-yellow-600', activeColor: 'bg-yellow-500 text-white border-yellow-500' },
-    { id: 'aguardando_validacao', title: 'Validação', icon: Hourglass, color: 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100', iconColor: 'text-indigo-600', activeColor: 'bg-indigo-500 text-white border-indigo-500' },
-    { id: 'concluidos', title: 'Concluídos', icon: CheckCircle, color: 'bg-green-50 border-green-200 hover:bg-green-100', iconColor: 'text-green-600', activeColor: 'bg-green-500 text-white border-green-500' },
-    { id: 'arquivados', title: 'Arquivados', icon: Archive, color: 'bg-gray-50 border-gray-200 hover:bg-gray-100', iconColor: 'text-gray-600', activeColor: 'bg-gray-500 text-white border-gray-500' }
+    { id: 'em_execucao', title: 'Em Execução', icon: Play, color: 'bg-blue-50 border-blue-200 hover:bg-blue-100', iconColor: 'text-blue-600', activeColor: 'bg-blue-500 text-white border-blue-500' },
+    { id: 'escalado', title: 'Escalado', icon: ArrowUp, color: 'bg-purple-50 border-purple-200 hover:bg-purple-100', iconColor: 'text-purple-600', activeColor: 'bg-purple-500 text-white border-purple-500' },
+    { id: 'escalado_para_mim', title: 'Escalados para Mim', icon: ChevronDown, color: 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100', iconColor: 'text-indigo-600', activeColor: 'bg-indigo-500 text-white border-indigo-500' },
+    { id: 'aguardando_validacao', title: 'Aguardando Validação', icon: Hourglass, color: 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100', iconColor: 'text-indigo-600', activeColor: 'bg-indigo-500 text-white border-indigo-500' },
+    { id: 'concluidos', title: 'Concluídos', icon: CheckCircle, color: 'bg-green-50 border-green-200 hover:bg-green-100', iconColor: 'text-green-600', activeColor: 'bg-green-500 text-white border-green-500' }
   ];
-  
-  // (O resto do seu arquivo DashboardPage.jsx continua aqui, sem mais alterações necessárias)
-  // ... (funções getDisplayedTickets, getProjectsByEvent, etc.)
-  // ... (useEffect e loadDashboardData)
-  // ... (JSX de retorno)
-  
-  // Apenas garanta que o novo status "arquivado" tenha uma cor definida
+
+  const getDisplayedTickets = () => getFilteredTickets();
+  const getProjectsByEvent = () => {
+    const grouped = {};
+    projects.forEach(project => {
+      const eventName = project.feira || 'Sem Evento';
+      if (!grouped[eventName]) grouped[eventName] = [];
+      grouped[eventName].push(project);
+    });
+    return grouped;
+  };
+  const getTicketsByProject = () => {
+    const grouped = {};
+    const displayedTickets = getDisplayedTickets();
+    displayedTickets.forEach(ticket => {
+      const projectName = ticket.projetoId ? getProjectName(ticket.projetoId) : 'Sem Projeto';
+      if (!grouped[projectName]) grouped[projectName] = [];
+      grouped[projectName].push(ticket);
+    });
+    return grouped;
+  };
+
+  const toggleEventExpansion = (eventName) => setExpandedEvents(prev => ({ ...prev, [eventName]: !prev[eventName] }));
+  const toggleProjectExpansion = (projectName) => setExpandedProjects(prev => ({ ...prev, [projectName]: !prev[projectName] }));
+  const handleProjectClick = (project) => navigate(`/projeto/${project.id}`);
+  const handleTicketClick = (ticketId) => navigate(`/chamado/${ticketId}`);
+
   const getStatusColor = (status) => {
-    const colors = { 
-        'aberto': 'bg-blue-100 text-blue-800', 
-        'em_tratativa': 'bg-yellow-100 text-yellow-800', 
-        'em_execucao': 'bg-blue-100 text-blue-800', 
-        'enviado_para_area': 'bg-purple-100 text-purple-800', 
-        'escalado_para_area': 'bg-purple-100 text-purple-800', 
-        'aguardando_aprovacao': 'bg-orange-100 text-orange-800', 
-        'executado_aguardando_validacao': 'bg-indigo-100 text-indigo-800', 
-        'concluido': 'bg-green-100 text-green-800', 
-        'cancelado': 'bg-red-100 text-red-800', 
-        'devolvido': 'bg-pink-100 text-pink-800',
-        'arquivado': 'bg-gray-100 text-gray-700' // ✅ COR PARA O NOVO STATUS
-    };
+    const colors = { 'aberto': 'bg-blue-100 text-blue-800', 'em_tratativa': 'bg-yellow-100 text-yellow-800', 'em_execucao': 'bg-blue-100 text-blue-800', 'enviado_para_area': 'bg-purple-100 text-purple-800', 'escalado_para_area': 'bg-purple-100 text-purple-800', 'aguardando_aprovacao': 'bg-orange-100 text-orange-800', 'executado_aguardando_validacao': 'bg-indigo-100 text-indigo-800', 'concluido': 'bg-green-100 text-green-800', 'cancelado': 'bg-red-100 text-red-800', 'devolvido': 'bg-pink-100 text-pink-800' };
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
-  
-  // ... (restante do arquivo)
+  const getPriorityColor = (priority) => {
+    const colors = { 'baixa': 'bg-green-100 text-green-800', 'media': 'bg-yellow-100 text-yellow-800', 'alta': 'bg-red-100 text-red-800' };
+    return colors[priority] || 'bg-gray-100 text-gray-800';
+  };
 
-  // Omitindo o restante do arquivo por brevidade, pois nenhuma outra alteração é necessária nele.
-  // Cole o código acima no início do seu arquivo, substituindo as funções existentes.
-  
+  const handleTicketSelect = (ticketId, checked) => {
+    const newSelected = new Set(selectedTickets);
+    if (checked) newSelected.add(ticketId);
+    else newSelected.delete(ticketId);
+    setSelectedTickets(newSelected);
+  };
+
+  const loadTicketNotifications = async () => {
+    if (!user?.uid || !tickets.length) return;
+    try {
+      const notificationCounts = {};
+      for (const ticket of tickets) {
+        try {
+          const count = await notificationService.getUnreadNotificationsByTicket(user.uid, ticket.id);
+          if (count > 0) {
+            notificationCounts[ticket.id] = count;
+          }
+        } catch (ticketError) {
+          console.warn(`⚠️ Erro ao carregar notificações do chamado ${ticket.id}:`, ticketError);
+        }
+      }
+      setTicketNotifications(notificationCounts);
+    } catch (error) {
+      console.error('❌ Erro ao carregar notificações dos chamados:', error);
+      setTicketNotifications({});
+    }
+  };
+
+  useEffect(() => {
+    if (authInitialized && user && userProfile && user.uid) {
+      loadDashboardData();
+    } else if (authInitialized && !user) {
+      navigate('/login');
+    } else if (authInitialized && user && !userProfile) {
+      setLoading(false);
+    }
+  }, [user, userProfile, authInitialized, navigate]);
+
+  useEffect(() => {
+    if (tickets.length > 0 && user?.uid) {
+      const unsubscribe = notificationService.subscribeToNotifications(user.uid, (allNotifications) => {
+        const counts = {};
+        allNotifications.forEach(notification => {
+          if (notification.ticketId && !notification.lida) {
+            counts[notification.ticketId] = (counts[notification.ticketId] || 0) + 1;
+          }
+        });
+        setTicketNotifications(counts);
+      });
+      return () => {
+        if (unsubscribe) {
+          unsubscribe();
+        }
+      };
+    }
+  }, [tickets, user?.uid]);
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      
+      console.log('🔍 Carregando dados para:', userProfile?.funcao);
+      
+      const filterConfidential = (ticket) => {
+        if (!ticket.isConfidential) {
+          return true;
+        }
+        const isCreator = ticket.criadoPor === user.uid;
+        const isAdmin = userProfile?.funcao === 'administrador';
+        return isCreator || isAdmin;
+      };
+
+      if (userProfile?.funcao === 'administrador') {
+        console.log('👑 Administrador: carregando TODOS os dados');
+        const [allProjects, allTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getAllTickets(),
+          userService.getAllUsers()
+        ]);
+        setProjects(allProjects);
+        setTickets(allTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else if (userProfile?.funcao === 'produtor') {
+        console.log('🏭 Produtor: carregando projetos próprios e chamados relacionados');
+        const [allProjects, allTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getAllTickets(),
+          userService.getAllUsers()
+        ]);
+        
+        const produtorProjects = allProjects.filter(project => 
+          project.produtorId === user.uid
+        );
+        
+        const produtorProjectIds = produtorProjects.map(p => p.id);
+        
+        const produtorTickets = allTickets.filter(ticket => {
+          const isRelatedToProject = produtorProjectIds.includes(ticket.projetoId);
+          return isRelatedToProject && filterConfidential(ticket);
+        });
+        
+        setProjects(produtorProjects);
+        setTickets(produtorTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        produtorProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else if (userProfile?.funcao === 'consultor') {
+        console.log('👨‍💼 Consultor: carregando projetos próprios e chamados específicos');
+        const [allProjects, allTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getAllTickets(),
+          userService.getAllUsers()
+        ]);
+        
+        const consultorProjects = allProjects.filter(project => 
+          project.consultorId === user.uid
+        );
+        
+        const consultorProjectIds = consultorProjects.map(p => p.id);
+        
+        const consultorTickets = allTickets.filter(ticket => {
+          const isFromConsultorProject = consultorProjectIds.includes(ticket.projetoId);
+          const isOpenedByConsultor = ticket.criadoPor === user.uid;
+          const isEscalatedToConsultor = ticket.escalonamentos?.some(esc => 
+            esc.consultorId === user.uid || esc.responsavelId === user.uid
+          );
+          
+          const isRelated = isFromConsultorProject || isOpenedByConsultor || isEscalatedToConsultor;
+          return isRelated && filterConfidential(ticket);
+        });
+        
+        setProjects(consultorProjects);
+        setTickets(consultorTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else if (userProfile?.funcao === 'operador') {
+        console.log('⚙️ Operador: carregando chamados da área');
+        const [allProjects, operatorTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getTicketsByAreaInvolved(userProfile.area),
+          userService.getAllUsers()
+        ]);
+        
+        setProjects(allProjects);
+        setTickets(operatorTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else if (userProfile?.funcao === 'gerente') {
+        console.log('👔 Gerente: carregando TODOS os dados');
+        const [allProjects, allTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getAllTickets(),
+          userService.getAllUsers()
+        ]);
+        
+        setProjects(allProjects);
+        setUsers(allUsers);
+        setTickets(allTickets);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else {
+        console.log('👤 Usuário padrão: carregando dados básicos');
+        const [allProjects, userTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getTicketsByUser(user.uid),
+          userService.getAllUsers()
+        ]);
+        
+        setProjects(allProjects);
+        setTickets(userTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+      }
+      
+    } catch (error) {
+      console.error('❌ Erro ao carregar dados do dashboard:', error);
+      setProjects([]);
+      setTickets([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!authInitialized || loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Carregando dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const counts = getTicketCounts();
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <div className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0`}>
@@ -377,7 +620,7 @@ const DashboardPage = () => {
                   const isActive = activeFilter === card.id;
                   const count = counts[card.id];
                   
-                  if (count === 0 && card.id !== 'todos' && card.id !== 'arquivados') return null;
+                  if (!count && card.id === 'aguardando_aprovacao') return null;
                   
                   return (
                     <Card
@@ -530,7 +773,7 @@ const DashboardPage = () => {
                                 
                                 <div className="flex flex-wrap items-center gap-2">
                                   <Badge className={`${getStatusColor(ticket.status)} text-xs`}>
-                                    {ticket.status?.replace(/_/g, ' ')}
+                                    {ticket.status?.replace('_', ' ')}
                                   </Badge>
                                   <Badge className={`${getPriorityColor(ticket.prioridade)} text-xs`}>
                                     {ticket.prioridade}
@@ -549,7 +792,7 @@ const DashboardPage = () => {
                   </div>
                 ))}
                 
-                {getFilteredTickets().length === 0 && (
+                {Object.keys(getTicketsByProject()).length === 0 && (
                   <Card>
                     <CardContent className="p-8 text-center">
                       <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -578,7 +821,74 @@ const DashboardPage = () => {
             </TabsContent>
 
             <TabsContent value="projetos" className="space-y-6">
-              {/* O conteúdo da aba de projetos permanece o mesmo */}
+              <div className="space-y-4">
+                {Object.entries(getProjectsByEvent()).map(([eventName, eventProjects]) => (
+                  <div key={eventName} className="border rounded-lg">
+                    <button
+                      onClick={() => toggleEventExpansion(eventName)}
+                      className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-center space-x-3">
+                        {expandedEvents[eventName] ? (
+                          <ChevronDown className="h-5 w-5 text-gray-500" />
+                        ) : (
+                          <ChevronRight className="h-5 w-5 text-gray-500" />
+                        )}
+                        <h3 className="font-semibold text-lg">{eventName}</h3>
+                        <Badge variant="secondary" className="ml-2">
+                          {eventProjects.length} projeto{eventProjects.length !== 1 ? 's' : ''}
+                        </Badge>
+                      </div>
+                    </button>
+                    
+                    {expandedEvents[eventName] && (
+                      <div className="border-t bg-gray-50/50 p-4 space-y-3">
+                        {eventProjects.map((project) => (
+                          <Card 
+                            key={project.id} 
+                            className="cursor-pointer hover:shadow-md transition-shadow bg-white"
+                            onClick={() => handleProjectClick(project)}
+                          >
+                            <CardContent className="p-4">
+                              <div className="flex items-start justify-between">
+                                <div className="space-y-2">
+                                  <h4 className="font-medium">{project.nome}</h4>
+                                  <div className="flex items-center space-x-2">
+                                    <Badge variant="outline">
+                                      {project.status?.replace('_', ' ')}
+                                    </Badge>
+                                    <span className="text-xs text-gray-500">
+                                      {project.local}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="text-right text-xs text-gray-500">
+                                  <div>
+                                    {project.dataInicio && new Date(project.dataInicio.seconds * 1000).toLocaleDateString('pt-BR')}
+                                  </div>
+                                  <div>
+                                    {project.dataFim && new Date(project.dataFim.seconds * 1000).toLocaleDateString('pt-BR')}
+                                  </div>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                
+                {Object.keys(getProjectsByEvent()).length === 0 && (
+                  <Card>
+                    <CardContent className="p-8 text-center">
+                      <FolderOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhum projeto encontrado</h3>
+                      <p className="text-gray-500">Não há projetos para exibir no momento.</p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
             </TabsContent>
           </Tabs>
         </main>
