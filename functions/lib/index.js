@@ -1,12 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-// ATUALIZAÇÃO: Ordem de exportação ajustada
-exports.onNewMessageCreated = exports.cleanupDeletedTicket = exports.uploadImage = exports.onTicketUpdated = void 0;
+// ✅ NOVA FUNÇÃO ADICIONADA À LISTA DE EXPORTAÇÃO
+exports.createFinancialTicket = exports.onNewMessageCreated = exports.cleanupDeletedTicket = exports.uploadImage = exports.onTicketUpdated = void 0;
 const admin = require("firebase-admin");
 const { onDocumentUpdated, onDocumentDeleted, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 
-admin.initializeApp();
+if (admin.apps.length === 0) {
+    admin.initializeApp();
+}
 
 const APP_URL = 'https://nbzeukei.manus.space';
 const SENDGRID_SERVICE_URL = 'https://p9hwiqcl8p89.manus.space';
@@ -94,6 +96,58 @@ async function sendEmailViaSendGrid(recipients, subject, eventType, ticketData, 
         throw error;
     }
 }
+
+// ✅ NOVA FUNÇÃO PARA CRIAR CHAMADO FINANCEIRO DEPENDENTE
+exports.createFinancialTicket = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Usuário não autenticado.");
+    }
+
+    const { originalTicketId, valor, condicoesPagamento, nomeMotorista, placaVeiculo } = request.data;
+    const uid = request.auth.uid;
+
+    if (!originalTicketId || !valor || !condicoesPagamento || !nomeMotorista || !placaVeiculo) {
+        throw new HttpsError("invalid-argument", "Todos os campos financeiros são obrigatórios.");
+    }
+
+    try {
+        const db = admin.firestore();
+        const originalTicketRef = db.collection('chamados').doc(originalTicketId);
+        const originalTicketSnap = await originalTicketRef.get();
+
+        if (!originalTicketSnap.exists()) {
+            throw new HttpsError("not-found", "O chamado de logística original não foi encontrado.");
+        }
+
+        const originalTicketData = originalTicketSnap.data();
+        const creatorData = await getUserData(uid);
+
+        const newFinancialTicket = {
+            titulo: `Pagamento Frete: ${originalTicketData.titulo}`,
+            descricao: `**Dados para Pagamento:**\n- Valor: R$ ${valor}\n- Condições: ${condicoesPagamento}\n- Motorista: ${nomeMotorista}\n- Placa: ${placaVeiculo}\n\n**Referente ao Chamado de Logística:** #${originalTicketId}`,
+            area: 'financeiro',
+            tipo: 'pagamento_frete',
+            status: 'aberto',
+            prioridade: 'media',
+            isConfidential: true,
+            chamadoPaiId: originalTicketId,
+            projetoId: originalTicketData.projetoId,
+            criadoPor: uid,
+            criadoPorNome: creatorData?.nome || 'Operador de Logística',
+            criadoEm: new Date(),
+            updatedAt: new Date(),
+        };
+
+        const newTicketRef = await db.collection('chamados').add(newFinancialTicket);
+
+        console.log(`✅ Chamado financeiro ${newTicketRef.id} criado a partir do chamado ${originalTicketId} por ${uid}.`);
+        return { success: true, newTicketId: newTicketRef.id };
+
+    } catch (error) {
+        console.error("❌ Erro ao criar chamado financeiro:", error);
+        throw new HttpsError("internal", "Ocorreu um erro interno ao criar o chamado financeiro.");
+    }
+});
 
 
 // =================================================================
