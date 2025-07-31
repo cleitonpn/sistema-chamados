@@ -16,12 +16,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import NotificationCenter from '../components/NotificationCenter';
-import {
-  LogOut,
-  Plus,
-  AlertCircle,
-  Clock,
-  CheckCircle,
+import { 
+  LogOut, 
+  Plus, 
+  AlertCircle, 
+  Clock, 
+  CheckCircle, 
   Users,
   FolderOpen,
   BarChart3,
@@ -53,7 +53,7 @@ import {
 const DashboardPage = () => {
   const { user, userProfile, logout, authInitialized } = useAuth();
   const navigate = useNavigate();
-
+  
   const [tickets, setTickets] = useState([]);
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
@@ -64,7 +64,7 @@ const DashboardPage = () => {
   const [expandedEvents, setExpandedEvents] = useState({});
   const [expandedProjects, setExpandedProjects] = useState({});
   const [ticketNotifications, setTicketNotifications] = useState({});
-
+  
   const [selectedTickets, setSelectedTickets] = useState(new Set());
   const [bulkActionMode, setBulkActionMode] = useState(false);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
@@ -90,7 +90,7 @@ const DashboardPage = () => {
 
     switch (activeFilter) {
       case 'todos':
-        // Já filtramos os arquivados, então 'todos' agora significa 'todos os ativos'
+        // 'todos' agora significa 'todos os ativos'
         break;
       case 'com_notificacao':
         filteredTickets = filteredTickets.filter(ticket => ticketNotifications[ticket.id]);
@@ -105,7 +105,7 @@ const DashboardPage = () => {
         filteredTickets = filteredTickets.filter(ticket => ticket.status === 'em_execucao');
         break;
       case 'escalado':
-        filteredTickets = filteredTickets.filter(ticket =>
+        filteredTickets = filteredTickets.filter(ticket => 
           ticket.status === 'enviado_para_area' || ticket.status === 'escalado_para_area'
         );
         break;
@@ -113,7 +113,7 @@ const DashboardPage = () => {
         filteredTickets = filteredTickets.filter(ticket => {
           if (ticket.status === 'escalado_para_outra_area') {
             if (ticket.areaEscalada === userProfile?.area) return true;
-            if (ticket.usuarioEscalado === user?.uid ||
+            if (ticket.usuarioEscalado === user?.uid || 
                 ticket.usuarioEscalado === userProfile?.email ||
                 ticket.usuarioEscalado === userProfile?.nome) return true;
             if (ticket.areasEnvolvidas && ticket.areasEnvolvidas.includes(userProfile?.area)) return true;
@@ -122,7 +122,7 @@ const DashboardPage = () => {
         });
         break;
       case 'aguardando_validacao':
-        filteredTickets = filteredTickets.filter(ticket =>
+        filteredTickets = filteredTickets.filter(ticket => 
           ticket.status === 'executado_aguardando_validacao'
         );
         break;
@@ -145,14 +145,13 @@ const DashboardPage = () => {
 
   const getTicketCounts = () => {
     const activeTickets = tickets.filter(t => t.status !== 'arquivado');
-
     const counts = {
       todos: activeTickets.length,
       com_notificacao: Object.keys(ticketNotifications).length,
       sem_tratativa: activeTickets.filter(t => t.status === 'aberto').length,
       em_tratativa: activeTickets.filter(t => t.status === 'em_tratativa').length,
       em_execucao: activeTickets.filter(t => t.status === 'em_execucao').length,
-      escalado: activeTickets.filter(t =>
+      escalado: activeTickets.filter(t => 
         t.status === 'enviado_para_area' || t.status === 'escalado_para_area'
       ).length,
       escalado_para_mim: activeTickets.filter(t => {
@@ -174,12 +173,12 @@ const DashboardPage = () => {
   const filterCards = [
     { id: 'todos', title: 'Todos', icon: FileText, color: 'bg-blue-50 border-blue-200 hover:bg-blue-100', iconColor: 'text-blue-600', activeColor: 'bg-blue-500 text-white border-blue-500' },
     ...(userProfile?.funcao === 'gerente' ? [{
-      id: 'aguardando_aprovacao',
-      title: 'Aguardando Aprovação',
-      icon: UserCheck,
-      color: 'bg-orange-50 border-orange-200 hover:bg-orange-100',
-      iconColor: 'text-orange-600',
-      activeColor: 'bg-orange-500 text-white border-orange-500'
+      id: 'aguardando_aprovacao', 
+      title: 'Aguardando Aprovação', 
+      icon: UserCheck, 
+      color: 'bg-orange-50 border-orange-200 hover:bg-orange-100', 
+      iconColor: 'text-orange-600', 
+      activeColor: 'bg-orange-500 text-white border-orange-500' 
     }] : []),
     { id: 'com_notificacao', title: 'Notificações', icon: BellRing, color: 'bg-red-50 border-red-200 hover:bg-red-100', iconColor: 'text-red-600', activeColor: 'bg-red-500 text-white border-red-500' },
     { id: 'sem_tratativa', title: 'Sem Tratativa', icon: AlertCircle, color: 'bg-orange-50 border-orange-200 hover:bg-orange-100', iconColor: 'text-orange-600', activeColor: 'bg-orange-500 text-white border-orange-500' },
@@ -287,9 +286,9 @@ const DashboardPage = () => {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-
+      
       console.log('🔍 Carregando dados para:', userProfile?.funcao);
-
+      
       const filterConfidential = (ticket) => {
         if (!ticket.isConfidential) {
           return true;
@@ -309,13 +308,13 @@ const DashboardPage = () => {
         setProjects(allProjects);
         setTickets(allTickets);
         setUsers(allUsers);
-
+        
         const projectNamesMap = {};
         allProjects.forEach(project => {
           projectNamesMap[project.id] = project.nome;
         });
         setProjectNames(projectNamesMap);
-
+        
       } else if (userProfile?.funcao === 'produtor') {
         console.log('🏭 Produtor: carregando projetos próprios e chamados relacionados');
         const [allProjects, allTickets, allUsers] = await Promise.all([
@@ -323,28 +322,28 @@ const DashboardPage = () => {
           ticketService.getAllTickets(),
           userService.getAllUsers()
         ]);
-
-        const produtorProjects = allProjects.filter(project =>
+        
+        const produtorProjects = allProjects.filter(project => 
           project.produtorId === user.uid
         );
-
+        
         const produtorProjectIds = produtorProjects.map(p => p.id);
-
+        
         const produtorTickets = allTickets.filter(ticket => {
           const isRelatedToProject = produtorProjectIds.includes(ticket.projetoId);
           return isRelatedToProject && filterConfidential(ticket);
         });
-
+        
         setProjects(produtorProjects);
         setTickets(produtorTickets);
         setUsers(allUsers);
-
+        
         const projectNamesMap = {};
         produtorProjects.forEach(project => {
           projectNamesMap[project.id] = project.nome;
         });
         setProjectNames(projectNamesMap);
-
+        
       } else if (userProfile?.funcao === 'consultor') {
         console.log('👨‍💼 Consultor: carregando projetos próprios e chamados específicos');
         const [allProjects, allTickets, allUsers] = await Promise.all([
@@ -352,34 +351,34 @@ const DashboardPage = () => {
           ticketService.getAllTickets(),
           userService.getAllUsers()
         ]);
-
-        const consultorProjects = allProjects.filter(project =>
+        
+        const consultorProjects = allProjects.filter(project => 
           project.consultorId === user.uid
         );
-
+        
         const consultorProjectIds = consultorProjects.map(p => p.id);
-
+        
         const consultorTickets = allTickets.filter(ticket => {
           const isFromConsultorProject = consultorProjectIds.includes(ticket.projetoId);
           const isOpenedByConsultor = ticket.criadoPor === user.uid;
-          const isEscalatedToConsultor = ticket.escalonamentos?.some(esc =>
+          const isEscalatedToConsultor = ticket.escalonamentos?.some(esc => 
             esc.consultorId === user.uid || esc.responsavelId === user.uid
           );
-
+          
           const isRelated = isFromConsultorProject || isOpenedByConsultor || isEscalatedToConsultor;
           return isRelated && filterConfidential(ticket);
         });
-
+        
         setProjects(consultorProjects);
         setTickets(consultorTickets);
         setUsers(allUsers);
-
+        
         const projectNamesMap = {};
         allProjects.forEach(project => {
           projectNamesMap[project.id] = project.nome;
         });
         setProjectNames(projectNamesMap);
-
+        
       } else if (userProfile?.funcao === 'operador') {
         console.log('⚙️ Operador: carregando chamados da área');
         const [allProjects, operatorTickets, allUsers] = await Promise.all([
@@ -387,17 +386,17 @@ const DashboardPage = () => {
           ticketService.getTicketsByAreaInvolved(userProfile.area),
           userService.getAllUsers()
         ]);
-
+        
         setProjects(allProjects);
         setTickets(operatorTickets);
         setUsers(allUsers);
-
+        
         const projectNamesMap = {};
         allProjects.forEach(project => {
           projectNamesMap[project.id] = project.nome;
         });
         setProjectNames(projectNamesMap);
-
+        
       } else if (userProfile?.funcao === 'gerente') {
         console.log('👔 Gerente: carregando TODOS os dados');
         const [allProjects, allTickets, allUsers] = await Promise.all([
@@ -405,17 +404,17 @@ const DashboardPage = () => {
           ticketService.getAllTickets(),
           userService.getAllUsers()
         ]);
-
+        
         setProjects(allProjects);
         setUsers(allUsers);
         setTickets(allTickets);
-
+        
         const projectNamesMap = {};
         allProjects.forEach(project => {
           projectNamesMap[project.id] = project.nome;
         });
         setProjectNames(projectNamesMap);
-
+        
       } else {
         console.log('👤 Usuário padrão: carregando dados básicos');
         const [allProjects, userTickets, allUsers] = await Promise.all([
@@ -423,18 +422,18 @@ const DashboardPage = () => {
           ticketService.getTicketsByUser(user.uid),
           userService.getAllUsers()
         ]);
-
+        
         setProjects(allProjects);
         setTickets(userTickets);
         setUsers(allUsers);
-
+        
         const projectNamesMap = {};
         allProjects.forEach(project => {
           projectNamesMap[project.id] = project.nome;
         });
         setProjectNames(projectNamesMap);
       }
-
+      
     } catch (error) {
       console.error('❌ Erro ao carregar dados do dashboard:', error);
       setProjects([]);
@@ -469,15 +468,15 @@ const DashboardPage = () => {
             <X className="h-6 w-6" />
           </button>
         </div>
-
+        
         <nav className="mt-6 px-3">
           <div className="space-y-1">
-            {(userProfile?.funcao === 'produtor' || userProfile?.funcao === 'consultor' || userProfile?.funcao === 'administrador' ||
+            {(userProfile?.funcao === 'produtor' || userProfile?.funcao === 'consultor' || userProfile?.funcao === 'administrador' || 
               (userProfile?.funcao === 'operador' && userProfile?.area === 'operacional') ||
               (userProfile?.funcao === 'operador' && userProfile?.area === 'comunicacao_visual') ||
               (userProfile?.funcao === 'operador' && userProfile?.area === 'almoxarifado') ||
               (userProfile?.funcao === 'operador' && userProfile?.area === 'logistica')) && (
-              <Button
+              <Button 
                 onClick={() => navigate('/novo-chamado')}
                 className="w-full justify-start mb-4"
               >
@@ -485,9 +484,9 @@ const DashboardPage = () => {
                 Novo Chamado
               </Button>
             )}
-
+            
             {userProfile?.funcao === 'administrador' && (
-              <Button
+              <Button 
                 onClick={() => navigate('/novo-projeto')}
                 variant="outline"
                 className="w-full justify-start mb-4"
@@ -496,8 +495,8 @@ const DashboardPage = () => {
                 Novo Projeto
               </Button>
             )}
-
-            <Button
+            
+            <Button 
               onClick={() => navigate('/projetos')}
               variant="ghost"
               className="w-full justify-start"
@@ -505,8 +504,8 @@ const DashboardPage = () => {
               <FolderOpen className="h-4 w-4 mr-3" />
               Ver Projetos
             </Button>
-
-            <Button
+            
+            <Button 
               onClick={() => navigate('/cronograma')}
               variant="ghost"
               className="w-full justify-start"
@@ -514,10 +513,10 @@ const DashboardPage = () => {
               <Calendar className="h-4 w-4 mr-3" />
               Cronograma
             </Button>
-
+            
             {userProfile?.funcao === 'administrador' && (
               <>
-                <Button
+                <Button 
                   onClick={() => navigate('/eventos')}
                   variant="ghost"
                   className="w-full justify-start"
@@ -525,8 +524,8 @@ const DashboardPage = () => {
                   <Calendar className="h-4 w-4 mr-3" />
                   Eventos
                 </Button>
-
-                <Button
+                
+                <Button 
                   onClick={() => navigate('/usuarios')}
                   variant="ghost"
                   className="w-full justify-start"
@@ -534,8 +533,8 @@ const DashboardPage = () => {
                   <Users className="h-4 w-4 mr-3" />
                   Usuários
                 </Button>
-
-                <Button
+                
+                <Button 
                   onClick={() => navigate('/relatorios')}
                   variant="ghost"
                   className="w-full justify-start"
@@ -543,8 +542,8 @@ const DashboardPage = () => {
                   <BarChart3 className="h-4 w-4 mr-3" />
                   Relatórios
                 </Button>
-
-                <Button
+                
+                <Button 
                   onClick={() => navigate('/analytics')}
                   variant="ghost"
                   className="w-full justify-start"
@@ -552,8 +551,8 @@ const DashboardPage = () => {
                   <BarChart3 className="h-4 w-4 mr-3" />
                   Analytics
                 </Button>
-
-                <Button
+                
+                <Button 
                   onClick={() => navigate('/admin/painel')}
                   variant="ghost"
                   className="w-full justify-start"
@@ -565,7 +564,7 @@ const DashboardPage = () => {
             )}
           </div>
         </nav>
-
+        
         <div className="absolute bottom-0 w-full p-4 border-t">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -585,7 +584,7 @@ const DashboardPage = () => {
       </div>
 
       {mobileMenuOpen && (
-        <div
+        <div 
           className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
           onClick={() => setMobileMenuOpen(false)}
         />
@@ -608,7 +607,7 @@ const DashboardPage = () => {
                 </p>
               </div>
             </div>
-
+            
             <div className="flex items-center space-x-4">
               <NotificationCenter />
             </div>
@@ -634,9 +633,7 @@ const DashboardPage = () => {
                   const IconComponent = card.icon;
                   const isActive = activeFilter === card.id;
                   const count = counts[card.id];
-
-                  if (count === 0 && card.id !== 'todos' && card.id !== 'arquivados') return null;
-
+                  
                   return (
                     <Card
                       key={card.id}
@@ -647,10 +644,10 @@ const DashboardPage = () => {
                     >
                       <CardContent className="p-3 sm:p-4">
                         <div className="flex flex-col items-center text-center space-y-2">
-                          <IconComponent
+                          <IconComponent 
                             className={`h-5 w-5 sm:h-6 sm:w-6 ${
                               isActive ? 'text-white' : card.iconColor
-                            }`}
+                            }`} 
                           />
                           <div>
                             <p className={`text-xs sm:text-sm font-medium ${
@@ -693,7 +690,7 @@ const DashboardPage = () => {
                   </Button>
                 </div>
               )}
-
+              
               <div className="space-y-4">
                 {Object.entries(getTicketsByProject()).map(([projectName, projectTickets]) => (
                   <div key={projectName} className="border rounded-lg">
@@ -713,23 +710,23 @@ const DashboardPage = () => {
                         </div>
                       </div>
                     </button>
-
+                    
                     {expandedProjects[projectName] && (
                       <div className="border-t bg-gray-50/50 p-4 space-y-3">
                         {projectTickets.map((ticket) => {
-                          const isAwaitingApproval = ticket.status === 'aguardando_aprovacao' &&
-                                                   userProfile?.funcao === 'gerente' &&
+                          const isAwaitingApproval = ticket.status === 'aguardando_aprovacao' && 
+                                                   userProfile?.funcao === 'gerente' && 
                                                    ticket.gerenteResponsavelId === user.uid;
-
+                          
                           const cardClassName = `${bulkActionMode ? 'cursor-default' : 'cursor-pointer hover:shadow-md'} transition-shadow ${
-                            isAwaitingApproval
-                              ? 'bg-orange-50 border-2 border-orange-400 shadow-lg ring-2 ring-orange-200'
+                            isAwaitingApproval 
+                              ? 'bg-orange-50 border-2 border-orange-400 shadow-lg ring-2 ring-orange-200' 
                               : 'bg-white'
                           } ${selectedTickets.has(ticket.id) ? 'ring-2 ring-blue-500' : ''}`;
-
+                          
                           return (
-                          <Card
-                            key={ticket.id}
+                          <Card 
+                            key={ticket.id} 
                             className={cardClassName}
                             onClick={bulkActionMode ? undefined : () => handleTicketClick(ticket.id)}
                           >
@@ -759,7 +756,7 @@ const DashboardPage = () => {
                                     </div>
                                     <p className="text-xs md:text-sm text-gray-600 mt-1 line-clamp-2">{ticket.descricao}</p>
                                   </div>
-
+                                  
                                   <div className="flex items-center space-x-2 ml-2 flex-shrink-0">
                                     <div className="text-right text-xs text-gray-500">
                                       <div className="flex flex-col items-end">
@@ -771,7 +768,7 @@ const DashboardPage = () => {
                                         </span>
                                       </div>
                                     </div>
-
+                                    
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -785,10 +782,10 @@ const DashboardPage = () => {
                                     </Button>
                                   </div>
                                 </div>
-
+                                
                                 <div className="flex flex-wrap items-center gap-2">
                                   <Badge className={`${getStatusColor(ticket.status)} text-xs`}>
-                                    {ticket.status?.replace(/_/g, ' ')}
+                                    {ticket.status?.replace('_', ' ')}
                                   </Badge>
                                   <Badge className={`${getPriorityColor(ticket.prioridade)} text-xs`}>
                                     {ticket.prioridade}
@@ -806,8 +803,8 @@ const DashboardPage = () => {
                     )}
                   </div>
                 ))}
-
-                {getFilteredTickets().length === 0 && (
+                
+                {Object.keys(getTicketsByProject()).length === 0 && (
                   <Card>
                     <CardContent className="p-8 text-center">
                       <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -815,8 +812,8 @@ const DashboardPage = () => {
                         {activeFilter === 'todos' ? 'Nenhum chamado encontrado' : 'Nenhum chamado neste filtro'}
                       </h3>
                       <p className="text-gray-500">
-                        {activeFilter === 'todos'
-                          ? 'Não há chamados para exibir no momento.'
+                        {activeFilter === 'todos' 
+                          ? 'Não há chamados para exibir no momento.' 
                           : `Não há chamados com o filtro "${filterCards.find(c => c.id === activeFilter)?.title}" aplicado.`
                         }
                       </p>
@@ -855,12 +852,12 @@ const DashboardPage = () => {
                         </Badge>
                       </div>
                     </button>
-
+                    
                     {expandedEvents[eventName] && (
                       <div className="border-t bg-gray-50/50 p-4 space-y-3">
                         {eventProjects.map((project) => (
-                          <Card
-                            key={project.id}
+                          <Card 
+                            key={project.id} 
                             className="cursor-pointer hover:shadow-md transition-shadow bg-white"
                             onClick={() => handleProjectClick(project)}
                           >
@@ -893,7 +890,7 @@ const DashboardPage = () => {
                     )}
                   </div>
                 ))}
-
+                
                 {Object.keys(getProjectsByEvent()).length === 0 && (
                   <Card>
                     <CardContent className="p-8 text-center">
