@@ -97,17 +97,20 @@ async function sendEmailViaSendGrid(recipients, subject, eventType, ticketData, 
     }
 }
 
-// ✅ NOVA FUNÇÃO PARA CRIAR CHAMADO FINANCEIRO DEPENDENTE
-exports.createFinancialTicket = onCall(async (request) => {
+
+// =================================================================
+// ||        ✅ NOVA FUNÇÃO PARA CRIAR CHAMADO FINANCEIRO         ||
+// =================================================================
+exports.createFinancialTicket = onCall({ cors: true }, async (request) => {
     if (!request.auth) {
         throw new HttpsError("unauthenticated", "Usuário não autenticado.");
     }
 
-    const { originalTicketId, valor, condicoesPagamento, nomeMotorista, placaVeiculo } = request.data;
+    const { originalTicketId, valor, condicoesPagamento, nomeMotorista, placaVeiculo, observacaoPagamento } = request.data;
     const uid = request.auth.uid;
 
     if (!originalTicketId || !valor || !condicoesPagamento || !nomeMotorista || !placaVeiculo) {
-        throw new HttpsError("invalid-argument", "Todos os campos financeiros são obrigatórios.");
+        throw new HttpsError("invalid-argument", "Os campos de valor, condições, motorista e placa são obrigatórios.");
     }
 
     try {
@@ -121,10 +124,17 @@ exports.createFinancialTicket = onCall(async (request) => {
 
         const originalTicketData = originalTicketSnap.data();
         const creatorData = await getUserData(uid);
+        
+        // Monta a descrição, incluindo a observação se ela existir
+        let descricao = `**Dados para Pagamento:**\n- Valor: R$ ${valor}\n- Condições: ${condicoesPagamento}\n- Motorista: ${nomeMotorista}\n- Placa: ${placaVeiculo}\n`;
+        if (observacaoPagamento && observacaoPagamento.trim() !== '') {
+            descricao += `- Observação: ${observacaoPagamento}\n`;
+        }
+        descricao += `\n**Referente ao Chamado de Logística:** #${originalTicketId}`;
 
         const newFinancialTicket = {
             titulo: `Pagamento Frete: ${originalTicketData.titulo}`,
-            descricao: `**Dados para Pagamento:**\n- Valor: R$ ${valor}\n- Condições: ${condicoesPagamento}\n- Motorista: ${nomeMotorista}\n- Placa: ${placaVeiculo}\n\n**Referente ao Chamado de Logística:** #${originalTicketId}`,
+            descricao: descricao,
             area: 'financeiro',
             tipo: 'pagamento_frete',
             status: 'aberto',
