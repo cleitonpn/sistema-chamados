@@ -105,7 +105,8 @@ const TicketDetailPage = () => {
     valor: '',
     condicoesPagamento: '',
     nomeMotorista: '',
-    placaVeiculo: ''
+    placaVeiculo: '',
+    observacaoPagamento: ''
   });
   const [isCreatingFinancialTicket, setIsCreatingFinancialTicket] = useState(false);
 
@@ -733,25 +734,21 @@ const TicketDetailPage = () => {
     }
   };
 
-  // ✅ FUNÇÃO ALTERADA: handleStatusUpdate agora tem a lógica condicional
   const handleStatusUpdate = async () => {
     if (!newStatus) return;
 
-    // Condição para abrir o modal financeiro
     if (
       newStatus === 'executado_aguardando_validacao' &&
       userProfile?.area === 'logistica' &&
       (ticket?.tipo === 'frete_imediato' || ticket?.tipo === 'agendar_frete')
     ) {
-      setIsFinancialModalOpen(true); // Abre o modal em vez de continuar
+      setIsFinancialModalOpen(true);
       return;
     }
 
-    // Se não for a condição especial, executa o fluxo normal
     await proceedWithStatusUpdate(newStatus);
   };
     
-  // ✅ NOVA FUNÇÃO: Contém a lógica original de `handleStatusUpdate`
   const proceedWithStatusUpdate = async (statusToUpdate) => {
     if ((statusToUpdate === 'rejeitado' || (statusToUpdate === 'enviado_para_area' && ticket.status === 'executado_aguardando_validacao')) && !conclusionDescription.trim()) {
       alert('Por favor, forneça um motivo para a rejeição');
@@ -761,6 +758,7 @@ const TicketDetailPage = () => {
     try {
       let updateData = {};
       let systemMessageContent = '';
+
       if (statusToUpdate === 'send_to_area') {
         const targetArea = ticket.areaDestinoOriginal;
         if (!targetArea) {
@@ -783,6 +781,7 @@ const TicketDetailPage = () => {
           atualizadoPor: user.uid,
           updatedAt: new Date()
         };
+
         if (statusToUpdate === 'concluido') {
           updateData.conclusaoDescricao = conclusionDescription;
           updateData.conclusaoImagens = conclusionImages;
@@ -815,7 +814,9 @@ const TicketDetailPage = () => {
             systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(statusToUpdate)}`;
         }
       }
+
       await ticketService.updateTicket(ticketId, updateData);
+
       const statusMessage = {
         userId: user.uid,
         remetenteNome: userProfile.nome || user.email,
@@ -824,6 +825,7 @@ const TicketDetailPage = () => {
         type: 'status_update'
       };
       await messageService.sendMessage(ticketId, statusMessage);
+
       try {
         await notificationService.notifyStatusChange(
           ticketId,
@@ -836,6 +838,7 @@ const TicketDetailPage = () => {
       } catch (notificationError) {
         console.error('❌ Erro ao enviar notificação de mudança de status:', notificationError);
       }
+
       await loadTicketData();
       setNewStatus('');
       setConclusionDescription('');
@@ -853,9 +856,9 @@ const TicketDetailPage = () => {
     setIsCreatingFinancialTicket(true);
     try {
       if (!skip) {
-        const { valor, condicoesPagamento, nomeMotorista, placaVeiculo } = financialFormData;
+        const { valor, condicoesPagamento, nomeMotorista, placaVeiculo, observacaoPagamento } = financialFormData;
         if (!valor || !condicoesPagamento || !nomeMotorista || !placaVeiculo) {
-          alert("Por favor, preencha todos os campos financeiros.");
+          alert("Por favor, preencha todos os campos financeiros obrigatórios (Valor, Condições, Motorista, Placa).");
           setIsCreatingFinancialTicket(false);
           return;
         }
@@ -869,7 +872,7 @@ const TicketDetailPage = () => {
       await proceedWithStatusUpdate('executado_aguardando_validacao');
       alert('Chamado de logística finalizado e enviado para validação!');
       setIsFinancialModalOpen(false);
-      setFinancialFormData({ valor: '', condicoesPagamento: '', nomeMotorista: '', placaVeiculo: '' });
+      setFinancialFormData({ valor: '', condicoesPagamento: '', nomeMotorista: '', placaVeiculo: '', observacaoPagamento: '' });
       setNewStatus('');
     } catch (error) {
       console.error("Erro no processo de criação do chamado financeiro:", error);
@@ -1613,7 +1616,6 @@ const TicketDetailPage = () => {
         </div>
       </div>
       
-      {/* ✅ NOVO MODAL FINANCEIRO */}
       <Dialog open={isFinancialModalOpen} onOpenChange={setIsFinancialModalOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -1641,6 +1643,10 @@ const TicketDetailPage = () => {
             <div className="space-y-2">
               <Label htmlFor="placa">Placa do Veículo</Label>
               <Input id="placa" value={financialFormData.placaVeiculo} onChange={(e) => setFinancialFormData({...financialFormData, placaVeiculo: e.target.value})} placeholder="Ex: BRA2E19" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="observacao">Observação de Pagamento (Opcional)</Label>
+              <Textarea id="observacao" value={financialFormData.observacaoPagamento} onChange={(e) => setFinancialFormData({...financialFormData, observacaoPagamento: e.target.value})} placeholder="Detalhes adicionais para o financeiro..." />
             </div>
           </div>
           <DialogFooter className="sm:justify-between">
