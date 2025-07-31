@@ -98,7 +98,7 @@ const TicketDetailPage = () => {
   const [mentionQuery, setMentionQuery] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
   const textareaRef = useRef(null);
-  
+
   // ✅ NOVOS ESTADOS PARA O FLUXO FINANCEIRO
   const [isFinancialModalOpen, setIsFinancialModalOpen] = useState(false);
   const [financialFormData, setFinancialFormData] = useState({
@@ -733,10 +733,11 @@ const TicketDetailPage = () => {
     }
   };
 
+  // ✅ FUNÇÃO ALTERADA: handleStatusUpdate agora tem a lógica condicional
   const handleStatusUpdate = async () => {
     if (!newStatus) return;
 
-    // ✅ GATILHO: Verifica se a condição para o fluxo financeiro foi atendida
+    // Condição para abrir o modal financeiro
     if (
       newStatus === 'executado_aguardando_validacao' &&
       userProfile?.area === 'logistica' &&
@@ -763,14 +764,15 @@ const TicketDetailPage = () => {
       if (statusToUpdate === 'send_to_area') {
         const targetArea = ticket.areaDestinoOriginal;
         if (!targetArea) {
-            alert('Erro Crítico: A área de destino original não foi encontrada.');
+            alert('Erro Crítico: A área de destino original não foi encontrada neste chamado. O chamado não pode ser enviado. Por favor, contate o suporte. (O campo areaDestinoOriginal está faltando no ticket).');
             setUpdating(false);
             return;
         }
+        const newAreasEnvolvidas = [...new Set([...(ticket.areasEnvolvidas || []), targetArea])];
         updateData = {
           status: 'aberto',
           area: targetArea,
-          areasEnvolvidas: [...new Set([...(ticket.areasEnvolvidas || []), targetArea])],
+          areasEnvolvidas: newAreasEnvolvidas,
           atualizadoPor: user.uid,
           updatedAt: new Date(),
         };
@@ -791,7 +793,8 @@ const TicketDetailPage = () => {
           updateData.motivoRejeicao = conclusionDescription;
           updateData.rejeitadoEm = new Date();
           updateData.rejeitadoPor = user.uid;
-          systemMessageContent = `❌ **Chamado reprovado pelo gerente**\n\n**Motivo:** ${conclusionDescription}`;
+          const managerName = userProfile?.nome || user?.email || 'Gerente';
+          systemMessageContent = `❌ **Chamado reprovado pelo gerente ${managerName}**\n\n**Motivo:** ${conclusionDescription}\n\nO chamado foi encerrado devido à reprovação gerencial.`;
         } else if (statusToUpdate === 'enviado_para_area' && ticket.status === 'executado_aguardando_validacao') {
           updateData.motivoRejeicao = conclusionDescription;
           updateData.rejeitadoEm = new Date();
@@ -805,7 +808,8 @@ const TicketDetailPage = () => {
                 updateData.area = targetArea;
                 updateData.aprovadoEm = new Date();
                 updateData.aprovadoPor = user.uid;
-                systemMessageContent = `✅ **Chamado aprovado pelo gerente** e retornado para a área responsável.`;
+                const managerName = userProfile?.nome || user?.email || 'Gerente';
+                systemMessageContent = `✅ **Chamado aprovado pelo gerente ${managerName}**\n\nO chamado foi aprovado e retornará para a área responsável para execução.`;
             }
         } else {
             systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(statusToUpdate)}`;
@@ -828,6 +832,7 @@ const TicketDetailPage = () => {
           ticket.status,
           user.uid
         );
+        console.log('✅ Notificação de mudança de status enviada');
       } catch (notificationError) {
         console.error('❌ Erro ao enviar notificação de mudança de status:', notificationError);
       }
@@ -1607,6 +1612,48 @@ const TicketDetailPage = () => {
           </div>
         </div>
       </div>
+      
+      {/* ✅ NOVO MODAL FINANCEIRO */}
+      <Dialog open={isFinancialModalOpen} onOpenChange={setIsFinancialModalOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="text-green-600" />
+              Criar Chamado Financeiro
+            </DialogTitle>
+            <DialogDescription>
+              Este chamado de frete foi executado. Deseja criar um chamado dependente para o financeiro realizar o pagamento?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="valor">Valor (R$)</Label>
+              <Input id="valor" value={financialFormData.valor} onChange={(e) => setFinancialFormData({...financialFormData, valor: e.target.value})} placeholder="Ex: 150,00" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="condicoes">Condições de Pagamento</Label>
+              <Input id="condicoes" value={financialFormData.condicoesPagamento} onChange={(e) => setFinancialFormData({...financialFormData, condicoesPagamento: e.target.value})} placeholder="Ex: PIX na entrega" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="motorista">Nome do Motorista</Label>
+              <Input id="motorista" value={financialFormData.nomeMotorista} onChange={(e) => setFinancialFormData({...financialFormData, nomeMotorista: e.target.value})} placeholder="Nome completo" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="placa">Placa do Veículo</Label>
+              <Input id="placa" value={financialFormData.placaVeiculo} onChange={(e) => setFinancialFormData({...financialFormData, placaVeiculo: e.target.value})} placeholder="Ex: BRA2E19" />
+            </div>
+          </div>
+          <DialogFooter className="sm:justify-between">
+            <Button type="button" variant="ghost" onClick={() => handleSubmitFinancialTicket(true)} disabled={isCreatingFinancialTicket}>
+              Não, apenas finalizar chamado
+            </Button>
+            <Button type="button" onClick={() => handleSubmitFinancialTicket(false)} disabled={isCreatingFinancialTicket}>
+              {isCreatingFinancialTicket ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Criar Chamado Financeiro
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
