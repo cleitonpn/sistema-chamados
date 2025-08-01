@@ -49,6 +49,7 @@ export const TICKET_CATEGORIES = {
   financeiro: [
     { value: 'pedido_caixinha', label: 'Pedido de Caixinha' },
     { value: 'pagamento_documentacao', label: 'Pagamento de Documentação' },
+    { value: 'pagamento_frete', label: 'Pagamento de Frete' }, // ✅ NOVO TIPO ADICIONADO
     { value: 'outros', label: 'Outros' }
   ],
   logotipia: [
@@ -197,3 +198,4 @@ export const debugCategoriesIntegrity = () => {
     integrityRate: (validCategories / totalCategories) * 100
   };
 };
+
