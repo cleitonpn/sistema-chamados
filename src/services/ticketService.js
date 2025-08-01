@@ -66,13 +66,13 @@ export const PRIORITIES = {
 };
 
 export const ticketService = {
-  // ✅ NOVO: Criar chamado com suporte a vinculação
+  // ✅ MODIFICADO: Criar chamado com suporte a vinculação (mantendo lógica original)
   async createTicket(ticketData) {
     try {
       // Importar AREAS para usar constante correta
       const { AREAS } = await import('./userService');
       
-      // CORREÇÃO: Roteamento baseado em quem criou o chamado
+      // ✅ MANTIDO: Roteamento baseado em quem criou o chamado (LÓGICA ORIGINAL)
       const finalTicketData = {
         ...ticketData,
         status: TICKET_STATUS.OPEN,
@@ -90,11 +90,11 @@ export const ticketService = {
           responsavel: ticketData.criadoPor,
           comentario: 'Chamado criado'
         }],
-        // ✅ NOVO: Campos para vinculação
+        // ✅ NOVO: Campos para vinculação (SEM ALTERAR LÓGICA ORIGINAL)
         chamadoVinculado: ticketData.chamadoVinculado || null,
         isVinculado: !!ticketData.chamadoVinculado,
         tipoVinculacao: ticketData.chamadoVinculado ? 'pagamento_frete' : null,
-        // Roteamento inteligente baseado no criador
+        // ✅ MANTIDO: Roteamento inteligente baseado no criador (LÓGICA ORIGINAL)
         areaOriginal: ticketData.area, // Salva área original para escalação posterior
         area: (() => {
           // Se foi criado por consultor, sempre vai para produção primeiro (triagem)
@@ -108,7 +108,7 @@ export const ticketService = {
           // Fallback para área especificada
           return ticketData.area;
         })(),
-        // Definir responsável atual baseado no criador
+        // ✅ MANTIDO: Definir responsável atual baseado no criador (LÓGICA ORIGINAL)
         responsavelAtual: (() => {
           if (ticketData.criadoPorFuncao === 'consultor') {
             return 'produtor'; // Consultor -> Produtor (triagem)
@@ -136,7 +136,7 @@ export const ticketService = {
         }
       }
       
-      // Enviar notificações (não bloquear se falhar)
+      // ✅ MANTIDO: Enviar notificações (LÓGICA ORIGINAL)
       try {
         // Importar serviços dinamicamente para evitar dependência circular
         const { userService } = await import('./userService');
@@ -251,7 +251,7 @@ export const ticketService = {
     );
   },
 
-  // Buscar chamado por ID
+  // ✅ MANTIDO: Buscar chamado por ID (LÓGICA ORIGINAL)
   async getTicketById(ticketId) {
     try {
       const docRef = doc(db, 'chamados', ticketId);
@@ -268,7 +268,7 @@ export const ticketService = {
     }
   },
 
-  // Listar todos os chamados (apenas para administradores)
+  // ✅ MANTIDO: Listar todos os chamados (LÓGICA ORIGINAL)
   async getAllTickets() {
     try {
       const querySnapshot = await getDocs(
@@ -292,7 +292,7 @@ export const ticketService = {
     }
   },
 
-  // Buscar chamados por projeto
+  // ✅ MANTIDO: Buscar chamados por projeto (LÓGICA ORIGINAL)
   async getTicketsByProject(projectId) {
     try {
       if (!projectId || typeof projectId !== 'string') {
@@ -323,7 +323,7 @@ export const ticketService = {
     }
   },
 
-  // Buscar chamados por múltiplos projetos (para produtores/consultores)
+  // ✅ MANTIDO: Buscar chamados por múltiplos projetos (LÓGICA ORIGINAL)
   async getTicketsByProjects(projectIds) {
     try {
       if (!projectIds || !Array.isArray(projectIds) || projectIds.length === 0) {
@@ -376,7 +376,7 @@ export const ticketService = {
     }
   },
 
-  // Buscar chamados por área
+  // ✅ MANTIDO: Buscar chamados por área (LÓGICA ORIGINAL PRESERVADA)
   async getTicketsByArea(area) {
     try {
       if (!area || typeof area !== 'string') {
@@ -384,7 +384,7 @@ export const ticketService = {
         return [];
       }
 
-      // Buscar chamados da área E chamados escalados para gerência da área
+      // ✅ MANTIDO: Buscar chamados da área E chamados escalados para gerência da área (LÓGICA ORIGINAL)
       const queries = [
         // Chamados normais da área
         query(collection(db, 'chamados'), where('area', '==', area)),
@@ -418,7 +418,7 @@ export const ticketService = {
     }
   },
 
-  // Buscar chamados por status
+  // ✅ MANTIDO: Buscar chamados por status (LÓGICA ORIGINAL)
   async getTicketsByStatus(status) {
     try {
       if (!status || typeof status !== 'string') {
@@ -449,7 +449,7 @@ export const ticketService = {
     }
   },
 
-  // Buscar chamados por usuário (criados pelo usuário)
+  // ✅ MANTIDO: Buscar chamados por usuário (LÓGICA ORIGINAL)
   async getTicketsByUser(userId) {
     try {
       if (!userId || typeof userId !== 'string') {
@@ -480,7 +480,7 @@ export const ticketService = {
     }
   },
 
-  // Atualizar status do chamado
+  // ✅ MANTIDO: Atualizar status do chamado (LÓGICA ORIGINAL)
   async updateTicketStatus(ticketId, newStatus, userId, comment, ticket) {
     try {
       if (!ticketId || !newStatus || !userId) {
@@ -582,7 +582,7 @@ export const ticketService = {
     }
   },
 
-  // Atualizar chamado
+  // ✅ MANTIDO: Atualizar chamado (LÓGICA ORIGINAL)
   async updateTicket(ticketId, updateData) {
     try {
       const docRef = doc(db, 'chamados', ticketId);
@@ -597,7 +597,7 @@ export const ticketService = {
     }
   },
 
-  // Deletar chamado
+  // ✅ MANTIDO: Deletar chamado (LÓGICA ORIGINAL)
   async deleteTicket(ticketId) {
     try {
       const docRef = doc(db, 'chamados', ticketId);
@@ -609,14 +609,14 @@ export const ticketService = {
     }
   },
 
-  // Calcular SLA
+  // ✅ MANTIDO: Calcular SLA (LÓGICA ORIGINAL)
   calculateSLA(startDate, endDate) {
     const diffInMs = endDate - startDate;
     const diffInHours = diffInMs / (1000 * 60 * 60);
     return Math.round(diffInHours * 100) / 100; // Arredondar para 2 casas decimais
   },
 
-  // Escutar mudanças em tempo real
+  // ✅ MANTIDO: Escutar mudanças em tempo real (LÓGICA ORIGINAL)
   subscribeToTicket(ticketId, callback) {
     const docRef = doc(db, 'chamados', ticketId);
     return onSnapshot(docRef, (doc) => {
@@ -628,7 +628,7 @@ export const ticketService = {
     });
   },
 
-  // Escutar mudanças em chamados por área
+  // ✅ MANTIDO: Escutar mudanças em chamados por área (LÓGICA ORIGINAL)
   subscribeToTicketsByArea(area, callback) {
     const q = query(
       collection(db, 'chamados'),
