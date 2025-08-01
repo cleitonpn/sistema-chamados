@@ -97,7 +97,7 @@ const TicketDetailPage = () => {
   const [mentionQuery, setMentionQuery] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
   const textareaRef = useRef(null);
-  
+
   // ✅ NOVOS ESTADOS PARA O POPUP DE VINCULAÇÃO
   const [showLinkConfirmation, setShowLinkConfirmation] = useState(false);
   const [parentTicketForLink, setParentTicketForLink] = useState(null);
@@ -115,6 +115,7 @@ const TicketDetailPage = () => {
 
       setTicket(ticketData);
 
+      // ✅ ADIÇÃO: Se o chamado atual tiver um pai, busca os dados do pai para exibir o link
       if (ticketData.chamadoPaiId) {
           const parentTicketData = await ticketService.getTicketById(ticketData.chamadoPaiId);
           setParentTicketForLink(parentTicketData);
@@ -515,6 +516,7 @@ const TicketDetailPage = () => {
     }
   };
 
+  // ✅ FUNÇÃO ALTERADA: handleStatusUpdate agora tem a lógica condicional
   const handleStatusUpdate = async () => {
     if (!newStatus) return;
 
@@ -598,17 +600,6 @@ const TicketDetailPage = () => {
     }
   };
   
-  const handleConfirmLinkAndRedirect = async () => {
-    await proceedWithStatusUpdate('executado_aguardando_validacao');
-    navigate('/novo-chamado', { state: { linkedTicketId: ticketId } });
-  };
-
-  const handleConfirmWithoutLinking = async () => {
-    await proceedWithStatusUpdate('executado_aguardando_validacao');
-    setShowLinkConfirmation(false);
-  };
-
-
   const handleSendMessage = async () => {
     if (!newMessage.trim() && chatImages.length === 0) return;
     setSendingMessage(true);
@@ -625,10 +616,25 @@ const TicketDetailPage = () => {
       setSendingMessage(false);
     }
   };
+    
+  // ✅ NOVAS FUNÇÕES PARA GERIR O POPUP E O REDIRECIONAMENTO
+  const handleConfirmLinkAndRedirect = async () => {
+    setUpdating(true); // Ativa o loading
+    setShowLinkConfirmation(false); // Fecha o modal
+    await proceedWithStatusUpdate('executado_aguardando_validacao');
+    // A navegação só acontece após a finalização do chamado
+    navigate('/novo-chamado', { state: { linkedTicketId: ticketId } });
+  };
+
+  const handleConfirmWithoutLinking = async () => {
+    setUpdating(true); // Ativa o loading
+    setShowLinkConfirmation(false); // Fecha o modal
+    await proceedWithStatusUpdate('executado_aguardando_validacao');
+  };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
           <p className="text-gray-600">Carregando chamado...</p>
@@ -1191,23 +1197,6 @@ const TicketDetailPage = () => {
               </CardContent>
             </Card>
 
-            {isArchived && userProfile?.funcao === 'administrador' && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center text-base sm:text-lg">
-                    <ArchiveRestore className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                    Ações de Arquivo
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Button onClick={handleUnarchiveTicket} disabled={updating} className="w-full">
-                    {updating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ArchiveRestore className="h-4 w-4 mr-2" />}
-                    Desarquivar Chamado
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-
             {!isArchived && availableStatuses.length > 0 && (
               <Card>
                 <CardHeader className="pb-3 sm:pb-4">
@@ -1337,46 +1326,20 @@ const TicketDetailPage = () => {
         </div>
       </div>
       
-      <Dialog open={isFinancialModalOpen} onOpenChange={setIsFinancialModalOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+      <Dialog open={showLinkConfirmation} onOpenChange={setShowLinkConfirmation}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <DollarSign className="text-green-600" />
-              Criar Chamado Financeiro
-            </DialogTitle>
+            <DialogTitle>Criar Chamado Financeiro Vinculado?</DialogTitle>
             <DialogDescription>
-              Este chamado de frete foi executado. Deseja criar um chamado dependente para o financeiro realizar o pagamento?
+              Você executou um chamado de logística. Deseja criar um novo chamado para o financeiro, já vinculado a este?
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="valor">Valor (R$)</Label>
-              <Input id="valor" value={financialFormData.valor} onChange={(e) => setFinancialFormData({...financialFormData, valor: e.target.value})} placeholder="Ex: 150,00" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="condicoes">Condições de Pagamento</Label>
-              <Input id="condicoes" value={financialFormData.condicoesPagamento} onChange={(e) => setFinancialFormData({...financialFormData, condicoesPagamento: e.target.value})} placeholder="Ex: PIX na entrega" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="motorista">Nome do Motorista</Label>
-              <Input id="motorista" value={financialFormData.nomeMotorista} onChange={(e) => setFinancialFormData({...financialFormData, nomeMotorista: e.target.value})} placeholder="Nome completo" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="placa">Placa do Veículo</Label>
-              <Input id="placa" value={financialFormData.placaVeiculo} onChange={(e) => setFinancialFormData({...financialFormData, placaVeiculo: e.target.value})} placeholder="Ex: BRA2E19" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="observacao">Observação de Pagamento (Opcional)</Label>
-              <Textarea id="observacao" value={financialFormData.observacaoPagamento} onChange={(e) => setFinancialFormData({...financialFormData, observacaoPagamento: e.target.value})} placeholder="Detalhes adicionais para o financeiro..." />
-            </div>
-          </div>
           <DialogFooter className="sm:justify-between">
-            <Button type="button" variant="ghost" onClick={() => handleSubmitFinancialTicket(true)} disabled={isCreatingFinancialTicket}>
-              Não, apenas finalizar chamado
+            <Button variant="ghost" onClick={handleConfirmWithoutLinking} disabled={updating}>
+              Não, Apenas Finalizar
             </Button>
-            <Button type="button" onClick={() => handleSubmitFinancialTicket(false)} disabled={isCreatingFinancialTicket}>
-              {isCreatingFinancialTicket ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Criar Chamado Financeiro
+            <Button onClick={handleConfirmLinkAndRedirect} disabled={updating}>
+              Sim, Criar Chamado Vinculado
             </Button>
           </DialogFooter>
         </DialogContent>
