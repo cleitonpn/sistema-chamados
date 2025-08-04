@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom'; // ✅ Link adicionado
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { ticketService, TICKET_STATUS } from '@/services/ticketService';
+import { ticketService } from '@/services/ticketService';
 import { projectService } from '@/services/projectService';
-import { userService, AREAS } from '@/services/userService';
+import { userService } from '@/services/userService';
 import { messageService } from '@/services/messageService';
 import notificationService from '@/services/notificationService';
 import ImageUpload from '@/components/ImageUpload';
@@ -17,8 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-// ✅ NOVAS IMPORTAÇÕES PARA O MODAL
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+// A importação do Dialog não é mais necessária para este fluxo
 import {
   ArrowLeft,
   Clock,
@@ -46,7 +45,7 @@ import {
   ThumbsDown,
   Archive,
   ArchiveRestore,
-  Link as LinkIcon // ✅ Ícone adicionado
+  Link as LinkIcon
 } from 'lucide-react';
 
 const TicketDetailPage = () => {
@@ -98,9 +97,11 @@ const TicketDetailPage = () => {
   const [cursorPosition, setCursorPosition] = useState(0);
   const textareaRef = useRef(null);
 
-  // ✅ NOVOS ESTADOS PARA O POPUP DE VINCULAÇÃO
-  const [showLinkConfirmation, setShowLinkConfirmation] = useState(false);
+  // Estado para exibir link do chamado pai
   const [parentTicketForLink, setParentTicketForLink] = useState(null);
+
+  // REMOÇÃO: O estado do pop-up não é mais necessário
+  // const [showLinkConfirmation, setShowLinkConfirmation] = useState(false);
 
   const loadTicketData = async () => {
     try {
@@ -115,7 +116,6 @@ const TicketDetailPage = () => {
 
       setTicket(ticketData);
 
-      // ✅ ADIÇÃO: Se o chamado atual tiver um pai, busca os dados do pai para exibir o link
       if (ticketData.chamadoPaiId) {
           const parentTicketData = await ticketService.getTicketById(ticketData.chamadoPaiId);
           setParentTicketForLink(parentTicketData);
@@ -293,12 +293,12 @@ const TicketDetailPage = () => {
   };
 
   const getStatusColor = (status) => {
-    const colors = { 'aberto': 'bg-blue-100 text-blue-800', 'em_tratativa': 'bg-yellow-100 text-yellow-800', 'em_execucao': 'bg-blue-100 text-blue-800', 'enviado_para_area': 'bg-purple-100 text-purple-800', 'escalado_para_area': 'bg-purple-100 text-purple-800', 'escalado_para_outra_area': 'bg-purple-100 text-purple-800', 'aguardando_aprovacao': 'bg-orange-100 text-orange-800', 'executado_aguardando_validacao': 'bg-indigo-100 text-indigo-800', 'concluido': 'bg-green-100 text-green-800', 'cancelado': 'bg-red-100 text-red-800', 'devolvido': 'bg-pink-100 text-pink-800', 'aprovado': 'bg-green-100 text-green-800', 'reprovado': 'bg-red-100 text-red-800', 'arquivado': 'bg-gray-100 text-gray-700' };
+    const colors = { 'aberto': 'bg-blue-100 text-blue-800', 'em_tratativa': 'bg-yellow-100 text-yellow-800', 'em_execucao': 'bg-blue-100 text-blue-800', 'enviado_para_area': 'bg-purple-100 text-purple-800', 'escalado_para_area': 'bg-purple-100 text-purple-800', 'escalado_para_outra_area': 'bg-purple-100 text-purple-800', 'aguardando_aprovacao': 'bg-orange-100 text-orange-800', 'executado_aguardando_validacao': 'bg-indigo-100 text-indigo-800', 'concluido': 'bg-green-100 text-green-800', 'cancelado': 'bg-red-100 text-red-800', 'devolvido': 'bg-pink-100 text-pink-800', 'aprovado': 'bg-green-100 text-green-800', 'reprovado': 'bg-red-100 text-red-800', 'arquivado': 'bg-gray-100 text-gray-700', 'executado_pelo_consultor': 'bg-yellow-100 text-yellow-800', 'escalado_para_consultor': 'bg-cyan-100 text-cyan-800' };
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
 
   const getStatusText = (status) => {
-    const statusTexts = { 'aberto': 'Aberto', 'em_tratativa': 'Em Tratativa', 'em_execucao': 'Em Execução', 'enviado_para_area': 'Enviado para Área', 'escalado_para_area': 'Escalado para Área', 'escalado_para_outra_area': 'Escalado para Outra Área', 'aguardando_aprovacao': 'Aguardando Aprovação', 'executado_aguardando_validacao': 'Executado - Aguardando Validação', 'concluido': 'Concluído', 'cancelado': 'Cancelado', 'devolvido': 'Devolvido', 'aprovado': 'Aprovado', 'reprovado': 'Reprovado', 'arquivado': 'Arquivado' };
+    const statusTexts = { 'aberto': 'Aberto', 'em_tratativa': 'Em Tratativa', 'em_execucao': 'Em Execução', 'enviado_para_area': 'Enviado para Área', 'escalado_para_area': 'Escalado para Área', 'escalado_para_outra_area': 'Escalado para Outra Área', 'aguardando_aprovacao': 'Aguardando Aprovação', 'executado_aguardando_validacao': 'Executado - Aguardando Validação', 'concluido': 'Concluído', 'cancelado': 'Cancelado', 'devolvido': 'Devolvido', 'aprovado': 'Aprovado', 'reprovado': 'Reprovado', 'arquivado': 'Arquivado', 'executado_pelo_consultor': 'Executado pelo Consultor', 'escalado_para_consultor': 'Escalado para Consultor' };
     return statusTexts[status] || status;
   };
 
@@ -307,21 +307,41 @@ const TicketDetailPage = () => {
     const currentStatus = ticket.status;
     const userRole = userProfile.funcao;
     const isCreator = ticket.criadoPor === user.uid;
+
     if (isCreator && currentStatus === 'executado_aguardando_validacao') {
         return [ { value: 'concluido', label: 'Validar e Concluir' }, { value: 'enviado_para_area', label: 'Rejeitar / Devolver' } ];
     }
+
     if (userRole === 'administrador') {
-      if (currentStatus === 'aberto') return [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
+      if (currentStatus === 'aberto' || currentStatus === 'escalado_para_outra_area' || currentStatus === 'enviado_para_area') return [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
       if (currentStatus === 'em_tratativa') return [ { value: 'executado_aguardando_validacao', label: 'Executado' } ];
       if (currentStatus === 'executado_aguardando_validacao' && !isCreator) return [ { value: 'concluido', label: 'Forçar Conclusão (Admin)' } ];
       if (currentStatus === 'aguardando_aprovacao') return [ { value: 'aprovado', label: 'Aprovar' }, { value: 'rejeitado', label: 'Reprovar' } ];
     }
+    
     if (userRole === 'operador') {
       if ((ticket.area === userProfile.area || ticket.atribuidoA === user.uid)) {
-        if (currentStatus === 'aberto') return [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
-        if (currentStatus === 'em_tratativa') return [ { value: 'executado_aguardando_validacao', label: 'Executado' } ];
+        if (currentStatus === 'aberto' || currentStatus === 'escalado_para_outra_area' || currentStatus === 'enviado_para_area') {
+            return [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
+        }
+        if (currentStatus === 'em_tratativa') {
+            return [ { value: 'executado_aguardando_validacao', label: 'Executado' } ];
+        }
+        if (currentStatus === 'executado_pelo_consultor') {
+            return [
+                { value: 'em_tratativa', label: 'Continuar Tratativa' },
+                { value: 'executado_aguardando_validacao', label: 'Finalizar Execução' }
+            ];
+        }
       }
     }
+
+    if (userRole === 'consultor' && ticket.consultorResponsavelId === user.uid) {
+        if (ticket.status === 'escalado_para_consultor') {
+            return [{ value: 'executado_pelo_consultor', label: 'Executar e Devolver para a Área' }];
+        }
+    }
+    
     return [];
   };
 
@@ -515,16 +535,10 @@ const TicketDetailPage = () => {
       setUpdating(false);
     }
   };
-
-  // ✅ FUNÇÃO ALTERADA: handleStatusUpdate agora tem a lógica condicional
+  
+  // LÓGICA DO POP-UP DE LOGÍSTICA REMOVIDA DAQUI E SUBSTITUÍDA PELO CARD DE VINCULAÇÃO
   const handleStatusUpdate = async () => {
     if (!newStatus) return;
-
-    if ( newStatus === 'executado_aguardando_validacao' && userProfile?.area === 'logistica' ) {
-      setShowLinkConfirmation(true);
-      return;
-    }
-
     await proceedWithStatusUpdate(newStatus);
   };
     
@@ -580,7 +594,12 @@ const TicketDetailPage = () => {
                 updateData.aprovadoPor = user.uid;
                 systemMessageContent = `✅ **Chamado aprovado pelo gerente** e retornado para a área responsável.`;
             }
-        } else {
+        } else if (statusToUpdate === 'executado_pelo_consultor') {
+            updateData.area = ticket.areaDeOrigem;
+            updateData.consultorResponsavelId = null; // Limpa a responsabilidade do consultor
+            systemMessageContent = `👨‍🎯 **Chamado executado pelo consultor e devolvido para:** ${ticket.areaDeOrigem?.replace('_', ' ').toUpperCase()}`;
+        }
+        else {
             systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(statusToUpdate)}`;
         }
       }
@@ -617,20 +636,9 @@ const TicketDetailPage = () => {
     }
   };
     
-  // ✅ NOVAS FUNÇÕES PARA GERIR O POPUP E O REDIRECIONAMENTO
-  const handleConfirmLinkAndRedirect = async () => {
-    setUpdating(true); // Ativa o loading
-    setShowLinkConfirmation(false); // Fecha o modal
-    await proceedWithStatusUpdate('executado_aguardando_validacao');
-    // A navegação só acontece após a finalização do chamado
-    navigate('/novo-chamado', { state: { linkedTicketId: ticketId } });
-  };
-
-  const handleConfirmWithoutLinking = async () => {
-    setUpdating(true); // Ativa o loading
-    setShowLinkConfirmation(false); // Fecha o modal
-    await proceedWithStatusUpdate('executado_aguardando_validacao');
-  };
+  // REMOÇÃO: Funções do pop-up não são mais necessárias
+  // const handleConfirmLinkAndRedirect = async () => { ... };
+  // const handleConfirmWithoutLinking = async () => { ... };
 
   if (loading) {
     return (
@@ -1197,6 +1205,31 @@ const TicketDetailPage = () => {
               </CardContent>
             </Card>
 
+            {/* NOVO CARD PARA VINCULAR CHAMADOS */}
+            {!isArchived && (
+              <Card>
+                <CardHeader className="pb-3 sm:pb-4">
+                  <CardTitle className="flex items-center text-base sm:text-lg">
+                    <LinkIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+                    Vincular Chamado
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Crie um novo chamado para outra área que ficará vinculado a este.
+                  </p>
+                  <Button
+                    className="w-full"
+                    variant="outline"
+                    onClick={() => navigate('/novo-chamado', { state: { linkedTicketId: ticket.id } })}
+                  >
+                    <PlusCircle className="h-4 w-4 mr-2" />
+                    Criar Chamado Vinculado
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
             {!isArchived && availableStatuses.length > 0 && (
               <Card>
                 <CardHeader className="pb-3 sm:pb-4">
@@ -1326,24 +1359,7 @@ const TicketDetailPage = () => {
         </div>
       </div>
       
-      <Dialog open={showLinkConfirmation} onOpenChange={setShowLinkConfirmation}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Criar Chamado Financeiro Vinculado?</DialogTitle>
-            <DialogDescription>
-              Você executou um chamado de logística. Deseja criar um novo chamado para o financeiro, já vinculado a este?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="sm:justify-between">
-            <Button variant="ghost" onClick={handleConfirmWithoutLinking} disabled={updating}>
-              Não, Apenas Finalizar
-            </Button>
-            <Button onClick={handleConfirmLinkAndRedirect} disabled={updating}>
-              Sim, Criar Chamado Vinculado
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* REMOÇÃO: O Dialog/Pop-up não é mais necessário aqui */}
     </div>
   );
 };
