@@ -15,31 +15,257 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Loader2, 
-  Upload, 
-  X, 
-  AlertCircle, 
-  Bot, 
-  Sparkles, 
-  RefreshCw, 
-  TrendingUp, 
-  Lock,
-  Link, // ✅ NOVO: Ícone para vinculação
-  ExternalLink // ✅ NOVO: Ícone para link externo
-} from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
+// ✅ NOVAS IMPORTAÇÕES
+import { Loader2, Upload, X, AlertCircle, Bot, Sparkles, RefreshCw, TrendingUp, Lock, Link as LinkIcon } from 'lucide-react';
+import { useNavigate, useLocation, Link } from 'react-router-dom'; // ✅ useLocation e Link adicionados
 import { collection, getDocs, doc, setDoc, getDoc, query, orderBy, limit, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 
-// ✅ NOVO: Props para receber chamado vinculado
-const NewTicketForm = ({ projectId, onClose, onSuccess, linkedTicket = null }) => {
+// A classe DynamicAITemplateService permanece inalterada
+class DynamicAITemplateService {
+  constructor() {
+    this.templatesCollection = 'ai_templates';
+    this.analyticsCollection = 'ai_analytics';
+  }
+
+  async loadAITemplates() {
+    try {
+      const templatesRef = collection(db, this.templatesCollection);
+      const q = query(templatesRef, orderBy('confidence', 'desc'), limit(10));
+      const snapshot = await getDocs(q);
+      
+      const templates = [];
+      snapshot.forEach((doc) => {
+        templates.push({ id: doc.id, ...doc.data() });
+      });
+      
+      console.log('🤖 Templates IA carregados:', templates.length);
+      return templates;
+    } catch (error) {
+      console.error('❌ Erro ao carregar templates IA:', error);
+      return [];
+    }
+  }
+
+  async analyzeAndUpdateTemplates() {
+    try {
+      console.log('🔍 Iniciando análise automática de chamados...');
+      
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const ticketsRef = collection(db, 'tickets');
+      const q = query(
+        ticketsRef, 
+        where('createdAt', '>=', thirtyDaysAgo),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      
+      const tickets = [];
+      snapshot.forEach((doc) => {
+        tickets.push({ id: doc.id, ...doc.data() });
+      });
+      
+      console.log('📊 Chamados analisados:', tickets.length);
+      
+      const patterns = {};
+      tickets.forEach(ticket => {
+        const key = `${ticket.area}_${ticket.tipo}`;
+        if (!patterns[key]) {
+          patterns[key] = {
+            area: ticket.area,
+            tipo: ticket.tipo,
+            titles: [],
+            descriptions: [],
+            priorities: [],
+            count: 0
+          };
+        }
+        
+        patterns[key].titles.push(ticket.titulo);
+        patterns[key].descriptions.push(ticket.descricao);
+        patterns[key].priorities.push(ticket.prioridade);
+        patterns[key].count++;
+      });
+      
+      const newTemplates = [];
+      Object.entries(patterns).forEach(([key, pattern]) => {
+        if (pattern.count >= 3) {
+          const template = this.generateTemplateFromPattern(key, pattern);
+          if (template) {
+            newTemplates.push(template);
+          }
+        }
+      });
+      
+      for (const template of newTemplates) {
+        await this.saveTemplate(template);
+      }
+      
+      console.log('✅ Novos templates gerados:', newTemplates.length);
+      return newTemplates;
+      
+    } catch (error) {
+      console.error('❌ Erro na análise automática:', error);
+      return [];
+    }
+  }
+
+  generateTemplateFromPattern(key, pattern) {
+    try {
+      const titleWords = pattern.titles.join(' ').toLowerCase().split(' ');
+      const titleWordCount = {};
+      titleWords.forEach(word => {
+        if (word.length > 3) {
+          titleWordCount[word] = (titleWordCount[word] || 0) + 1;
+        }
+      });
+      
+      const priorityCount = {};
+      pattern.priorities.forEach(priority => {
+        priorityCount[priority] = (priorityCount[priority] || 0) + 1;
+      });
+      const mostCommonPriority = Object.keys(priorityCount).reduce((a, b) => 
+        priorityCount[a] > priorityCount[b] ? a : b
+      );
+      
+      const commonWords = Object.entries(titleWordCount)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 3)
+        .map(([word]) => word);
+      
+      const templateTitle = this.generateSmartTitle(pattern.area, pattern.tipo, commonWords);
+      const templateDescription = this.generateSmartDescription(pattern.area, pattern.tipo, pattern.descriptions);
+      
+      const confidence = Math.min(0.95, 0.5 + (pattern.count * 0.05));
+      
+      return {
+        id: `ai_${key}_${Date.now()}`,
+        nome: templateTitle,
+        area: pattern.area,
+        tipo: pattern.tipo,
+        titulo: templateTitle,
+        descricao: templateDescription,
+        prioridade: mostCommonPriority,
+        confidence: confidence,
+        frequency: pattern.count,
+        generatedAt: new Date(),
+        icon: this.getIconForArea(pattern.area),
+        isAI: true,
+        autoGenerated: true
+      };
+      
+    } catch (error) {
+      console.error('❌ Erro ao gerar template:', error);
+      return null;
+    }
+  }
+
+  generateSmartTitle(area, tipo, commonWords) {
+    const areaNames = {
+      'comunicacao_visual': 'Comunicação Visual',
+      'producao': 'Produção',
+      'almoxarifado': 'Almoxarifado',
+      'operacional': 'Operacional',
+      'logistica': 'Logística',
+      'locacao': 'Locação'
+    };
+    
+    const tipoNames = {
+      'troca_lona_cliente': 'Troca de Lona',
+      'manutencao_eletrica': 'Manutenção',
+      'pedido_material': 'Pedido de Material',
+      'informacoes': 'Informações',
+      'frete_imediato': 'Frete Urgente'
+    };
+    
+    const areaName = areaNames[area] || area;
+    const tipoName = tipoNames[tipo] || tipo;
+    
+    return `${tipoName} - ${areaName}`;
+  }
+
+  generateSmartDescription(area, tipo, descriptions) {
+    const commonPhrases = this.extractCommonPhrases(descriptions);
+    
+    const templates = {
+      'comunicacao_visual': {
+        'troca_lona_cliente': `Solicitação de troca de lona para cliente.\n\nCliente: [NOME_CLIENTE]\nLocalização: [STAND/ÁREA]\nMotivo: [ESPECIFICAR_MOTIVO]\nPrazo: [DATA_DESEJADA]\n\nObservações:\n[INFORMAÇÕES_ADICIONAIS]`,
+        'troca_adesivo_cliente': `Solicitação de troca de adesivo para cliente.\n\nCliente: [NOME_CLIENTE]\nTipo de adesivo: [ESPECIFICAR]\nLocalização: [STAND/ÁREA]\nMotivo: [ESPECIFICAR_MOTIVO]`
+      },
+      'producao': {
+        'manutencao_eletrica': `Necessária manutenção elétrica urgente.\n\nEquipamento: [ESPECIFICAR_EQUIPAMENTO]\nProblema: [DESCRIÇÃO_PROBLEMA]\nLocalização: [SETOR/ÁREA]\nImpacto: [ALTO/MÉDIO/BAIXO]\n\nAção necessária:\n[ESPECIFICAR_SOLUÇÃO]`,
+        'manutencao_marcenaria': `Solicitação de manutenção em marcenaria.\n\nItem: [ESPECIFICAR_ITEM]\nProblema: [DESCRIÇÃO]\nUrgência: [ALTA/MÉDIA/BAIXA]`
+      },
+      'almoxarifado': {
+        'pedido_material': `Solicitação de material do almoxarifado.\n\nMaterial: [TIPO_MATERIAL]\nQuantidade: [QTD]\nLocal de entrega: [LOCAL]\nPrazo: [DATA_NECESSÁRIA]\n\nJustificativa:\n[MOTIVO_DA_SOLICITAÇÃO]`,
+        'pedido_mobiliario': `Pedido de mobiliário.\n\nItem: [ESPECIFICAR_MOBILIÁRIO]\nQuantidade: [QTD]\nLocal: [DESTINO]`
+      }
+    };
+    
+    return templates[area]?.[tipo] || `Solicitação relacionada a ${area} - ${tipo}.\n\nDescrição: [ESPECIFICAR]\nPrazo: [DATA]\nObservações: [INFORMAÇÕES_ADICIONAIS]`;
+  }
+
+  extractCommonPhrases(descriptions) {
+    const allText = descriptions.join(' ').toLowerCase();
+    const phrases = allText.match(/\b\w+\s+\w+\s+\w+\b/g) || [];
+    
+    const phraseCount = {};
+    phrases.forEach(phrase => {
+      phraseCount[phrase] = (phraseCount[phrase] || 0) + 1;
+    });
+    
+    return Object.entries(phraseCount)
+      .filter(([phrase, count]) => count > 1)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 5)
+      .map(([phrase]) => phrase);
+  }
+
+  getIconForArea(area) {
+    const icons = {
+      'comunicacao_visual': '🎨',
+      'producao': '🔧',
+      'almoxarifado': '📦',
+      'operacional': '⚙️',
+      'logistica': '🚚',
+      'locacao': '🏢',
+      'compras': '🛒',
+      'financeiro': '💰'
+    };
+    return icons[area] || '📋';
+  }
+
+  async saveTemplate(template) {
+    try {
+      const templateRef = doc(db, this.templatesCollection, template.id);
+      await setDoc(templateRef, template);
+      console.log('✅ Template salvo:', template.id);
+    } catch (error) {
+      console.error('❌ Erro ao salvar template:', error);
+    }
+  }
+
+  async recordTemplateUsage(templateId, success = true) {
+    try {
+      const usageRef = doc(db, 'ai_template_usage', `${templateId}_${Date.now()}`);
+      await setDoc(usageRef, {
+        templateId,
+        success,
+        usedAt: new Date(),
+        userId: 'current_user'
+      });
+    } catch (error) {
+      console.error('❌ Erro ao registrar uso:', error);
+    }
+  }
+}
+
+const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
   const { user, userProfile } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  
-  // ✅ NOVO: Estado para chamado vinculado
-  const [linkedTicketData, setLinkedTicketData] = useState(null);
   
   const [formData, setFormData] = useState({
     titulo: '',
@@ -50,304 +276,438 @@ const NewTicketForm = ({ projectId, onClose, onSuccess, linkedTicket = null }) =
     isExtra: false,
     motivoExtra: '',
     isConfidential: false,
-    observacoes: '',
-    // ✅ NOVO: Campo para chamado vinculado
-    chamadoVinculado: null
+    observacoes: ''
   });
-
+  
   const [projects, setProjects] = useState([]);
-  const [selectedProject, setSelectedProject] = useState(null);
-  const [availableCategories, setAvailableCategories] = useState([]);
-  const [images, setImages] = useState([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedProject, setSelectedProject] = useState(projectId || '');
+  const [selectedEvent, setSelectedEvent] = useState('');
+  const [selectedProjectData, setSelectedProjectData] = useState(null);
+  const [selectedAITemplate, setSelectedAITemplate] = useState('');
+  const [operators, setOperators] = useState([]);
+  const [selectedOperator, setSelectedOperator] = useState('');
+  const [availableTypes, setAvailableTypes] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [images, setImages] = useState([]);
+  
+  const [aiTemplates, setAiTemplates] = useState([]);
+  const [loadingAI, setLoadingAI] = useState(false);
+  const [aiService] = useState(new DynamicAITemplateService());
+  
+  const [linkedTicket, setLinkedTicket] = useState(null);
+  const [loadingLinkedTicket, setLoadingLinkedTicket] = useState(true);
 
-  // ✅ NOVO: Verificar se há chamado vinculado na URL
   useEffect(() => {
-    const urlParams = new URLSearchParams(location.search);
-    const linkedParam = urlParams.get('linked');
-    
-    if (linkedParam) {
-      try {
-        const linkedData = JSON.parse(decodeURIComponent(linkedParam));
-        setLinkedTicketData(linkedData);
-        
-        // Pré-preencher formulário para pagamento de frete
-        setFormData(prev => ({
-          ...prev,
-          area: 'financeiro',
-          tipo: 'pagamento_frete',
-          titulo: `Pagamento de Frete - ${linkedData.titulo}`,
-          descricao: `Solicitação de pagamento de frete referente ao chamado vinculado.\n\nDetalhes do chamado original:\n- Título: ${linkedData.titulo}\n- Descrição: ${linkedData.descricao}\n- Projeto: ${linkedData.projetoNome}`,
-          prioridade: 'alta',
-          chamadoVinculado: linkedData
-        }));
-        
-        // Selecionar projeto automaticamente se disponível
-        if (linkedData.projetoId) {
-          setSelectedProject({ id: linkedData.projetoId, nome: linkedData.projetoNome });
-        }
-        
-      } catch (error) {
-        console.error('Erro ao processar chamado vinculado:', error);
-      }
-    } else if (linkedTicket) {
-      // Usar prop linkedTicket se fornecida
-      setLinkedTicketData(linkedTicket);
-      setFormData(prev => ({
-        ...prev,
-        chamadoVinculado: linkedTicket
-      }));
-    }
-  }, [location.search, linkedTicket]);
-
-  // Carregar projetos
-  useEffect(() => {
-    const loadProjects = async () => {
-      try {
-        let projectsData = [];
-        
-        if (userProfile.funcao === 'administrador') {
-          projectsData = await projectService.getAllProjects();
-        } else if (userProfile.funcao === 'consultor') {
-          projectsData = await projectService.getProjectsByConsultor(user.uid);
-        } else if (userProfile.funcao === 'produtor') {
-          projectsData = await projectService.getProjectsByProdutor(user.uid);
-        } else if (userProfile.funcao === 'operador') {
-          projectsData = await projectService.getAllProjects();
-        }
-        
-        setProjects(projectsData);
-        
-        // Se há um projeto específico (prop), selecionar automaticamente
-        if (projectId && projectsData.length > 0) {
-          const project = projectsData.find(p => p.id === projectId);
-          if (project) {
-            setSelectedProject(project);
+    const linkedTicketId = location.state?.linkedTicketId;
+    if (linkedTicketId) {
+      const fetchLinkedTicket = async () => {
+        try {
+          const ticketData = await ticketService.getTicketById(linkedTicketId);
+          if (ticketData) {
+            const projectData = await projectService.getProjectById(ticketData.projetoId);
+            setLinkedTicket({ ...ticketData, projectName: projectData?.nome || 'N/A', eventName: projectData?.feira || 'N/A' });
+            if (projectData) {
+              setSelectedEvent(projectData.feira);
+              setSelectedProject(projectData.id);
+              setSelectedProjectData(projectData);
+            }
           }
+        } catch (err) {
+          console.error("Erro ao buscar chamado vinculado:", err);
+        } finally {
+          setLoadingLinkedTicket(false);
         }
-      } catch (error) {
-        console.error('Erro ao carregar projetos:', error);
-        setError('Erro ao carregar projetos');
-      }
-    };
-
-    if (user && userProfile) {
-      loadProjects();
+      };
+      fetchLinkedTicket();
+    } else {
+      setLoadingLinkedTicket(false);
     }
-  }, [user, userProfile, projectId]);
+  }, [location.state]);
 
-  // Atualizar categorias quando área muda
+
+  useEffect(() => {
+    loadProjects();
+    loadAITemplates();
+  }, []);
+
+  const loadAITemplates = async () => {
+    setLoadingAI(true);
+    try {
+      const templates = await aiService.loadAITemplates();
+      setAiTemplates(templates);
+    } catch (error) {
+      console.error('❌ Erro ao carregar templates IA:', error);
+    } finally {
+      setLoadingAI(false);
+    }
+  };
+
+  const updateAITemplates = async () => {
+    setLoadingAI(true);
+    try {
+      await aiService.analyzeAndUpdateTemplates();
+      await loadAITemplates();
+    } catch (error) {
+      console.error('❌ Erro ao atualizar templates IA:', error);
+    } finally {
+      setLoadingAI(false);
+    }
+  };
+
   useEffect(() => {
     if (formData.area) {
-      const categories = getCategoriesByArea(formData.area);
-      setAvailableCategories(categories);
-      
-      // Limpar tipo se não for válido para a nova área
-      if (formData.tipo && !categories.some(cat => cat.value === formData.tipo)) {
-        setFormData(prev => ({ ...prev, tipo: '' }));
-      }
+      loadTypesByArea(formData.area);
     } else {
-      setAvailableCategories([]);
+      setAvailableTypes([]);
+      setOperators([]);
+      setSelectedOperator('');
     }
   }, [formData.area]);
 
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-    
-    // Limpar mensagens ao editar
-    if (error) setError('');
-    if (success) setSuccess('');
+  useEffect(() => {
+    if (formData.area && formData.tipo) {
+      loadOperatorsByArea(formData.area);
+    } else {
+      setOperators([]);
+      setSelectedOperator('');
+    }
+  }, [formData.area, formData.tipo]);
+
+  const loadProjects = async () => {
+    try {
+      const projectsData = await projectService.getAllProjects();
+      let filteredProjects = [];
+      
+      if (userProfile?.funcao === 'administrador' || userProfile?.funcao === 'gerente' || userProfile?.funcao === 'operador') {
+        filteredProjects = projectsData.filter(project => project.status !== 'encerrado');
+      } else if (userProfile?.funcao === 'consultor') {
+        const userId = userProfile.id || user.uid;
+        filteredProjects = projectsData.filter(project => {
+          const isAssigned = project.consultorId === userId || 
+                            project.consultorUid === userId ||
+                            project.consultorEmail === userProfile.email ||
+                            project.consultorNome === userProfile.nome;
+          return isAssigned && project.status !== 'encerrado';
+        });
+      } else if (userProfile?.funcao === 'produtor') {
+        const userId = userProfile.id || user.uid;
+        filteredProjects = projectsData.filter(project => {
+          const isAssigned = project.produtorId === userId || 
+                            project.produtorUid === userId ||
+                            project.produtorEmail === userProfile.email ||
+                            project.produtorNome === userProfile.nome;
+          return isAssigned && project.status !== 'encerrado';
+        });
+      }
+
+      filteredProjects.sort((a, b) => {
+        const dateA = a.dataInicio?.seconds ? new Date(a.dataInicio.seconds * 1000) : new Date(a.dataInicio || 0);
+        const dateB = b.dataInicio?.seconds ? new Date(b.dataInicio.seconds * 1000) : new Date(b.dataInicio || 0);
+        return dateB - dateA;
+      });
+
+      setProjects(filteredProjects);
+    } catch (error) {
+      setError('Erro ao carregar projetos. Tente novamente.');
+    }
   };
 
-  const handleImageUpload = (uploadedImages) => {
-    setImages(uploadedImages);
+  const loadTypesByArea = (area) => {
+    try {
+      const categories = getCategoriesByArea(area);
+      const validTypes = categories.filter(category => {
+        return category && 
+               category.value && 
+               typeof category.value === 'string' &&
+               category.value.trim() !== '' && 
+               category.label && 
+               typeof category.label === 'string' &&
+               category.label.trim() !== '';
+      });
+      setAvailableTypes(validTypes);
+      if (formData.tipo && !validTypes.find(type => type.value === formData.tipo)) {
+        handleInputChange('tipo', '');
+      }
+    } catch (error) {
+      setAvailableTypes([]);
+    }
+  };
+
+  const loadOperatorsByArea = async (area) => {
+    try {
+      const allUsers = await userService.getAllUsers();
+      const operatorsByArea = allUsers.filter(user => 
+        user.funcao === 'operador' && user.area === area
+      );
+      setOperators(operatorsByArea);
+      if (selectedOperator && !operatorsByArea.find(op => op.id === selectedOperator)) {
+        setSelectedOperator('');
+      }
+    } catch (error) {
+      setOperators([]);
+    }
+  };
+
+  const getUniqueEvents = () => {
+    const events = [...new Set(projects.map(project => project.feira).filter(Boolean))];
+    return events.sort();
+  };
+
+  const getProjectsByEvent = (eventName) => {
+    return projects.filter(project => project.feira === eventName);
+  };
+
+  const handleEventChange = (eventName) => {
+    setSelectedEvent(eventName);
+    setSelectedProject('');
+    setSelectedProjectData(null);
+  };
+
+  const handleProjectChange = (projectId) => {
+    const project = projects.find(p => p.id === projectId);
+    if (project) {
+      setSelectedProject(projectId);
+      setSelectedProjectData(project);
+    } else {
+      setSelectedProject('');
+      setSelectedProjectData(null);
+    }
+  };
+
+  const handleInputChange = (field, value) => {
+    if (field === 'area') {
+      setFormData({ ...formData, [field]: value, tipo: '' });
+      setSelectedOperator('');
+    } else {
+      setFormData({ ...formData, [field]: value });
+    }
+    if (error) setError('');
+  };
+
+  const applyAITemplate = async (templateId) => {
+    const template = aiTemplates.find(t => t.id === templateId);
+    if (!template) return;
+    setFormData(prev => ({
+      ...prev,
+      titulo: template.titulo,
+      descricao: template.descricao,
+      area: template.area,
+      tipo: template.tipo,
+      prioridade: template.prioridade
+    }));
+    setSelectedAITemplate(templateId);
+    await aiService.recordTemplateUsage(templateId, true);
+  };
+
+  const handleImageUpload = async (event) => {
+    const files = Array.from(event.target.files);
+    for (const file of files) {
+      try {
+        imageService.validateImageFile(file);
+        const resizedFile = await imageService.resizeImage(file);
+        const newImage = {
+          file: resizedFile || file,
+          preview: URL.createObjectURL(resizedFile || file),
+          id: Math.random().toString(36).substr(2, 9),
+        };
+        setImages(prev => [...prev, newImage]);
+      } catch (error) {
+        alert(`Erro ao processar ${file.name}: ${error.message}`);
+      }
+    }
+  };
+
+  const removeImage = (imageId) => {
+    setImages(prev => {
+      const imageToRemove = prev.find(img => img.id === imageId);
+      if (imageToRemove) {
+        URL.revokeObjectURL(imageToRemove.preview);
+      }
+      return prev.filter(img => img.id !== imageId);
+    });
+  };
+
+  const validateForm = () => {
+    if (!selectedProject) {
+      setError('Selecione um projeto');
+      return false;
+    }
+    if (!formData.titulo.trim()) {
+      setError('Digite um título para o chamado');
+      return false;
+    }
+    if (!formData.descricao.trim()) {
+      setError('Digite uma descrição para o chamado');
+      return false;
+    }
+    if (!formData.area) {
+      setError('Selecione a área responsável');
+      return false;
+    }
+    if (!formData.tipo) {
+      setError('Selecione o tipo do chamado');
+      return false;
+    }
+    if (formData.isExtra && !formData.motivoExtra.trim()) {
+      setError('Digite o motivo para o pedido extra');
+      return false;
+    }
+    return true;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Validações
-    if (!formData.titulo.trim()) {
-      setError('Título é obrigatório');
-      return;
-    }
-    
-    if (!formData.descricao.trim()) {
-      setError('Descrição é obrigatória');
-      return;
-    }
-    
-    if (!formData.area) {
-      setError('Área é obrigatória');
-      return;
-    }
-    
-    if (!formData.tipo) {
-      setError('Tipo é obrigatório');
-      return;
-    }
-    
-    if (!selectedProject) {
-      setError('Projeto é obrigatório');
-      return;
-    }
+    if (!validateForm()) return;
 
-    if (formData.isExtra && !formData.motivoExtra.trim()) {
-      setError('Motivo do item extra é obrigatório');
-      return;
-    }
-
-    setIsSubmitting(true);
+    setLoading(true);
     setError('');
 
+    let ticketId = null; 
+
     try {
-      // Preparar dados do chamado
+      let finalTicketData = { ...formData };
+      
+      if (userProfile?.funcao === 'consultor') {
+        finalTicketData.areaDestinoOriginal = formData.area; 
+        finalTicketData.area = AREAS.PRODUCTION;
+        finalTicketData.observacoes = `${finalTicketData.observacoes || ''}\n\n[CHAMADO DE CONSULTOR] - Direcionado para o produtor avaliar e tratar ou escalar para área específica.`.trim();
+      }
+
+      if (selectedAITemplate) {
+        const aiTemplate = aiTemplates.find(t => t.id === selectedAITemplate);
+        if (aiTemplate) {
+          finalTicketData.observacoes = `${finalTicketData.observacoes || ''}\n\n[TEMPLATE IA] - Gerado automaticamente baseado em ${aiTemplate.frequency} chamados similares (${Math.round(aiTemplate.confidence * 100)}% confiança).`.trim();
+        }
+      }
+
       const ticketData = {
-        titulo: formData.titulo.trim(),
-        descricao: formData.descricao.trim(),
-        area: formData.area,
-        tipo: formData.tipo,
-        prioridade: formData.prioridade,
-        projetoId: selectedProject.id,
-        projetoNome: selectedProject.nome,
+        ...finalTicketData,
+        isConfidential: formData.isConfidential,
+        projetoId: selectedProject,
         criadoPor: user.uid,
-        criadoPorNome: userProfile.nome || user.email,
-        criadoPorFuncao: userProfile.funcao,
-        criadoPorArea: userProfile.area,
-        imagens: images,
-        itemExtra: formData.isExtra,
-        motivoItemExtra: formData.isExtra ? formData.motivoExtra.trim() : null,
-        confidencial: formData.isConfidential,
-        observacoes: formData.observacoes.trim() || null,
-        // ✅ NOVO: Incluir dados do chamado vinculado
-        chamadoVinculado: formData.chamadoVinculado
+        criadoPorNome: userProfile?.nome || user.email,
+        criadoPorFuncao: userProfile?.funcao,
+        areasEnvolvidas: [userProfile?.area, finalTicketData.area].filter(Boolean),
+        areaDeOrigem: userProfile?.area || null,
+        imagens: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        chamadoPaiId: linkedTicket ? linkedTicket.id : null,
       };
 
-      console.log('Criando chamado:', ticketData);
-      
-      const ticketId = await ticketService.createTicket(ticketData);
-      
-      // ✅ NOVO: Notificação específica para chamados vinculados
-      if (formData.chamadoVinculado) {
-        try {
-          await notificationService.notifyLinkedTicketCreated(ticketId, ticketData, formData.chamadoVinculado);
-        } catch (notificationError) {
-          console.error('Erro ao enviar notificação de chamado vinculado:', notificationError);
-        }
-      } else {
-        // Notificação normal
-        try {
-          await notificationService.notifyTicketCreated(ticketId, ticketData);
-        } catch (notificationError) {
-          console.error('Erro ao enviar notificação:', notificationError);
-        }
+      if (selectedOperator) {
+        Object.assign(ticketData, { atribuidoA: selectedOperator, status: 'em_tratativa', atribuidoEm: new Date(), atribuidoPor: user.uid });
       }
 
-      setSuccess('Chamado criado com sucesso!');
+      ticketId = await ticketService.createTicket(ticketData);
+
+      try {
+        await notificationService.notifyNewTicket(ticketId, ticketData, user.uid);
+      } catch (notificationError) {
+        console.error('Falha não-crítica ao enviar notificação:', notificationError);
+      }
       
-      // Callback de sucesso
+      setTimeout(() => updateAITemplates(), 2000);
+
+      if (images.length > 0) {
+        try {
+          const uploadedImages = await imageService.uploadMultipleImages(images.map(img => img.file), ticketId);
+          await ticketService.updateTicket(ticketId, {
+            imagens: uploadedImages.map(img => ({ url: img.url, name: img.name, path: img.path }))
+          });
+        } catch (uploadError) {
+          alert('Chamado criado com sucesso, mas houve erro no upload das imagens.');
+        }
+      }
+      
       if (onSuccess) {
         onSuccess(ticketId);
+      } else {
+        navigate('/dashboard');
       }
-      
-      // Redirecionar para o chamado criado após um breve delay
-      setTimeout(() => {
-        navigate(`/chamado/${ticketId}`);
-      }, 1500);
-
     } catch (error) {
       console.error('Erro ao criar chamado:', error);
-      setError('Erro ao criar chamado: ' + error.message);
+      setError('Erro ao criar chamado. Tente novamente.');
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
+  
+  const areaOptions = [
+    { value: AREAS.LOGISTICS, label: 'Logística' },
+    { value: AREAS.WAREHOUSE, label: 'Almoxarifado' },
+    { value: AREAS.VISUAL_COMMUNICATION, label: 'Comunicação Visual' },
+    { value: AREAS.RENTAL, label: 'Locação' },
+    { value: AREAS.PURCHASES, label: 'Compras' },
+    { value: AREAS.PRODUCTION, label: 'Produção' },
+    { value: AREAS.OPERATIONS, label: 'Operacional' },
+    { value: AREAS.FINANCIAL, label: 'Financeiro' },
+    { value: AREAS.PROJECTS, label: 'Projetos' },
+    { value: AREAS.LOGOTIPIA, label: 'Logotipia' },
+    { value: 'detalhamento_tecnico', label: 'Detalhamento Técnico' },
+    { value: 'sub_locacao', label: 'Sub-locação' }
+  ];
+
+  const priorityOptions = [
+    { value: PRIORITIES.LOW, label: 'Baixa', color: 'bg-gray-100 text-gray-800' },
+    { value: PRIORITIES.MEDIUM, label: 'Média', color: 'bg-yellow-100 text-yellow-800' },
+    { value: PRIORITIES.HIGH, label: 'Alta', color: 'bg-orange-100 text-orange-800' },
+    { value: PRIORITIES.URGENT, label: 'Urgente', color: 'bg-red-100 text-red-800' }
+  ];
+
+  if (loadingLinkedTicket) {
+    return (
+        <Card className="w-full max-w-2xl mx-auto">
+            <CardContent className="p-8 flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+            </CardContent>
+        </Card>
+    );
+  }
 
   return (
-    <Card className="w-full max-w-4xl mx-auto">
+    <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
-        <CardTitle className="flex items-center space-x-2">
-          <span>Novo Chamado</span>
-          {/* ✅ NOVO: Indicador de chamado vinculado */}
-          {linkedTicketData && (
-            <Badge variant="secondary" className="ml-2">
-              <Link className="h-3 w-3 mr-1" />
-              Vinculado
-            </Badge>
+        <CardTitle className="flex items-center justify-between">
+          Novo Chamado
+          {onClose && (
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
           )}
         </CardTitle>
         <CardDescription>
-          Preencha as informações abaixo para criar um novo chamado
-          {linkedTicketData && (
-            <span className="text-blue-600 font-medium">
-              {' '}vinculado ao chamado #{linkedTicketData.numero}
-            </span>
-          )}
+          Preencha os dados para criar um novo chamado
         </CardDescription>
       </CardHeader>
-
+      
       <CardContent>
-        {/* ✅ NOVO: Card de Chamado Vinculado */}
-        {linkedTicketData && (
-          <Card className="mb-6 border-blue-200 bg-blue-50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center text-blue-800">
-                <Link className="h-4 w-4 mr-2" />
-                Chamado Vinculado
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="font-medium text-blue-900">Chamado:</span>
-                  <span className="text-blue-700">#{linkedTicketData.numero}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium text-blue-900">Título:</span>
-                  <span className="text-blue-700 text-right max-w-xs truncate">
-                    {linkedTicketData.titulo}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium text-blue-900">Criado por:</span>
-                  <span className="text-blue-700">{linkedTicketData.criadorNome}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium text-blue-900">Área:</span>
-                  <span className="text-blue-700 capitalize">
-                    {linkedTicketData.area?.replace('_', ' ')}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium text-blue-900">Projeto:</span>
-                  <span className="text-blue-700">{linkedTicketData.projetoNome}</span>
-                </div>
-                
-                {/* Link para o chamado original */}
-                <div className="pt-2 border-t border-blue-200">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.open(`/chamado/${linkedTicketData.id}`, '_blank')}
-                    className="text-blue-600 border-blue-300 hover:bg-blue-100"
-                  >
-                    <ExternalLink className="h-3 w-3 mr-1" />
-                    Ver Chamado Original
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        {linkedTicket && (
+            <Card className="mb-6 bg-amber-50 border-amber-200">
+                <CardHeader>
+                    <CardTitle className="flex items-center text-base text-amber-900">
+                        <LinkIcon className="h-4 w-4 mr-2" />
+                        Chamado Vinculado
+                    </CardTitle>
+                    <CardDescription>
+                        Este novo chamado será vinculado ao chamado de logística abaixo.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="text-sm space-y-1">
+                    <p><strong>Título Original:</strong> {linkedTicket.titulo}</p>
+                    <p><strong>Projeto:</strong> {linkedTicket.projectName}</p>
+                    <p><strong>Evento:</strong> {linkedTicket.eventName}</p>
+                    <p><strong>ID do Chamado Original:</strong> 
+                        <Link to={`/chamado/${linkedTicket.id}`} className="text-blue-600 hover:underline ml-1">
+                            {linkedTicket.id}
+                        </Link>
+                    </p>
+                </CardContent>
+            </Card>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Mensagens de erro e sucesso */}
           {error && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -355,197 +715,393 @@ const NewTicketForm = ({ projectId, onClose, onSuccess, linkedTicket = null }) =
             </Alert>
           )}
 
-          {success && (
-            <Alert className="border-green-200 bg-green-50">
-              <AlertCircle className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-800">{success}</AlertDescription>
-            </Alert>
-          )}
-
-          {/* Seleção de Projeto */}
           <div className="space-y-2">
-            <Label htmlFor="project">Projeto *</Label>
-            <Select
-              value={selectedProject?.id || ''}
-              onValueChange={(value) => {
-                const project = projects.find(p => p.id === value);
-                setSelectedProject(project);
-              }}
-              disabled={!!linkedTicketData} // Desabilitar se vinculado
-            >
+            <Label htmlFor="event">Selecione o Evento *</Label>
+            <Select value={selectedEvent} onValueChange={handleEventChange} disabled={!!linkedTicket}>
               <SelectTrigger>
-                <SelectValue placeholder="Selecione um projeto" />
+                <SelectValue placeholder="Selecione o evento" />
               </SelectTrigger>
               <SelectContent>
-                {projects.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
-                    {project.nome}
+                {getUniqueEvents().map((event) => (
+                  <SelectItem key={event} value={event}>
+                    🎯 {event}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          {/* Título */}
+          <div className="space-y-2">
+            <Label htmlFor="project">Selecione o Projeto *</Label>
+            <Select 
+              value={selectedProject} 
+              onValueChange={handleProjectChange}
+              disabled={!selectedEvent || !!linkedTicket}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={selectedEvent ? "Selecione o projeto" : "Primeiro selecione um evento"} />
+              </SelectTrigger>
+              <SelectContent>
+                {selectedEvent && getProjectsByEvent(selectedEvent).map((project) => (
+                  <SelectItem key={project.id} value={project.id}>
+                    <div className="flex items-center space-x-2">
+                      <span>{project.nome}</span>
+                      <span className="text-xs text-gray-500">• {project.local}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            {selectedProjectData && (
+              <div className="mt-3 p-4 bg-blue-50 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium text-blue-800">📋 Projeto Selecionado</h4>
+                  <Badge variant="secondary">{selectedProjectData.feira}</Badge>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <p className="font-medium text-blue-600">Local</p>
+                    <p>{selectedProjectData.local}</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-blue-600">Metragem</p>
+                    <p>{selectedProjectData.metragem}</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-blue-600">Período</p>
+                    <p>
+                      {selectedProjectData.dataInicio && new Date(selectedProjectData.dataInicio.seconds * 1000).toLocaleDateString('pt-BR')} - {selectedProjectData.dataFim && new Date(selectedProjectData.dataFim.seconds * 1000).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                </div>
+                {selectedProjectData.produtorNome && (
+                  <div className="mt-2 text-sm">
+                    <span className="font-medium text-blue-600">Produtor:</span> {selectedProjectData.produtorNome}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2 border-t pt-4">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2">
+                <Bot className="h-4 w-4 text-purple-600" />
+                <span className="text-purple-700 font-medium">Templates IA</span>
+                <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  Aprendizado Automático
+                </Badge>
+              </Label>
+              
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={updateAITemplates}
+                disabled={loadingAI}
+                className="text-purple-600 border-purple-200 hover:bg-purple-50"
+              >
+                {loadingAI ? (
+                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                ) : (
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                )}
+                Atualizar IA
+              </Button>
+            </div>
+            
+            <p className="text-xs text-gray-600 mb-3">
+              Templates criados automaticamente pela IA baseados nos padrões dos seus chamados. 
+              <span className="text-purple-600 font-medium">Atualiza automaticamente a cada novo chamado!</span>
+            </p>
+            
+            {loadingAI ? (
+              <div className="flex items-center justify-center p-8 text-gray-500">
+                <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                Analisando chamados e atualizando templates...
+              </div>
+            ) : aiTemplates.length > 0 ? (
+              <div className="grid grid-cols-1 gap-3">
+                {aiTemplates.map((template) => (
+                  <Card 
+                    key={template.id}
+                    className={`cursor-pointer transition-all hover:shadow-md border-purple-200 ${
+                      selectedAITemplate === template.id 
+                        ? 'ring-2 ring-purple-500 bg-purple-50' 
+                        : 'hover:border-purple-300'
+                    }`}
+                    onClick={() => applyAITemplate(template.id)}
+                  >
+                    <CardContent className="p-3">
+                      <div className="flex items-start gap-3">
+                        <div className="text-lg">{template.icon}</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-medium text-sm text-purple-900">{template.nome}</h4>
+                            <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                              {Math.round(template.confidence * 100)}% confiança
+                            </Badge>
+                            {template.autoGenerated && (
+                              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                <TrendingUp className="h-3 w-3 mr-1" />
+                                Auto
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-600 mb-2 line-clamp-2">
+                            {template.descricao.split('\n')[0]}
+                          </p>
+                          <div className="flex gap-1 items-center">
+                            <Badge variant="outline" className="text-xs">
+                              {template.area?.replace('_', ' ')}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {template.prioridade}
+                            </Badge>
+                            <span className="text-xs text-gray-500 ml-2">
+                              📊 {template.frequency} chamados similares
+                            </span>
+                            {template.generatedAt && (
+                              <span className="text-xs text-gray-400 ml-2">
+                                 {new Date(template.generatedAt.seconds * 1000).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center p-6 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
+                <Bot className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                <p className="text-sm">Nenhum template IA disponível ainda.</p>
+                <p className="text-xs mt-1">A IA criará templates automaticamente conforme você usar o sistema!</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={updateAITemplates}
+                  className="mt-3"
+                >
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  Gerar Templates Agora
+                </Button>
+              </div>
+            )}
+            
+            {selectedAITemplate && (
+              <div className="flex items-center gap-2 text-sm text-purple-600 bg-purple-50 p-2 rounded">
+                <Bot className="h-4 w-4" />
+                Template IA aplicado! Este template foi gerado automaticamente pela análise de padrões.
+              </div>
+            )}
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="titulo">Título *</Label>
             <Input
               id="titulo"
+              placeholder="Ex: Troca de lona na parede C2"
               value={formData.titulo}
               onChange={(e) => handleInputChange('titulo', e.target.value)}
-              placeholder="Digite o título do chamado"
-              maxLength={100}
+              disabled={loading}
+              required
             />
           </div>
 
-          {/* Área e Tipo */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="area">Área *</Label>
-              <Select
-                value={formData.area}
-                onValueChange={(value) => handleInputChange('area', value)}
-                disabled={!!linkedTicketData} // Desabilitar se vinculado
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione uma área" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.values(AREAS).map((area) => (
-                    <SelectItem key={area} value={area}>
-                      {area.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="tipo">Tipo *</Label>
-              <Select
-                value={formData.tipo}
-                onValueChange={(value) => handleInputChange('tipo', value)}
-                disabled={!formData.area || !!linkedTicketData} // Desabilitar se vinculado
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableCategories.map((category) => (
-                    <SelectItem key={category.value} value={category.value}>
-                      {category.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Descrição */}
           <div className="space-y-2">
             <Label htmlFor="descricao">Descrição *</Label>
             <Textarea
               id="descricao"
+              placeholder="Descreva detalhadamente o que precisa ser feito..."
               value={formData.descricao}
               onChange={(e) => handleInputChange('descricao', e.target.value)}
-              placeholder="Descreva detalhadamente o chamado"
+              disabled={loading}
               rows={4}
-              maxLength={1000}
+              required
             />
           </div>
 
-          {/* Prioridade */}
-          <div className="space-y-2">
-            <Label htmlFor="prioridade">Prioridade</Label>
-            <Select
-              value={formData.prioridade}
-              onValueChange={(value) => handleInputChange('prioridade', value)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="baixa">Baixa</SelectItem>
-                <SelectItem value="media">Média</SelectItem>
-                <SelectItem value="alta">Alta</SelectItem>
-                <SelectItem value="urgente">Urgente</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Item Extra */}
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="isExtra"
-              checked={formData.isExtra}
-              onCheckedChange={(checked) => handleInputChange('isExtra', checked)}
-            />
-            <Label htmlFor="isExtra">Item Extra</Label>
-          </div>
-
-          {formData.isExtra && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="motivoExtra">Motivo do Item Extra *</Label>
-              <Textarea
-                id="motivoExtra"
-                value={formData.motivoExtra}
-                onChange={(e) => handleInputChange('motivoExtra', e.target.value)}
-                placeholder="Explique o motivo do item extra"
-                rows={2}
-              />
+              <Label htmlFor="area">Área Responsável *</Label>
+              <Select 
+                value={formData.area} 
+                onValueChange={(value) => handleInputChange('area', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione a área" />
+                </SelectTrigger>
+                <SelectContent>
+                  {areaOptions.map((area) => (
+                    <SelectItem key={area.value} value={area.value}>
+                      {area.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          )}
-
-          {/* Confidencial */}
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="isConfidential"
-              checked={formData.isConfidential}
-              onCheckedChange={(checked) => handleInputChange('isConfidential', checked)}
-            />
-            <Label htmlFor="isConfidential" className="flex items-center">
-              <Lock className="h-4 w-4 mr-1" />
-              Chamado Confidencial
-            </Label>
+            <div className="space-y-2">
+              <Label htmlFor="tipo">Tipo *</Label>
+              <Select 
+                value={formData.tipo} 
+                onValueChange={(value) => handleInputChange('tipo', value)}
+                disabled={!formData.area || availableTypes.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={
+                    !formData.area 
+                      ? "Selecione a área primeiro" 
+                      : availableTypes.length === 0 
+                        ? "Carregando tipos..." 
+                        : "Selecione o tipo"
+                  } />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableTypes.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          {/* Observações */}
           <div className="space-y-2">
-            <Label htmlFor="observacoes">Observações</Label>
+            <Label htmlFor="prioridade">Prioridade *</Label>
+            <div className="flex flex-wrap gap-2">
+              {priorityOptions.map((priority) => (
+                <button
+                  key={priority.value}
+                  type="button"
+                  onClick={() => handleInputChange('prioridade', priority.value)}
+                  className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                    formData.prioridade === priority.value
+                      ? priority.color + ' ring-2 ring-offset-2 ring-blue-500'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                  disabled={loading}
+                >
+                  {priority.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-4 border-t">
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="isExtra"
+                checked={formData.isExtra}
+                onCheckedChange={(checked) => handleInputChange('isExtra', checked)}
+                disabled={loading}
+              />
+              <Label htmlFor="isExtra" className="text-sm font-medium">
+                Este é um pedido extra
+              </Label>
+            </div>
+            {formData.isExtra && (
+              <div className="space-y-2">
+                <Label htmlFor="motivoExtra">Motivo do Pedido Extra *</Label>
+                <Textarea
+                  id="motivoExtra"
+                  placeholder="Explique por que este pedido é necessário..."
+                  value={formData.motivoExtra}
+                  onChange={(e) => handleInputChange('motivoExtra', e.target.value)}
+                  disabled={loading}
+                  rows={3}
+                  required={formData.isExtra}
+                />
+              </div>
+            )}
+            <div className="flex items-center space-x-2 pt-4 border-t">
+              <Switch
+                id="isConfidential"
+                checked={formData.isConfidential}
+                onCheckedChange={(checked) => handleInputChange('isConfidential', checked)}
+                disabled={loading}
+              />
+              <Label htmlFor="isConfidential" className="text-sm font-medium flex items-center gap-2">
+                <Lock className="h-4 w-4 text-orange-600"/>
+                <span className="text-orange-700">Tornar este chamado confidencial</span>
+              </Label>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="images">Imagens</Label>
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+              <input
+                type="file"
+                id="images"
+                multiple
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="hidden"
+                disabled={loading}
+              />
+              <label
+                htmlFor="images"
+                className="cursor-pointer flex flex-col items-center justify-center space-y-2 text-gray-600 hover:text-gray-800"
+              >
+                <Upload className="h-8 w-8" />
+                <span className="text-sm">Clique para adicionar imagens</span>
+              </label>
+            </div>
+            {images.length > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
+                {images.map((image) => (
+                  <div key={image.id} className="relative">
+                    <img
+                      src={image.preview}
+                      alt="Preview"
+                      className="w-full h-24 object-cover rounded-lg border"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(image.id)}
+                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                      disabled={loading}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="observacoes">Observações Adicionais</Label>
             <Textarea
               id="observacoes"
+              placeholder="Informações adicionais relevantes..."
               value={formData.observacoes}
               onChange={(e) => handleInputChange('observacoes', e.target.value)}
-              placeholder="Observações adicionais (opcional)"
-              rows={2}
+              disabled={loading}
+              rows={3}
             />
           </div>
 
-          {/* Upload de Imagens */}
-          <div className="space-y-2">
-            <Label>Imagens</Label>
-            <ImageUpload onImagesChange={handleImageUpload} />
-          </div>
-
-          {/* Botões */}
-          <div className="flex justify-end space-x-3 pt-6">
+          <div className="flex justify-end space-x-3 pt-4">
             {onClose && (
-              <Button type="button" variant="outline" onClick={onClose}>
+              <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
                 Cancelar
               </Button>
             )}
-            
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? (
+            <Button type="submit" disabled={loading}>
+              {loading ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Criando...
                 </>
               ) : (
-                <>
-                  {linkedTicketData && <Link className="h-4 w-4 mr-2" />}
-                  Criar Chamado
-                </>
+                'Criar Chamado'
               )}
             </Button>
           </div>
@@ -556,4 +1112,3 @@ const NewTicketForm = ({ projectId, onClose, onSuccess, linkedTicket = null }) =
 };
 
 export default NewTicketForm;
-
