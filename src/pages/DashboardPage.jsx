@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { projectService } from '../services/projectService';
 import { ticketService } from '../services/ticketService';
 import { userService } from '../services/userService';
 import notificationService from '../services/notificationService';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -71,51 +71,68 @@ const DashboardPage = () => {
 
   const [activeFilter, setActiveFilter] = useState('todos');
 
-  // ====================================================================================================
-  // AJUSTE PRINCIPAL: A LÓGICA DE CARREGAMENTO ANTIGA FOI REMOVIDA E SUBSTITUÍDA POR ESTE useEffect
-  // QUE UTILIZA O LISTENER EM TEMPO REAL (onSnapshot) PARA BUSCAR OS CHAMADOS
-  // ====================================================================================================
+  // =============================== INÍCIO DA ALTERAÇÃO ===============================
+  // A função loadDashboardData e o useEffect que a chamava foram substituídos por este
+  // bloco único que implementa a busca de dados em tempo real.
+
   useEffect(() => {
-    if (!authInitialized || !user || !userProfile) {
-      if(authInitialized && !user) navigate('/login');
-      setLoading(false);
+    // Se a autenticação não foi inicializada ou não há usuário/perfil, não faz nada.
+    if (!authInitialized) return;
+    if (authInitialized && !user) {
+      navigate('/login');
+      return;
+    }
+    if (!userProfile) {
+      setLoading(false); // Para o loading se o perfil ainda não carregou.
       return;
     }
 
     setLoading(true);
-    
+
+    // Carrega dados auxiliares (que não precisam ser em tempo real)
+    const fetchAuxData = async () => {
+      try {
+        const [allProjects, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          userService.getAllUsers(),
+        ]);
+
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjects(allProjects);
+        setProjectNames(projectNamesMap);
+        setUsers(allUsers);
+      } catch (error) {
+        console.error('❌ Erro ao carregar dados auxiliares:', error);
+      }
+    };
+
+    fetchAuxData();
+
+    // Cria a query base para os chamados
     const ticketsCollectionRef = collection(db, 'chamados');
     let q;
 
-    // Constrói a query baseada no perfil do usuário
+    // Define a query baseada no perfil do usuário
     if (userProfile.funcao === 'administrador' || userProfile.funcao === 'gerente') {
       q = query(ticketsCollectionRef);
     } else if (userProfile.funcao === 'produtor') {
-      const producerProjectIds = projects.filter(p => p.produtorId === user.uid).map(p => p.id);
-      if (producerProjectIds.length === 0) {
-        setTickets([]);
-        setLoading(false);
-        return;
-      }
-      q = query(ticketsCollectionRef, where('projetoId', 'in', producerProjectIds));
+      q = query(ticketsCollectionRef, where('projetoId', 'in', projects.filter(p => p.produtorId === user.uid).map(p => p.id)));
     } else if (userProfile.funcao === 'consultor') {
-      const consultorProjectIds = projects.filter(p => p.consultorId === user.uid).map(p => p.id);
-      if (consultorProjectIds.length === 0) {
-        setTickets([]);
-        setLoading(false);
-        return;
-      }
-      q = query(ticketsCollectionRef, where('projetoId', 'in', consultorProjectIds));
+      q = query(ticketsCollectionRef, where('projetoId', 'in', projects.filter(p => p.consultorId === user.uid).map(p => p.id)));
     } else if (userProfile.funcao === 'operador') {
       q = query(ticketsCollectionRef, where('areasEnvolvidas', 'array-contains', userProfile.area));
-    } else { // Usuário padrão/cliente
+    } else {
       q = query(ticketsCollectionRef, where('criadoPor', '==', user.uid));
     }
-
+    
+    // Inicia o listener em tempo real
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      let fetchedTickets = querySnapshot.docs.map(doc => {
+      const fetchedTickets = querySnapshot.docs.map(doc => {
         const data = doc.data();
-        // Filtro de confidencialidade
+        // Filtra chamados confidenciais aqui
         if (data.isConfidential) {
           const isCreator = data.criadoPor === user.uid;
           const isAdmin = userProfile.funcao === 'administrador';
@@ -129,40 +146,35 @@ const DashboardPage = () => {
       setTickets(fetchedTickets);
       setLoading(false);
     }, (error) => {
-      console.error("Erro ao buscar chamados em tempo real:", error);
+      console.error("Erro ao escutar os chamados:", error);
       setLoading(false);
     });
-    
-    // Função de limpeza
+
+    // Retorna a função de limpeza para parar de escutar quando o componente for desmontado
     return () => unsubscribe();
 
-  }, [authInitialized, user, userProfile, navigate, projects]); // `projects` é dependência para produtor/consultor
+  }, [authInitialized, user, userProfile, navigate]); // Roda o efeito quando a autenticação mudar
+  
+  // =============================== FIM DA ALTERAÇÃO ===============================
 
-  // Carregamento de dados auxiliares (Projetos, Usuários, etc.)
   useEffect(() => {
-    if (authInitialized && user) {
-        const fetchAuxData = async () => {
-            try {
-                const [allProjects, allUsers] = await Promise.all([
-                    projectService.getAllProjects(),
-                    userService.getAllUsers()
-                ]);
-
-                const projectNamesMap = {};
-                allProjects.forEach(project => {
-                    projectNamesMap[project.id] = project.nome;
-                });
-                setProjects(allProjects);
-                setProjectNames(projectNamesMap);
-                setUsers(allUsers);
-
-            } catch (error) {
-                console.error('❌ Erro ao carregar dados auxiliares:', error);
-            }
-        };
-        fetchAuxData();
+    if (tickets.length > 0 && user?.uid) {
+      const unsubscribe = notificationService.subscribeToNotifications(user.uid, (allNotifications) => {
+        const counts = {};
+        allNotifications.forEach(notification => {
+          if (notification.ticketId && !notification.lida) {
+            counts[notification.ticketId] = (counts[notification.ticketId] || 0) + 1;
+          }
+        });
+        setTicketNotifications(counts);
+      });
+      return () => {
+        if (unsubscribe) {
+          unsubscribe();
+        }
+      };
     }
-  }, [authInitialized, user]);
+  }, [tickets, user?.uid]);
 
 
   const getProjectName = (projetoId) => {
@@ -323,25 +335,6 @@ const DashboardPage = () => {
     else newSelected.delete(ticketId);
     setSelectedTickets(newSelected);
   };
-
-  useEffect(() => {
-    if (tickets.length > 0 && user?.uid) {
-      const unsubscribe = notificationService.subscribeToNotifications(user.uid, (allNotifications) => {
-        const counts = {};
-        allNotifications.forEach(notification => {
-          if (notification.ticketId && !notification.lida) {
-            counts[notification.ticketId] = (counts[notification.ticketId] || 0) + 1;
-          }
-        });
-        setTicketNotifications(counts);
-      });
-      return () => {
-        if (unsubscribe) {
-          unsubscribe();
-        }
-      };
-    }
-  }, [tickets, user?.uid]);
   
   if (!authInitialized || loading) {
     return (
@@ -810,4 +803,3 @@ const DashboardPage = () => {
 };
 
 export default DashboardPage;
-}
