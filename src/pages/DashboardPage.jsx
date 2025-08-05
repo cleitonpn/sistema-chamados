@@ -255,8 +255,7 @@ const DashboardPage = () => {
     }
   };
 
-  // COLE TODO ESTE BLOCO NO LUGAR DO CÓDIGO QUE VOCÊ APAGOU
-useEffect(() => {
+  useEffect(() => {
     if (authInitialized && user && userProfile && user.uid) {
       loadDashboardData();
     } else if (authInitialized && !user) {
@@ -307,7 +306,8 @@ useEffect(() => {
       const { funcao, area, uid } = userProfile;
       let ticketsQuery;
 
-      } else if (!['administrador', 'gerente', 'produtor', 'consultor', 'operador'].includes(funcao)) {
+      // Otimizamos a query para buscar apenas os chamados relevantes para perfis limitados
+      if (!['administrador', 'gerente', 'produtor', 'consultor', 'operador'].includes(funcao)) {
         ticketsQuery = query(collection(db, "tickets"), where("criadoPor", "==", uid));
       } else {
         // Perfis mais amplos (admin, gerente, etc.) escutam todos os chamados e filtram no cliente
@@ -339,13 +339,10 @@ useEffect(() => {
             const isEscalatedToConsultor = ticket.escalonamentos?.some(esc => esc.consultorId === user.uid || esc.responsavelId === user.uid);
             return (isFromConsultorProject || isOpenedByConsultor || isEscalatedToConsultor) && filterConfidential(ticket);
           });
-        }
-        else if (funcao === 'operador') {
-    // Esta é a regra correta que faltava
-    fetchedTickets = fetchedTickets.filter(ticket => 
-        ticket.areasEnvolvidas?.includes(area) && filterConfidential(ticket)
-    );
-} 
+        } else if (funcao === 'operador') {
+          fetchedTickets = fetchedTickets.filter(ticket => 
+              ticket.areasEnvolvidas?.includes(area) && filterConfidential(ticket)
+          );
         } else if (funcao === 'administrador' || funcao === 'gerente') {
             fetchedTickets = fetchedTickets.filter(filterConfidential);
         }
@@ -366,7 +363,7 @@ useEffect(() => {
     });
   };
   
-    useEffect(() => {
+  useEffect(() => {
     if (tickets.length > 0 && user?.uid) {
       const unsubscribe = notificationService.subscribeToNotifications(user.uid, (allNotifications) => {
         const counts = {};
