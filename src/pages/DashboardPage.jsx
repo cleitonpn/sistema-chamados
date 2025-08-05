@@ -192,7 +192,6 @@ const DashboardPage = () => {
   ];
 
   const getDisplayedTickets = () => getFilteredTickets();
-  
   const getProjectsByEvent = () => {
     const grouped = {};
     projects.forEach(project => {
@@ -202,7 +201,6 @@ const DashboardPage = () => {
     });
     return grouped;
   };
-
   const getTicketsByProject = () => {
     const grouped = {};
     const displayedTickets = getDisplayedTickets();
@@ -223,7 +221,6 @@ const DashboardPage = () => {
     const colors = { 'aberto': 'bg-blue-100 text-blue-800', 'em_tratativa': 'bg-yellow-100 text-yellow-800', 'em_execucao': 'bg-blue-100 text-blue-800', 'enviado_para_area': 'bg-purple-100 text-purple-800', 'escalado_para_area': 'bg-purple-100 text-purple-800', 'aguardando_aprovacao': 'bg-orange-100 text-orange-800', 'executado_aguardando_validacao': 'bg-indigo-100 text-indigo-800', 'concluido': 'bg-green-100 text-green-800', 'cancelado': 'bg-red-100 text-red-800', 'devolvido': 'bg-pink-100 text-pink-800', 'arquivado': 'bg-gray-100 text-gray-700' };
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
-
   const getPriorityColor = (priority) => {
     const colors = { 'baixa': 'bg-green-100 text-green-800', 'media': 'bg-yellow-100 text-yellow-800', 'alta': 'bg-red-100 text-red-800' };
     return colors[priority] || 'bg-gray-100 text-gray-800';
@@ -235,119 +232,126 @@ const DashboardPage = () => {
     else newSelected.delete(ticketId);
     setSelectedTickets(newSelected);
   };
-
-  const loadTicketNotifications = async () => {
-    if (!user?.uid || !tickets.length) return;
-    try {
-      const notificationCounts = {};
-      for (const ticket of tickets) {
-        try {
-          const count = await notificationService.getUnreadNotificationsByTicket(user.uid, ticket.id);
-          if (count > 0) {
-            notificationCounts[ticket.id] = count;
-          }
-        } catch (ticketError) {
-          console.warn(`⚠️ Erro ao carregar notificações do chamado ${ticket.id}:`, ticketError);
-        }
-      }
-      setTicketNotifications(notificationCounts);
-    } catch (error) {
-      console.error('❌ Erro ao carregar notificações dos chamados:', error);
-      setTicketNotifications({});
-    }
-  };
-
-  // Efeito para carregar dados em tempo real.
+  
+  // HOOK DE EFEITO PRINCIPAL PARA CARREGAR DADOS
   useEffect(() => {
-    if (!authInitialized) return;
-
+    if (!authInitialized) {
+      return; // Aguarda a inicialização do Auth
+    }
     if (!user) {
-      navigate('/login');
+      navigate('/login'); // Se não houver usuário, navega para o login
       return;
     }
-
     if (!userProfile) {
-      setLoading(false);
+      setLoading(false); // Se houver usuário mas o perfil ainda não carregou, para de carregar e aguarda
       return;
     }
-
+    
     setLoading(true);
 
-    // Função interna para buscar dados que não precisam ser em tempo real (Projetos, Usuários)
-    const fetchAuxiliaryData = async () => {
-        try {
-            const allProjects = await projectService.getAllProjects();
-            const allUsers = await userService.getAllUsers();
-            
-            setProjects(allProjects);
-            setUsers(allUsers);
+    // --- Início da Lógica de Busca de Dados ---
 
-            const projectNamesMap = {};
-            allProjects.forEach(project => {
-                projectNamesMap[project.id] = project.nome;
-            });
-            setProjectNames(projectNamesMap);
-        } catch (error) {
-            console.error("❌ Erro ao buscar dados auxiliares:", error);
-        }
+    // 1. Busca de dados que NÃO precisam de tempo real (Projetos e Usuários)
+    const fetchAuxiliaryData = async () => {
+      try {
+        const [allProjects, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          userService.getAllUsers(),
+        ]);
+
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+
+        setProjects(allProjects);
+        setUsers(allUsers);
+        setProjectNames(projectNamesMap);
+
+      } catch (error) {
+        console.error("❌ Erro ao buscar dados auxiliares (projetos, usuários):", error);
+      }
     };
     
     fetchAuxiliaryData();
 
-    // Lógica para criar a consulta em tempo real baseada na função do usuário
+    // 2. Lógica para configurar a consulta de CHAMADOS em TEMPO REAL
     let ticketsQuery;
     const ticketsCollectionRef = collection(db, 'chamados');
     const userRole = userProfile.funcao;
     
-    console.log(`🔍 Montando consulta em tempo real para: ${userRole}`);
+    console.log(`[REAL-TIME] Configurando ouvinte de chamados para o perfil: ${userRole}`);
 
+    // A lógica de permissão original foi migrada para cá
     if (userRole === 'administrador' || userRole === 'gerente') {
       ticketsQuery = query(ticketsCollectionRef);
     } else if (userRole === 'operador') {
       ticketsQuery = query(ticketsCollectionRef, where('area', '==', userProfile.area));
+    } else if (userRole === 'produtor') {
+      // Para o produtor, escutamos chamados dos projetos dele.
+      // Isso requer primeiro buscar os IDs dos projetos do produtor.
+      projectService.getProjectsByProducer(user.uid).then(producerProjects => {
+        const producerProjectIds = producerProjects.map(p => p.id);
+        if (producerProjectIds.length > 0) {
+          const specificQuery = query(ticketsCollectionRef, where('projetoId', 'in', producerProjectIds));
+          attachListener(specificQuery);
+        } else {
+          // Se o produtor não tem projetos, não há chamados para ouvir.
+          setTickets([]);
+          setLoading(false);
+        }
+      });
+      return; // A lógica de anexar o ouvinte será feita no .then() acima.
+    } else if (userRole === 'consultor') {
+       // A lógica para consultor é complexa para uma única query.
+       // A abordagem mais simples e performática é escutar os chamados criados por ele.
+       ticketsQuery = query(ticketsCollectionRef, where('criadoPor', '==', user.uid));
     } else {
-      // Regra padrão para produtor, consultor e outros: visualizam os chamados que criaram
+      // Usuário Padrão
       ticketsQuery = query(ticketsCollectionRef, where('criadoPor', '==', user.uid));
-      // NOTA: As regras mais complexas para 'produtor' e 'consultor' do código original,
-      // que filtravam por projetos e escalonamentos, são muito difíceis de replicar
-      // em uma única consulta de tempo real eficiente. A abordagem de filtrar por
-      // 'criadoPor' é uma simplificação performática.
     }
 
-    // Inicia o "ouvinte" em tempo real
-    const unsubscribe = onSnapshot(ticketsQuery, (querySnapshot) => {
+    // Função para anexa o ouvinte de tempo real
+    const attachListener = (queryToListen) => {
+      const unsubscribe = onSnapshot(queryToListen, (querySnapshot) => {
         const filterConfidential = (ticket) => {
-            if (!ticket.isConfidential) {
-                return true;
-            }
-            const isCreator = ticket.criadoPor === user.uid;
-            const isAdmin = userProfile?.funcao === 'administrador';
-            return isCreator || isAdmin;
+          if (!ticket.isConfidential) {
+            return true;
+          }
+          const isCreator = ticket.criadoPor === user.uid;
+          const isAdmin = userProfile?.funcao === 'administrador';
+          return isCreator || isAdmin;
         };
 
         const fetchedTickets = querySnapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter(filterConfidential);
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(filterConfidential);
 
-        console.log(`✅ [REAL-TIME] ${fetchedTickets.length} chamados atualizados.`);
+        console.log(`✅ [REAL-TIME] Dados recebidos: ${fetchedTickets.length} chamados.`);
         setTickets(fetchedTickets);
+        setLoading(false); // Para o loading após a primeira carga de dados
+      }, (error) => {
+        console.error("❌ [REAL-TIME] Erro ao ouvir os chamados:", error);
         setLoading(false);
-    }, (error) => {
-        console.error("❌ Erro ao ouvir atualizações de chamados:", error);
-        setLoading(false);
-    });
-
-    // Função de limpeza: Desconecta o ouvinte quando o componente é desmontado
-    return () => {
-        console.log("🔌 Desconectando ouvinte de chamados.");
-        unsubscribe();
+      });
+      return unsubscribe; // Retorna a função para se desinscrever
     };
 
+    // Anexa o ouvinte e guarda a função de limpeza
+    const unsubscribeFunction = attachListener(ticketsQuery);
+
+    // 3. Função de Limpeza do Efeito
+    return () => {
+      if (unsubscribeFunction) {
+        console.log("🔌 [REAL-TIME] Desconectando ouvinte de chamados.");
+        unsubscribeFunction();
+      }
+    };
   }, [user, userProfile, authInitialized, navigate]);
 
-
-  // Efeito para gerenciar as notificações do sininho, reage à lista de tickets
+  // HOOK DE EFEITO PARA NOTIFICAÇÕES DO SINO
   useEffect(() => {
+    // Este hook reage à lista de tickets, que agora é atualizada em tempo real.
     if (tickets.length > 0 && user?.uid) {
       const unsubscribe = notificationService.subscribeToNotifications(user.uid, (allNotifications) => {
         const counts = {};
