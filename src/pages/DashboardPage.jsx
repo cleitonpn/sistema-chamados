@@ -308,9 +308,7 @@ useEffect(() => {
       let ticketsQuery;
 
       // Otimizamos a query para buscar apenas os chamados relevantes para cada perfil
-      if (funcao === 'operador') {
-        ticketsQuery = query(collection(db, "tickets"), where("areasEnvolvidas", "array-contains", area));
-      } else if (!['administrador', 'gerente', 'produtor', 'consultor'].includes(funcao)) {
+      } else if (!['administrador', 'gerente', 'produtor', 'consultor', 'operador'].includes(funcao)) {
         ticketsQuery = query(collection(db, "tickets"), where("criadoPor", "==", uid));
       } else {
         // Perfis mais amplos (admin, gerente, etc.) escutam todos os chamados e filtram no cliente
@@ -342,6 +340,13 @@ useEffect(() => {
             const isEscalatedToConsultor = ticket.escalonamentos?.some(esc => esc.consultorId === user.uid || esc.responsavelId === user.uid);
             return (isFromConsultorProject || isOpenedByConsultor || isEscalatedToConsultor) && filterConfidential(ticket);
           });
+        }
+        else if (funcao === 'operador') {
+    // Esta é a regra correta que faltava
+    fetchedTickets = fetchedTickets.filter(ticket => 
+        ticket.areasEnvolvidas?.includes(area) && filterConfidential(ticket)
+    );
+} 
         } else if (funcao === 'administrador' || funcao === 'gerente') {
             fetchedTickets = fetchedTickets.filter(filterConfidential);
         }
