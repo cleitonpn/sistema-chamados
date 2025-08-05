@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { projectService } from '../services/projectService';
@@ -53,7 +53,6 @@ import {
 const DashboardPage = () => {
   const { user, userProfile, logout, authInitialized } = useAuth();
   const navigate = useNavigate();
-  const unsubscribeTickets = useRef(null);
   
   const [tickets, setTickets] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -255,114 +254,31 @@ const DashboardPage = () => {
     }
   };
 
-  useEffect(() => {
-    if (authInitialized && user && userProfile && user.uid) {
+ useEffect(() => {
+  if (authInitialized && user && userProfile && user.uid) {
+    // 1. Carrega os dados imediatamente quando a página abre
+    console.log("Carregando dados iniciais...");
+    loadDashboardData();
+
+    // 2. Configura um intervalo para recarregar os dados a cada 3 minutos
+    const tresMinutos = 3 * 60 * 1000;
+    const intervalId = setInterval(() => {
+      console.log("Recarregando dados automaticamente...");
       loadDashboardData();
-    } else if (authInitialized && !user) {
-      navigate('/login');
-    } else if (authInitialized && user && !userProfile) {
-      setLoading(false);
-    }
+    }, tresMinutos);
 
-    // Função de limpeza: será executada quando o componente for desmontado
+    // 3. Limpa o intervalo quando o usuário sai da página (MUITO IMPORTANTE)
     return () => {
-      if (unsubscribeTickets.current) {
-        console.log('Listener de chamados desativado.');
-        unsubscribeTickets.current();
-      }
+      clearInterval(intervalId);
     };
-  }, [user, userProfile, authInitialized, navigate]);
 
+  } else if (authInitialized && !user) {
+    navigate('/login');
+  } else if (authInitialized && user && !userProfile) {
+    setLoading(false);
+  }
+}, [user, userProfile, authInitialized, navigate]);
 
-  const loadDashboardData = () => {
-    setLoading(true);
-
-    // 1. Buscamos os dados que não mudam com tanta frequência (projetos, usuários)
-    Promise.all([
-      projectService.getAllProjects(),
-      userService.getAllUsers()
-    ]).then(([allProjects, allUsers]) => {
-
-      // Mapeia todos os nomes de projetos para uso geral
-      const projectNamesMap = {};
-      allProjects.forEach(project => {
-        projectNamesMap[project.id] = project.nome;
-      });
-      setProjectNames(projectNamesMap);
-      setUsers(allUsers);
-
-      // Filtra a lista de PROJETOS visível para o usuário (ex: produtor só vê os seus)
-      if (userProfile?.funcao === 'produtor') {
-        setProjects(allProjects.filter(p => p.produtorId === user.uid));
-      } else if (userProfile?.funcao === 'consultor') {
-        setProjects(allProjects.filter(p => p.consultorId === user.uid));
-      } else {
-        setProjects(allProjects);
-      }
-
-      // 2. Agora, criamos o listener para os CHAMADOS
-      console.log('Ativando listener de chamados em tempo real...');
-
-      const { funcao, area, uid } = userProfile;
-      let ticketsQuery;
-
-      // Otimizamos a query para buscar apenas os chamados relevantes para perfis limitados
-      if (!['administrador', 'gerente', 'produtor', 'consultor', 'operador'].includes(funcao)) {
-        ticketsQuery = query(collection(db, "tickets"), where("criadoPor", "==", uid));
-      } else {
-        // Perfis mais amplos (admin, gerente, etc.) escutam todos os chamados e filtram no cliente
-        ticketsQuery = query(collection(db, "tickets"));
-      }
-
-      const unsubscribe = onSnapshot(ticketsQuery, (snapshot) => {
-        console.log("Atualização de chamados recebida!");
-        let fetchedTickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        const filterConfidential = (ticket) => {
-            if (!ticket.isConfidential) return true;
-            const isCreator = ticket.criadoPor === user.uid;
-            const isAdmin = userProfile?.funcao === 'administrador';
-            return isCreator || isAdmin;
-        };
-
-        // Para os perfis que buscam tudo, aplicamos o filtro no cliente
-        if (funcao === 'produtor') {
-          const produtorProjectIds = allProjects.filter(p => p.produtorId === user.uid).map(p => p.id);
-          fetchedTickets = fetchedTickets.filter(ticket => 
-            produtorProjectIds.includes(ticket.projetoId) && filterConfidential(ticket)
-          );
-        } else if (funcao === 'consultor') {
-          const consultorProjectIds = allProjects.filter(p => p.consultorId === user.uid).map(p => p.id);
-          fetchedTickets = fetchedTickets.filter(ticket => {
-            const isFromConsultorProject = consultorProjectIds.includes(ticket.projetoId);
-            const isOpenedByConsultor = ticket.criadoPor === user.uid;
-            const isEscalatedToConsultor = ticket.escalonamentos?.some(esc => esc.consultorId === user.uid || esc.responsavelId === user.uid);
-            return (isFromConsultorProject || isOpenedByConsultor || isEscalatedToConsultor) && filterConfidential(ticket);
-          });
-        } else if (funcao === 'operador') {
-          fetchedTickets = fetchedTickets.filter(ticket => 
-              ticket.areasEnvolvidas?.includes(area) && filterConfidential(ticket)
-          );
-        } else if (funcao === 'administrador' || funcao === 'gerente') {
-            fetchedTickets = fetchedTickets.filter(filterConfidential);
-        }
-
-        setTickets(fetchedTickets);
-        setLoading(false); // Desativa o loading após a primeira carga
-      }, (error) => {
-        console.error("❌ Erro no listener de chamados:", error);
-        setLoading(false);
-      });
-
-      // Guardamos a função de "unsubscribe" na nossa referência
-      unsubscribeTickets.current = unsubscribe;
-
-    }).catch(error => {
-      console.error('❌ Erro ao carregar dados do dashboard:', error);
-      setLoading(false);
-    });
-  };
-  
   useEffect(() => {
     if (tickets.length > 0 && user?.uid) {
       const unsubscribe = notificationService.subscribeToNotifications(user.uid, (allNotifications) => {
@@ -382,7 +298,167 @@ const DashboardPage = () => {
     }
   }, [tickets, user?.uid]);
 
-    if (!authInitialized || loading) {
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      
+      console.log('🔍 Carregando dados para:', userProfile?.funcao);
+      
+      const filterConfidential = (ticket) => {
+        if (!ticket.isConfidential) {
+          return true;
+        }
+        const isCreator = ticket.criadoPor === user.uid;
+        const isAdmin = userProfile?.funcao === 'administrador';
+        return isCreator || isAdmin;
+      };
+
+      if (userProfile?.funcao === 'administrador') {
+        console.log('👑 Administrador: carregando TODOS os dados');
+        const [allProjects, allTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getAllTickets(),
+          userService.getAllUsers()
+        ]);
+        setProjects(allProjects);
+        setTickets(allTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else if (userProfile?.funcao === 'produtor') {
+        console.log('🏭 Produtor: carregando projetos próprios e chamados relacionados');
+        const [allProjects, allTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getAllTickets(),
+          userService.getAllUsers()
+        ]);
+        
+        const produtorProjects = allProjects.filter(project => 
+          project.produtorId === user.uid
+        );
+        
+        const produtorProjectIds = produtorProjects.map(p => p.id);
+        
+        const produtorTickets = allTickets.filter(ticket => {
+          const isRelatedToProject = produtorProjectIds.includes(ticket.projetoId);
+          return isRelatedToProject && filterConfidential(ticket);
+        });
+        
+        setProjects(produtorProjects);
+        setTickets(produtorTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        produtorProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else if (userProfile?.funcao === 'consultor') {
+        console.log('👨‍💼 Consultor: carregando projetos próprios e chamados específicos');
+        const [allProjects, allTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getAllTickets(),
+          userService.getAllUsers()
+        ]);
+        
+        const consultorProjects = allProjects.filter(project => 
+          project.consultorId === user.uid
+        );
+        
+        const consultorProjectIds = consultorProjects.map(p => p.id);
+        
+        const consultorTickets = allTickets.filter(ticket => {
+          const isFromConsultorProject = consultorProjectIds.includes(ticket.projetoId);
+          const isOpenedByConsultor = ticket.criadoPor === user.uid;
+          const isEscalatedToConsultor = ticket.escalonamentos?.some(esc => 
+            esc.consultorId === user.uid || esc.responsavelId === user.uid
+          );
+          
+          const isRelated = isFromConsultorProject || isOpenedByConsultor || isEscalatedToConsultor;
+          return isRelated && filterConfidential(ticket);
+        });
+        
+        setProjects(consultorProjects);
+        setTickets(consultorTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else if (userProfile?.funcao === 'operador') {
+        console.log('⚙️ Operador: carregando chamados da área');
+        const [allProjects, operatorTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getTicketsByAreaInvolved(userProfile.area),
+          userService.getAllUsers()
+        ]);
+        
+        setProjects(allProjects);
+        setTickets(operatorTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else if (userProfile?.funcao === 'gerente') {
+        console.log('👔 Gerente: carregando TODOS os dados');
+        const [allProjects, allTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getAllTickets(),
+          userService.getAllUsers()
+        ]);
+        
+        setProjects(allProjects);
+        setUsers(allUsers);
+        setTickets(allTickets);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+        
+      } else {
+        console.log('👤 Usuário padrão: carregando dados básicos');
+        const [allProjects, userTickets, allUsers] = await Promise.all([
+          projectService.getAllProjects(),
+          ticketService.getTicketsByUser(user.uid),
+          userService.getAllUsers()
+        ]);
+        
+        setProjects(allProjects);
+        setTickets(userTickets);
+        setUsers(allUsers);
+        
+        const projectNamesMap = {};
+        allProjects.forEach(project => {
+          projectNamesMap[project.id] = project.nome;
+        });
+        setProjectNames(projectNamesMap);
+      }
+      
+    } catch (error) {
+      console.error('❌ Erro ao carregar dados do dashboard:', error);
+      setProjects([]);
+      setTickets([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!authInitialized || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
