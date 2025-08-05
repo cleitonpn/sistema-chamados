@@ -307,7 +307,6 @@ useEffect(() => {
       const { funcao, area, uid } = userProfile;
       let ticketsQuery;
 
-      // Otimizamos a query para buscar apenas os chamados relevantes para cada perfil
       } else if (!['administrador', 'gerente', 'produtor', 'consultor', 'operador'].includes(funcao)) {
         ticketsQuery = query(collection(db, "tickets"), where("criadoPor", "==", uid));
       } else {
