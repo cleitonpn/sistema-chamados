@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { projectService } from '../services/projectService';
@@ -53,6 +53,7 @@ import {
 const DashboardPage = () => {
   const { user, userProfile, logout, authInitialized } = useAuth();
   const navigate = useNavigate();
+  const unsubscribeTickets = useRef(null);
   
   const [tickets, setTickets] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -123,7 +124,7 @@ const DashboardPage = () => {
         break;
       case 'aguardando_validacao':
         filteredTickets = filteredTickets.filter(ticket => 
-          ticket.status === 'executado_aguardando_validacao'
+          ticket.status === 'executado_aguardando_validacao' || ticket.status === 'executado_aguardando_validacao_operador'
         );
         break;
       case 'concluidos':
@@ -162,7 +163,7 @@ const DashboardPage = () => {
         }
         return false;
       }).length,
-      aguardando_validacao: activeTickets.filter(t => t.status === 'executado_aguardando_validacao').length,
+     aguardando_validacao: activeTickets.filter(t => t.status === 'executado_aguardando_validacao' || t.status === 'executado_aguardando_validacao_operador').length,
       concluidos: activeTickets.filter(t => t.status === 'concluido').length,
       aguardando_aprovacao: activeTickets.filter(t => t.status === 'aguardando_aprovacao').length,
       arquivados: tickets.filter(t => t.status === 'arquivado').length
@@ -232,126 +233,136 @@ const DashboardPage = () => {
     else newSelected.delete(ticketId);
     setSelectedTickets(newSelected);
   };
-  
-  // HOOK DE EFEITO PRINCIPAL PARA CARREGAR DADOS
-  useEffect(() => {
-    if (!authInitialized) {
-      return; // Aguarda a inicialização do Auth
-    }
-    if (!user) {
-      navigate('/login'); // Se não houver usuário, navega para o login
-      return;
-    }
-    if (!userProfile) {
-      setLoading(false); // Se houver usuário mas o perfil ainda não carregou, para de carregar e aguarda
-      return;
-    }
-    
-    setLoading(true);
 
-    // --- Início da Lógica de Busca de Dados ---
-
-    // 1. Busca de dados que NÃO precisam de tempo real (Projetos e Usuários)
-    const fetchAuxiliaryData = async () => {
-      try {
-        const [allProjects, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          userService.getAllUsers(),
-        ]);
-
-        const projectNamesMap = {};
-        allProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-
-        setProjects(allProjects);
-        setUsers(allUsers);
-        setProjectNames(projectNamesMap);
-
-      } catch (error) {
-        console.error("❌ Erro ao buscar dados auxiliares (projetos, usuários):", error);
-      }
-    };
-    
-    fetchAuxiliaryData();
-
-    // 2. Lógica para configurar a consulta de CHAMADOS em TEMPO REAL
-    let ticketsQuery;
-    const ticketsCollectionRef = collection(db, 'chamados');
-    const userRole = userProfile.funcao;
-    
-    console.log(`[REAL-TIME] Configurando ouvinte de chamados para o perfil: ${userRole}`);
-
-    // A lógica de permissão original foi migrada para cá
-    if (userRole === 'administrador' || userRole === 'gerente') {
-      ticketsQuery = query(ticketsCollectionRef);
-    } else if (userRole === 'operador') {
-      ticketsQuery = query(ticketsCollectionRef, where('area', '==', userProfile.area));
-    } else if (userRole === 'produtor') {
-      // Para o produtor, escutamos chamados dos projetos dele.
-      // Isso requer primeiro buscar os IDs dos projetos do produtor.
-      projectService.getProjectsByProducer(user.uid).then(producerProjects => {
-        const producerProjectIds = producerProjects.map(p => p.id);
-        if (producerProjectIds.length > 0) {
-          const specificQuery = query(ticketsCollectionRef, where('projetoId', 'in', producerProjectIds));
-          attachListener(specificQuery);
-        } else {
-          // Se o produtor não tem projetos, não há chamados para ouvir.
-          setTickets([]);
-          setLoading(false);
-        }
-      });
-      return; // A lógica de anexar o ouvinte será feita no .then() acima.
-    } else if (userRole === 'consultor') {
-       // A lógica para consultor é complexa para uma única query.
-       // A abordagem mais simples e performática é escutar os chamados criados por ele.
-       ticketsQuery = query(ticketsCollectionRef, where('criadoPor', '==', user.uid));
-    } else {
-      // Usuário Padrão
-      ticketsQuery = query(ticketsCollectionRef, where('criadoPor', '==', user.uid));
-    }
-
-    // Função para anexa o ouvinte de tempo real
-    const attachListener = (queryToListen) => {
-      const unsubscribe = onSnapshot(queryToListen, (querySnapshot) => {
-        const filterConfidential = (ticket) => {
-          if (!ticket.isConfidential) {
-            return true;
+  const loadTicketNotifications = async () => {
+    if (!user?.uid || !tickets.length) return;
+    try {
+      const notificationCounts = {};
+      for (const ticket of tickets) {
+        try {
+          const count = await notificationService.getUnreadNotificationsByTicket(user.uid, ticket.id);
+          if (count > 0) {
+            notificationCounts[ticket.id] = count;
           }
-          const isCreator = ticket.criadoPor === user.uid;
-          const isAdmin = userProfile?.funcao === 'administrador';
-          return isCreator || isAdmin;
-        };
+        } catch (ticketError) {
+          console.warn(`⚠️ Erro ao carregar notificações do chamado ${ticket.id}:`, ticketError);
+        }
+      }
+      setTicketNotifications(notificationCounts);
+    } catch (error) {
+      console.error('❌ Erro ao carregar notificações dos chamados:', error);
+      setTicketNotifications({});
+    }
+  };
 
-        const fetchedTickets = querySnapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(filterConfidential);
+  // COLE TODO ESTE BLOCO NO LUGAR DO CÓDIGO QUE VOCÊ APAGOU
+useEffect(() => {
+    if (authInitialized && user && userProfile && user.uid) {
+      loadDashboardData();
+    } else if (authInitialized && !user) {
+      navigate('/login');
+    } else if (authInitialized && user && !userProfile) {
+      setLoading(false);
+    }
 
-        console.log(`✅ [REAL-TIME] Dados recebidos: ${fetchedTickets.length} chamados.`);
-        setTickets(fetchedTickets);
-        setLoading(false); // Para o loading após a primeira carga de dados
-      }, (error) => {
-        console.error("❌ [REAL-TIME] Erro ao ouvir os chamados:", error);
-        setLoading(false);
-      });
-      return unsubscribe; // Retorna a função para se desinscrever
-    };
-
-    // Anexa o ouvinte e guarda a função de limpeza
-    const unsubscribeFunction = attachListener(ticketsQuery);
-
-    // 3. Função de Limpeza do Efeito
+    // Função de limpeza: será executada quando o componente for desmontado
     return () => {
-      if (unsubscribeFunction) {
-        console.log("🔌 [REAL-TIME] Desconectando ouvinte de chamados.");
-        unsubscribeFunction();
+      if (unsubscribeTickets.current) {
+        console.log('Listener de chamados desativado.');
+        unsubscribeTickets.current();
       }
     };
   }, [user, userProfile, authInitialized, navigate]);
 
-  // HOOK DE EFEITO PARA NOTIFICAÇÕES DO SINO
-  useEffect(() => {
-    // Este hook reage à lista de tickets, que agora é atualizada em tempo real.
+
+  const loadDashboardData = () => {
+    setLoading(true);
+
+    // 1. Buscamos os dados que não mudam com tanta frequência (projetos, usuários)
+    Promise.all([
+      projectService.getAllProjects(),
+      userService.getAllUsers()
+    ]).then(([allProjects, allUsers]) => {
+
+      // Mapeia todos os nomes de projetos para uso geral
+      const projectNamesMap = {};
+      allProjects.forEach(project => {
+        projectNamesMap[project.id] = project.nome;
+      });
+      setProjectNames(projectNamesMap);
+      setUsers(allUsers);
+
+      // Filtra a lista de PROJETOS visível para o usuário (ex: produtor só vê os seus)
+      if (userProfile?.funcao === 'produtor') {
+        setProjects(allProjects.filter(p => p.produtorId === user.uid));
+      } else if (userProfile?.funcao === 'consultor') {
+        setProjects(allProjects.filter(p => p.consultorId === user.uid));
+      } else {
+        setProjects(allProjects);
+      }
+
+      // 2. Agora, criamos o listener para os CHAMADOS
+      console.log('Ativando listener de chamados em tempo real...');
+
+      const { funcao, area, uid } = userProfile;
+      let ticketsQuery;
+
+      // Otimizamos a query para buscar apenas os chamados relevantes para cada perfil
+      if (funcao === 'operador') {
+        ticketsQuery = query(collection(db, "tickets"), where("areasEnvolvidas", "array-contains", area));
+      } else if (!['administrador', 'gerente', 'produtor', 'consultor'].includes(funcao)) {
+        ticketsQuery = query(collection(db, "tickets"), where("criadoPor", "==", uid));
+      } else {
+        // Perfis mais amplos (admin, gerente, etc.) escutam todos os chamados e filtram no cliente
+        ticketsQuery = query(collection(db, "tickets"));
+      }
+
+      const unsubscribe = onSnapshot(ticketsQuery, (snapshot) => {
+        console.log("Atualização de chamados recebida!");
+        let fetchedTickets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        const filterConfidential = (ticket) => {
+            if (!ticket.isConfidential) return true;
+            const isCreator = ticket.criadoPor === user.uid;
+            const isAdmin = userProfile?.funcao === 'administrador';
+            return isCreator || isAdmin;
+        };
+
+        // Para os perfis que buscam tudo, aplicamos o filtro no cliente
+        if (funcao === 'produtor') {
+          const produtorProjectIds = allProjects.filter(p => p.produtorId === user.uid).map(p => p.id);
+          fetchedTickets = fetchedTickets.filter(ticket => 
+            produtorProjectIds.includes(ticket.projetoId) && filterConfidential(ticket)
+          );
+        } else if (funcao === 'consultor') {
+          const consultorProjectIds = allProjects.filter(p => p.consultorId === user.uid).map(p => p.id);
+          fetchedTickets = fetchedTickets.filter(ticket => {
+            const isFromConsultorProject = consultorProjectIds.includes(ticket.projetoId);
+            const isOpenedByConsultor = ticket.criadoPor === user.uid;
+            const isEscalatedToConsultor = ticket.escalonamentos?.some(esc => esc.consultorId === user.uid || esc.responsavelId === user.uid);
+            return (isFromConsultorProject || isOpenedByConsultor || isEscalatedToConsultor) && filterConfidential(ticket);
+          });
+        } else if (funcao === 'administrador' || funcao === 'gerente') {
+            fetchedTickets = fetchedTickets.filter(filterConfidential);
+        }
+
+        setTickets(fetchedTickets);
+        setLoading(false); // Desativa o loading após a primeira carga
+      }, (error) => {
+        console.error("❌ Erro no listener de chamados:", error);
+        setLoading(false);
+      });
+
+      // Guardamos a função de "unsubscribe" na nossa referência
+      unsubscribeTickets.current = unsubscribe;
+
+    }).catch(error => {
+      console.error('❌ Erro ao carregar dados do dashboard:', error);
+      setLoading(false);
+    });
+  };
+  
+    useEffect(() => {
     if (tickets.length > 0 && user?.uid) {
       const unsubscribe = notificationService.subscribeToNotifications(user.uid, (allNotifications) => {
         const counts = {};
@@ -370,8 +381,7 @@ const DashboardPage = () => {
     }
   }, [tickets, user?.uid]);
 
-
-  if (!authInitialized || loading) {
+    if (!authInitialized || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
