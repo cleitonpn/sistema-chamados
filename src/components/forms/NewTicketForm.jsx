@@ -601,15 +601,13 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
       if (formData.area === AREAS.PRODUCTION) {
         const producerId = selectedProjectData.produtorId;
         Object.assign(ticketData, { 
-          atribuidoA: producerId, 
-          status: 'em_tratativa', 
+          atribuidoA: producerId,
           atribuidoEm: new Date(), 
           atribuidoPor: user.uid 
         });
       } else if (selectedOperator) {
         Object.assign(ticketData, { 
-          atribuidoA: selectedOperator, 
-          status: 'em_tratativa', 
+          atribuidoA: selectedOperator,
           atribuidoEm: new Date(), 
           atribuidoPor: user.uid 
         });
