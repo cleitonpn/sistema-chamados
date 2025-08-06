@@ -15,13 +15,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-// ✅ NOVAS IMPORTAÇÕES
 import { Loader2, Upload, X, AlertCircle, Bot, Sparkles, RefreshCw, TrendingUp, Lock, Link as LinkIcon } from 'lucide-react';
-import { useNavigate, useLocation, Link } from 'react-router-dom'; // ✅ useLocation e Link adicionados
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { collection, getDocs, doc, setDoc, getDoc, query, orderBy, limit, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 
-// A classe DynamicAITemplateService permanece inalterada
 class DynamicAITemplateService {
   constructor() {
     this.templatesCollection = 'ai_templates';
@@ -290,6 +288,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [images, setImages] = useState([]);
+  const [loadingOperators, setLoadingOperators] = useState(false);
   
   const [aiTemplates, setAiTemplates] = useState([]);
   const [loadingAI, setLoadingAI] = useState(false);
@@ -297,6 +296,14 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
   
   const [linkedTicket, setLinkedTicket] = useState(null);
   const [loadingLinkedTicket, setLoadingLinkedTicket] = useState(true);
+
+  // Lista de áreas que requerem seleção de operador
+  const areasThatRequireOperator = [
+    AREAS.PRODUCTION, 
+    AREAS.VISUAL_COMMUNICATION,
+    AREAS.OPERATIONS,
+    AREAS.LOGISTICS
+  ];
 
   useEffect(() => {
     const linkedTicketId = location.state?.linkedTicketId;
@@ -324,7 +331,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
       setLoadingLinkedTicket(false);
     }
   }, [location.state]);
-
 
   useEffect(() => {
     loadProjects();
@@ -435,17 +441,26 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
   };
 
   const loadOperatorsByArea = async (area) => {
+    setLoadingOperators(true);
     try {
       const allUsers = await userService.getAllUsers();
       const operatorsByArea = allUsers.filter(user => 
-        user.funcao === 'operador' && user.area === area
+        user.funcao === 'operador' && 
+        user.area === area &&
+        user.status === 'ativo'
       );
+      
       setOperators(operatorsByArea);
-      if (selectedOperator && !operatorsByArea.find(op => op.id === selectedOperator)) {
+      
+      if (selectedOperator && !operatorsByArea.some(op => op.id === selectedOperator)) {
         setSelectedOperator('');
       }
     } catch (error) {
+      console.error('Erro ao carregar operadores:', error);
       setOperators([]);
+      setSelectedOperator('');
+    } finally {
+      setLoadingOperators(false);
     }
   };
 
@@ -553,6 +568,10 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
       setError('Digite o motivo para o pedido extra');
       return false;
     }
+    if (areasThatRequireOperator.includes(formData.area) && !selectedOperator) {
+      setError('Selecione um operador responsável para esta área');
+      return false;
+    }
     return true;
   };
 
@@ -597,7 +616,12 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
       };
 
       if (selectedOperator) {
-        Object.assign(ticketData, { atribuidoA: selectedOperator, status: 'em_tratativa', atribuidoEm: new Date(), atribuidoPor: user.uid });
+        Object.assign(ticketData, { 
+          atribuidoA: selectedOperator, 
+          status: 'em_tratativa', 
+          atribuidoEm: new Date(), 
+          atribuidoPor: user.uid 
+        });
       }
 
       ticketId = await ticketService.createTicket(ticketData);
@@ -972,6 +996,48 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
             </div>
           </div>
 
+          {/* Seção de seleção de operador */}
+          {(formData.area && operators.length > 0) && (
+            <div className="space-y-2">
+              <Label htmlFor="operator">
+                Operador Responsável {areasThatRequireOperator.includes(formData.area) && '*'}
+                {loadingOperators && (
+                  <Loader2 className="h-3 w-3 animate-spin ml-2 inline" />
+                )}
+              </Label>
+              <Select
+                value={selectedOperator}
+                onValueChange={setSelectedOperator}
+                disabled={loading || loadingOperators}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={
+                      loadingOperators 
+                        ? "Carregando operadores..." 
+                        : `Selecione um operador ${formData.area ? `de ${formData.area}` : ''}`
+                  } />
+                </SelectTrigger>
+                <SelectContent>
+                  {operators.map((operator) => (
+                    <SelectItem key={operator.id} value={operator.id}>
+                      <div className="flex items-center gap-2">
+                        <span>{operator.nome}</span>
+                        {operator.equipe && (
+                          <Badge variant="outline" className="text-xs">
+                            {operator.equipe}
+                          </Badge>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500">
+                Este chamado será atribuído diretamente ao operador selecionado
+              </p>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="prioridade">Prioridade *</Label>
             <div className="flex flex-wrap gap-2">
@@ -989,7 +1055,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
                 >
                   {priority.label}
                 </button>
-              ))}
+              )}
             </div>
           </div>
 
