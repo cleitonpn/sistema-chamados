@@ -1038,26 +1038,26 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
             </div>
           )}
 
-                    <div className="space-y-2">
-            <Label htmlFor="prioridade">Prioridade *</Label>
-            <div className="flex flex-wrap gap-2">
-              {priorityOptions.map((priority) => (
-                <button
-                  key={priority.value}
-                  type="button"
-                  onClick={() => handleInputChange('prioridade', priority.value)}
-                  className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                    formData.prioridade === priority.value
-                      ? priority.color + ' ring-2 ring-offset-2 ring-blue-500'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                  disabled={loading}
-                >
-                  {priority.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <div className="space-y-2">
+  <Label htmlFor="prioridade">Prioridade *</Label>
+  <div className="flex flex-wrap gap-2">
+    {priorityOptions.map((priority) => (
+      <button
+        key={priority.value}
+        type="button"
+        onClick={() => handleInputChange('prioridade', priority.value)}
+        className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+          formData.prioridade === priority.value
+            ? priority.color + ' ring-2 ring-offset-2 ring-blue-500'
+            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+        }`}
+        disabled={loading}
+      >
+        {priority.label}
+      </button>
+    ))}
+  </div>
+</div>
 
           <div className="space-y-4 pt-4 border-t">
             <div className="flex items-center space-x-2">
@@ -1141,3 +1141,40 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
               </div>
             )}
           </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="observacoes">Observações Adicionais</Label>
+            <Textarea
+              id="observacoes"
+              placeholder="Informações adicionais relevantes..."
+              value={formData.observacoes}
+              onChange={(e) => handleInputChange('observacoes', e.target.value)}
+              disabled={loading}
+              rows={3}
+            />
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-4">
+            {onClose && (
+              <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
+                Cancelar
+              </Button>
+            )}
+            <Button type="submit" disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Criando...
+                </>
+              ) : (
+                'Criar Chamado'
+              )}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+};
+
+export default NewTicketForm;
