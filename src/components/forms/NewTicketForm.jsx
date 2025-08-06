@@ -1055,7 +1055,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
                 >
                   {priority.label}
                 </button>
-              }
+              )
             </div>
           </div>
 
