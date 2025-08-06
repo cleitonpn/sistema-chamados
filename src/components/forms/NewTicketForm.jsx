@@ -20,6 +20,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { collection, getDocs, doc, setDoc, getDoc, query, orderBy, limit, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 
+// A classe DynamicAITemplateService permanece inalterada
 class DynamicAITemplateService {
   constructor() {
     this.templatesCollection = 'ai_templates';
@@ -288,7 +289,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [images, setImages] = useState([]);
-  const [loadingOperators, setLoadingOperators] = useState(false);
   
   const [aiTemplates, setAiTemplates] = useState([]);
   const [loadingAI, setLoadingAI] = useState(false);
@@ -296,14 +296,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
   
   const [linkedTicket, setLinkedTicket] = useState(null);
   const [loadingLinkedTicket, setLoadingLinkedTicket] = useState(true);
-
-  // Lista de áreas que requerem seleção de operador
-  const areasThatRequireOperator = [
-    AREAS.PRODUCTION, 
-    AREAS.VISUAL_COMMUNICATION,
-    AREAS.OPERATIONS,
-    AREAS.LOGISTICS
-  ];
 
   useEffect(() => {
     const linkedTicketId = location.state?.linkedTicketId;
@@ -331,6 +323,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
       setLoadingLinkedTicket(false);
     }
   }, [location.state]);
+
 
   useEffect(() => {
     loadProjects();
@@ -364,21 +357,19 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
   useEffect(() => {
     if (formData.area) {
       loadTypesByArea(formData.area);
+      // Carrega operadores apenas se a área não for Produção
+      if (formData.area !== AREAS.PRODUCTION) {
+        loadOperatorsByArea(formData.area);
+      } else {
+        setOperators([]);
+        setSelectedOperator('');
+      }
     } else {
       setAvailableTypes([]);
       setOperators([]);
       setSelectedOperator('');
     }
   }, [formData.area]);
-
-  useEffect(() => {
-    if (formData.area && formData.tipo) {
-      loadOperatorsByArea(formData.area);
-    } else {
-      setOperators([]);
-      setSelectedOperator('');
-    }
-  }, [formData.area, formData.tipo]);
 
   const loadProjects = async () => {
     try {
@@ -441,26 +432,17 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
   };
 
   const loadOperatorsByArea = async (area) => {
-    setLoadingOperators(true);
     try {
       const allUsers = await userService.getAllUsers();
       const operatorsByArea = allUsers.filter(user => 
-        user.funcao === 'operador' && 
-        user.area === area &&
-        user.status === 'ativo'
+        user.funcao === 'operador' && user.area === area
       );
-      
       setOperators(operatorsByArea);
-      
-      if (selectedOperator && !operatorsByArea.some(op => op.id === selectedOperator)) {
+      if (selectedOperator && !operatorsByArea.find(op => op.id === selectedOperator)) {
         setSelectedOperator('');
       }
     } catch (error) {
-      console.error('Erro ao carregar operadores:', error);
       setOperators([]);
-      setSelectedOperator('');
-    } finally {
-      setLoadingOperators(false);
     }
   };
 
@@ -568,16 +550,17 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
       setError('Digite o motivo para o pedido extra');
       return false;
     }
-    if (areasThatRequireOperator.includes(formData.area) && !selectedOperator) {
-      setError('Selecione um operador responsável para esta área');
-      return false;
-    }
     return true;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validateForm()) return;
+
+    if (formData.area === AREAS.PRODUCTION && !selectedProjectData?.produtorId) {
+        setError('Não é possível criar o chamado: o projeto selecionado não possui um produtor responsável definido.');
+        return;
+    }
 
     setLoading(true);
     setError('');
@@ -615,7 +598,15 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         chamadoPaiId: linkedTicket ? linkedTicket.id : null,
       };
 
-      if (selectedOperator) {
+      if (formData.area === AREAS.PRODUCTION) {
+        const producerId = selectedProjectData.produtorId;
+        Object.assign(ticketData, { 
+          atribuidoA: producerId, 
+          status: 'em_tratativa', 
+          atribuidoEm: new Date(), 
+          atribuidoPor: user.uid 
+        });
+      } else if (selectedOperator) {
         Object.assign(ticketData, { 
           atribuidoA: selectedOperator, 
           status: 'em_tratativa', 
@@ -995,69 +986,63 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
               </Select>
             </div>
           </div>
-
-          {/* Seção de seleção de operador */}
-          {(formData.area && operators.length > 0) && (
-            <div className="space-y-2">
-              <Label htmlFor="operator">
-                Operador Responsável {areasThatRequireOperator.includes(formData.area) && '*'}
-                {loadingOperators && (
-                  <Loader2 className="h-3 w-3 animate-spin ml-2 inline" />
-                )}
-              </Label>
+          
+          {formData.area && formData.area !== AREAS.PRODUCTION && (
+            <div className="space-y-2 pt-4 border-t">
+              <Label htmlFor="operator">Atribuir para Operador (Opcional)</Label>
               <Select
                 value={selectedOperator}
                 onValueChange={setSelectedOperator}
-                disabled={loading || loadingOperators}
+                disabled={!formData.area || operators.length === 0}
               >
                 <SelectTrigger>
                   <SelectValue placeholder={
-                      loadingOperators 
-                        ? "Carregando operadores..." 
-                        : `Selecione um operador ${formData.area ? `de ${formData.area}` : ''}`
+                    operators.length > 0
+                      ? "Selecione um operador para agilizar"
+                      : "Nenhum operador encontrado para esta área"
                   } />
                 </SelectTrigger>
                 <SelectContent>
-                  {operators.map((operator) => (
-                    <SelectItem key={operator.id} value={operator.id}>
-                      <div className="flex items-center gap-2">
-                        <span>{operator.nome}</span>
-                        {operator.equipe && (
-                          <Badge variant="outline" className="text-xs">
-                            {operator.equipe}
-                          </Badge>
-                        )}
-                      </div>
+                  {operators.map((op) => (
+                    <SelectItem key={op.id} value={op.id}>
+                      {op.nome}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-500">
-                Este chamado será atribuído diretamente ao operador selecionado
-              </p>
             </div>
           )}
 
+          {formData.area === AREAS.PRODUCTION && selectedProjectData && (
+            <Alert variant="default" className="bg-blue-50 border-blue-200 mt-4">
+              <AlertCircle className="h-4 w-4 text-blue-700" />
+              <AlertDescription className="text-blue-800">
+                O chamado será <strong>automaticamente atribuído</strong> ao produtor do projeto: 
+                <span className="font-semibold ml-1">{selectedProjectData.produtorNome || 'Não identificado'}</span>.
+              </AlertDescription>
+            </Alert>
+          )}
+
           <div className="space-y-2">
-  <Label htmlFor="prioridade">Prioridade *</Label>
-  <div className="flex flex-wrap gap-2">
-    {priorityOptions.map((priority) => (
-      <button
-        key={priority.value}
-        type="button"
-        onClick={() => handleInputChange('prioridade', priority.value)}
-        className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-          formData.prioridade === priority.value
-            ? priority.color + ' ring-2 ring-offset-2 ring-blue-500'
-            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-        }`}
-        disabled={loading}
-      >
-        {priority.label}
-      </button>
-    ))}
-  </div>
-</div>
+            <Label htmlFor="prioridade">Prioridade *</Label>
+            <div className="flex flex-wrap gap-2">
+              {priorityOptions.map((priority) => (
+                <button
+                  key={priority.value}
+                  type="button"
+                  onClick={() => handleInputChange('prioridade', priority.value)}
+                  className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                    formData.prioridade === priority.value
+                      ? priority.color + ' ring-2 ring-offset-2 ring-blue-500'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                  disabled={loading}
+                >
+                  {priority.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="space-y-4 pt-4 border-t">
             <div className="flex items-center space-x-2">
