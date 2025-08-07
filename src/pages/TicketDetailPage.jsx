@@ -45,7 +45,7 @@ import {
   Archive,
   ArchiveRestore,
   Link as LinkIcon,
-  ClipboardEdit, // Ícone adicionado
+  ClipboardEdit,
 } from 'lucide-react';
 
 const TicketDetailPage = () => {
@@ -55,7 +55,8 @@ const TicketDetailPage = () => {
 
   // Estados principais
   const [ticket, setTicket] = useState(null);
-  const [project, setProject] = useState(null);
+  // ALTERADO: Estado para armazenar uma lista de projetos
+  const [projects, setProjects] = useState([]);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -117,14 +118,22 @@ const TicketDetailPage = () => {
 
       setTicket(ticketData);
 
+      // ALTERADO: Lógica de busca de dados para suportar múltiplos projetos e manter retrocompatibilidade
+      if (ticketData.projetoIds && ticketData.projetoIds.length > 0) {
+        // Busca múltiplos projetos (assumindo que o service suporta um método getProjectsByIds)
+        const projectsData = await projectService.getProjectsByIds(ticketData.projetoIds);
+        setProjects(projectsData);
+      } else if (ticketData.projetoId) {
+        // Fallback para chamados antigos com um único projetoId
+        const projectData = await projectService.getProjectById(ticketData.projetoId);
+        if (projectData) {
+          setProjects([projectData]); // Armazena como um array para manter a consistência da estrutura de dados
+        }
+      }
+
       if (ticketData.chamadoPaiId) {
           const parentTicketData = await ticketService.getTicketById(ticketData.chamadoPaiId);
           setParentTicketForLink(parentTicketData);
-      }
-
-      if (ticketData.projetoId) {
-        const projectData = await projectService.getProjectById(ticketData.projetoId);
-        setProject(projectData);
       }
 
       const messagesData = await messageService.getMessagesByTicket(ticketId);
@@ -507,7 +516,8 @@ const TicketDetailPage = () => {
       alert('Por favor, descreva o motivo da escalação para o consultor');
       return;
     }
-    if (!project?.consultorId) {
+    // ALTERADO: Usa a lista de projetos para encontrar o consultor
+    if (!projects[0]?.consultorId) {
       alert('Erro: Consultor do projeto não encontrado');
       return;
     }
@@ -516,7 +526,7 @@ const TicketDetailPage = () => {
       const updateData = {
         status: 'escalado_para_consultor',
         areaDeOrigem: ticket.area,
-        consultorResponsavelId: project.consultorId,
+        consultorResponsavelId: projects[0].consultorId,
         motivoEscalonamentoConsultor: consultorReason,
         escaladoPor: user.uid,
         escaladoEm: new Date(),
@@ -544,7 +554,8 @@ const TicketDetailPage = () => {
   };
 
   const handleTransferToProducer = async () => {
-    if (!project?.produtorId) {
+    // ALTERADO: Usa a lista de projetos para encontrar o produtor
+    if (!projects[0]?.produtorId) {
       alert('Erro: Produtor do projeto não encontrado');
       return;
     }
@@ -552,7 +563,7 @@ const TicketDetailPage = () => {
     try {
       const updateData = {
         status: 'transferido_para_produtor',
-        produtorResponsavelId: project.produtorId,
+        produtorResponsavelId: projects[0].produtorId,
         transferidoPor: user.uid,
         transferidoEm: new Date(),
         atualizadoPor: user.uid,
@@ -1182,7 +1193,7 @@ const TicketDetailPage = () => {
             )}
 
 
-            {!isArchived && userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador') && project?.consultorId && (userProfile.funcao === 'administrador' || ticket.area === userProfile.area) && (
+            {!isArchived && userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador') && projects[0]?.consultorId && (userProfile.funcao === 'administrador' || ticket.area === userProfile.area) && (
               <Card className="mt-6">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><span className="text-2xl">👨‍🎯</span>Escalar para Consultor</CardTitle>
@@ -1273,7 +1284,7 @@ const TicketDetailPage = () => {
               </Card>
             )}
 
-            {!isArchived && userProfile && userProfile.funcao === 'operador' && project?.produtorId && (
+            {!isArchived && userProfile && userProfile.funcao === 'operador' && projects[0]?.produtorId && (
               <Card className="mt-6">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><span className="text-2xl">🏭</span>Transferir para Produtor</CardTitle>
@@ -1282,7 +1293,7 @@ const TicketDetailPage = () => {
                 <CardContent>
                   <div className="space-y-4">
                     <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-sm text-blue-800 mb-2"><strong>Produtor do Projeto:</strong> {users.find(u => u.uid === project.produtorId)?.nome || 'Não identificado'}</p>
+                      <p className="text-sm text-blue-800 mb-2"><strong>Produtor do Projeto:</strong> {users.find(u => u.uid === projects[0].produtorId)?.nome || 'Não identificado'}</p>
                       <p className="text-xs text-blue-600">O chamado será transferido para o produtor responsável por este projeto.</p>
                     </div>
                     <Button
@@ -1306,38 +1317,38 @@ const TicketDetailPage = () => {
               <CardHeader className="pb-3 sm:pb-4">
                 <CardTitle className="flex items-center text-base sm:text-lg">
                   <MapPin className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                  Projeto
+                   {projects.length > 1 ? 'Projetos Vinculados' : 'Projeto'}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 sm:space-y-4">
-                <div>
-                  <Label className="text-xs sm:text-sm font-medium text-gray-700">Nome</Label>
-                  <p className="text-sm sm:text-base text-gray-900 break-words">{project?.nome || 'Projeto não encontrado'}</p>
-                </div>
-                {project?.cliente && (
-                  <div>
-                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Cliente</Label>
-                    <p className="text-sm sm:text-base text-gray-900 break-words">{project.cliente}</p>
-                  </div>
-                )}
-                {project?.local && (
-                  <div>
-                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Local</Label>
-                    <p className="text-sm sm:text-base text-gray-900 break-words">{project.local}</p>
-                  </div>
-                )}
-                {project && (
-                  <div className="pt-3 mt-3 border-t">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => navigate(`/projeto/${project.id}`)}
-                    >
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Acessar Detalhes do Projeto
-                    </Button>
-                  </div>
+                {projects.length > 0 ? (
+                  projects.map((p, index) => (
+                    <div key={p.id} className={index > 0 ? "pt-4 mt-4 border-t" : ""}>
+                      <div className="space-y-2">
+                        <div>
+                          <Label className="text-xs font-medium text-gray-700">Nome do Projeto</Label>
+                          <p className="text-gray-900 break-words">{p.nome}</p>
+                        </div>
+                        {p.cliente && (
+                          <div>
+                            <Label className="text-xs font-medium text-gray-700">Cliente</Label>
+                            <p className="text-gray-900 break-words">{p.cliente}</p>
+                          </div>
+                        )}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-3"
+                        onClick={() => navigate(`/projeto/${p.id}`)}
+                      >
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                        Acessar Projeto
+                      </Button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500">Nenhum projeto associado.</p>
                 )}
               </CardContent>
             </Card>
