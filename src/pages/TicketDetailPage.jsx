@@ -58,7 +58,7 @@ const TicketDetailPage = () => {
   // Estados principais
   const [ticket, setTicket] = useState(null);
   const [project, setProject] = useState(null);
-  const [projects, setProjects] = useState([]); // ✅ MUDANÇA: Array para múltiplos projetos
+  const [projects, setProjects] = useState([]); // ✅ Array para múltiplos projetos
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -116,12 +116,24 @@ const TicketDetailPage = () => {
   const loadTicketData = async () => {
     try {
       setLoading(true);
+      setError(null);
+      
+      console.log('🔍 Carregando dados do chamado:', ticketId);
+      
+      // ✅ CORREÇÃO: Verificar se ticketId existe
+      if (!ticketId || typeof ticketId !== 'string') {
+        setError('ID do chamado inválido');
+        return;
+      }
+
       const ticketData = await ticketService.getTicketById(ticketId);
       
       if (!ticketData) {
         setError('Chamado não encontrado');
         return;
       }
+
+      console.log('📋 Dados do chamado carregados:', ticketData);
 
       // Verificar acesso
       if (!canUserAccessTicket(ticketData, user, userProfile)) {
@@ -131,34 +143,80 @@ const TicketDetailPage = () => {
 
       setTicket(ticketData);
 
-      // ✅ MUDANÇA: Carregar múltiplos projetos
-      if (ticketData.projetos && ticketData.projetos.length > 0) {
-        const projectsData = await Promise.all(
-          ticketData.projetos.map(projectId => projectService.getProjectById(projectId))
-        );
-        setProjects(projectsData.filter(p => p !== null));
-        
-        // Manter compatibilidade com projeto principal
-        if (ticketData.projetoId) {
-          const mainProject = await projectService.getProjectById(ticketData.projetoId);
-          setProject(mainProject);
-        } else if (projectsData[0]) {
-          setProject(projectsData[0]);
+      // ✅ CORREÇÃO: Carregar múltiplos projetos com tratamento de erro
+      try {
+        if (ticketData.projetos && Array.isArray(ticketData.projetos) && ticketData.projetos.length > 0) {
+          console.log('📁 Carregando múltiplos projetos:', ticketData.projetos);
+          
+          const projectsData = await Promise.allSettled(
+            ticketData.projetos.map(async (projectId) => {
+              if (!projectId || typeof projectId !== 'string') {
+                console.warn('⚠️ ID de projeto inválido:', projectId);
+                return null;
+              }
+              return await projectService.getProjectById(projectId);
+            })
+          );
+          
+          const validProjects = projectsData
+            .filter(result => result.status === 'fulfilled' && result.value !== null)
+            .map(result => result.value);
+          
+          console.log('✅ Projetos carregados:', validProjects);
+          setProjects(validProjects);
+          
+          // Manter compatibilidade com projeto principal
+          if (ticketData.projetoId) {
+            try {
+              const mainProject = await projectService.getProjectById(ticketData.projetoId);
+              setProject(mainProject);
+            } catch (projectError) {
+              console.warn('⚠️ Erro ao carregar projeto principal:', projectError);
+              if (validProjects[0]) {
+                setProject(validProjects[0]);
+              }
+            }
+          } else if (validProjects[0]) {
+            setProject(validProjects[0]);
+          }
+        } else if (ticketData.projetoId) {
+          // Compatibilidade com sistema antigo
+          console.log('📁 Carregando projeto único:', ticketData.projetoId);
+          try {
+            const projectData = await projectService.getProjectById(ticketData.projetoId);
+            if (projectData) {
+              setProject(projectData);
+              setProjects([projectData]);
+            }
+          } catch (projectError) {
+            console.warn('⚠️ Erro ao carregar projeto único:', projectError);
+            setProjects([]);
+          }
+        } else {
+          console.log('📁 Nenhum projeto vinculado ao chamado');
+          setProjects([]);
         }
-      } else if (ticketData.projetoId) {
-        // Compatibilidade com sistema antigo
-        const projectData = await projectService.getProjectById(ticketData.projetoId);
-        setProject(projectData);
-        setProjects(projectData ? [projectData] : []);
+      } catch (projectsError) {
+        console.error('❌ Erro ao carregar projetos:', projectsError);
+        setProjects([]);
       }
 
-      const messagesData = await messageService.getMessagesByTicketId(ticketId);
-      setMessages(messagesData);
+      // ✅ CORREÇÃO: Carregar mensagens com nome correto da função
+      try {
+        console.log('💬 Carregando mensagens do chamado');
+        const messagesData = await messageService.getMessagesByTicket(ticketId);
+        console.log('✅ Mensagens carregadas:', messagesData.length);
+        setMessages(messagesData);
+        generateHistoryEvents(ticketData, messagesData);
+      } catch (messagesError) {
+        console.error('❌ Erro ao carregar mensagens:', messagesError);
+        setMessages([]);
+        generateHistoryEvents(ticketData, []);
+      }
 
-      generateHistoryEvents(ticketData, messagesData);
     } catch (error) {
-      console.error('Erro ao carregar dados do chamado:', error);
-      setError('Erro ao carregar dados do chamado');
+      console.error('❌ Erro ao carregar dados do chamado:', error);
+      setError('Erro ao carregar dados do chamado: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -224,7 +282,7 @@ const TicketDetailPage = () => {
           Icon: ArrowLeft,
           description: 'Chamado escalado por',
           userName: message.remetenteNome || 'Usuário',
-          date: message.criadoEm,
+          date: message.criadoEm || message.createdAt,
           color: 'text-blue-600'
         });
       } else if (message.type === 'status_change') {
@@ -232,7 +290,7 @@ const TicketDetailPage = () => {
           Icon: CheckCircle,
           description: 'Status alterado por',
           userName: message.remetenteNome || 'Usuário',
-          date: message.criadoEm,
+          date: message.criadoEm || message.createdAt,
           color: 'text-purple-600'
         });
       }
@@ -248,14 +306,14 @@ const TicketDetailPage = () => {
     setHistoryEvents(events);
   };
 
-  // ✅ MUDANÇA: Função getAvailableStatuses sem filtro do produtor
+  // ✅ Função getAvailableStatuses sem filtro do produtor
   const getAvailableStatuses = () => {
     if (!ticket || !userProfile || !user) return [];
     const currentStatus = ticket.status;
     const userRole = userProfile.funcao;
     const isCreator = ticket.criadoPor === user.uid;
 
-    // ✅ MUDANÇA: Operador que criou pode concluir quando executado
+    // ✅ Operador que criou pode concluir quando executado
     if (isCreator && (currentStatus === 'executado_aguardando_validacao' || currentStatus === 'executado_aguardando_validacao_operador')) {
         return [ 
           { value: 'concluido', label: 'Validar e Concluir' }, 
@@ -302,13 +360,13 @@ const TicketDetailPage = () => {
       }
     }
 
-    // ✅ MUDANÇA: Consultor pode executar diretamente sem filtro do produtor
+    // ✅ Consultor pode executar diretamente sem filtro do produtor
     if (userRole === 'consultor') {
       if (ticket.status === 'escalado_para_consultor') {
         return [{ value: 'executado_pelo_consultor', label: 'Executar e Devolver para a Área' }];
       }
       
-      // ✅ MUDANÇA: Consultor pode tratar chamados diretamente
+      // ✅ Consultor pode tratar chamados diretamente
       if (currentStatus === 'aberto' || currentStatus === 'escalado_para_outra_area' || currentStatus === 'enviado_para_area') {
         return [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
       }
@@ -317,7 +375,7 @@ const TicketDetailPage = () => {
       }
     }
 
-    // ✅ MUDANÇA: Produtor tem opções quando consultor abre chamado
+    // ✅ Produtor tem opções quando consultor abre chamado
     if (userRole === 'produtor' && ticket.criadoPorFuncao === 'consultor') {
       if (currentStatus === 'aberto' || currentStatus === 'escalado_para_outra_area' || currentStatus === 'enviado_para_area') {
         return [
@@ -607,7 +665,10 @@ const TicketDetailPage = () => {
       <div className="min-h-screen bg-gray-50">
         <Header />
         <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+          <div className="text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-gray-500 mx-auto mb-4" />
+            <p className="text-gray-600">Carregando dados do chamado...</p>
+          </div>
         </div>
       </div>
     );
@@ -773,7 +834,7 @@ const TicketDetailPage = () => {
               </CardContent>
             </Card>
 
-            {/* ✅ MUDANÇA: Seção de múltiplos projetos */}
+            {/* ✅ Seção de múltiplos projetos */}
             {projects.length > 0 && (
               <Card>
                 <CardHeader>
@@ -855,7 +916,7 @@ const TicketDetailPage = () => {
                               {message.remetenteNome || 'Usuário'}
                             </span>
                             <span className="text-xs text-gray-500">
-                              {formatDate(message.criadoEm)}
+                              {formatDate(message.criadoEm || message.createdAt)}
                             </span>
                           </div>
                           {message.conteudo && (
