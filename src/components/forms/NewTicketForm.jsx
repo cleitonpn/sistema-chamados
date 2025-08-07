@@ -15,7 +15,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Upload, X, AlertCircle, Bot, Sparkles, RefreshCw, TrendingUp, Lock, Link as LinkIcon } from 'lucide-react';
+// NOVO: Importações adicionais para o componente de multi-seleção
+import { Loader2, Upload, X, AlertCircle, Bot, Sparkles, RefreshCw, TrendingUp, Lock, Link as LinkIcon, ChevronsUpDown, Check } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from "@/lib/utils"; // Assumindo que você tem este utilitário de classes
+
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { collection, getDocs, doc, setDoc, getDoc, query, orderBy, limit, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -279,9 +284,12 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
   });
   
   const [projects, setProjects] = useState([]);
-  const [selectedProject, setSelectedProject] = useState(projectId || '');
+
+  // ALTERADO: Estados para gerenciar múltiplos projetos
+  const [selectedProjects, setSelectedProjects] = useState([]); // Array de IDs
+  const [selectedProjectsData, setSelectedProjectsData] = useState([]); // Array de Objetos
+
   const [selectedEvent, setSelectedEvent] = useState('');
-  const [selectedProjectData, setSelectedProjectData] = useState(null);
   const [selectedAITemplate, setSelectedAITemplate] = useState('');
   const [operators, setOperators] = useState([]);
   const [selectedOperator, setSelectedOperator] = useState('');
@@ -296,6 +304,10 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
   
   const [linkedTicket, setLinkedTicket] = useState(null);
   const [loadingLinkedTicket, setLoadingLinkedTicket] = useState(true);
+  
+  // NOVO: Estado para controlar a abertura do popover de seleção de projetos
+  const [popoverOpen, setPopoverOpen] = useState(false);
+
 
   useEffect(() => {
     const linkedTicketId = location.state?.linkedTicketId;
@@ -304,12 +316,13 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         try {
           const ticketData = await ticketService.getTicketById(linkedTicketId);
           if (ticketData) {
-            const projectData = await projectService.getProjectById(ticketData.projetoId);
+            const projectIdToFetch = (ticketData.projetoIds && ticketData.projetoIds[0]) || ticketData.projetoId;
+            const projectData = await projectService.getProjectById(projectIdToFetch);
             setLinkedTicket({ ...ticketData, projectName: projectData?.nome || 'N/A', eventName: projectData?.feira || 'N/A' });
             if (projectData) {
               setSelectedEvent(projectData.feira);
-              setSelectedProject(projectData.id);
-              setSelectedProjectData(projectData);
+              // ALTERADO: Pré-seleciona o projeto no novo formato de array
+              setSelectedProjects([projectData.id]);
             }
           }
         } catch (err) {
@@ -329,6 +342,14 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
     loadProjects();
     loadAITemplates();
   }, []);
+
+  // NOVO: useEffect para atualizar os dados completos dos projetos selecionados
+  useEffect(() => {
+    if (projects.length > 0) {
+      const selectedData = selectedProjects.map(id => projects.find(p => p.id === id)).filter(Boolean);
+      setSelectedProjectsData(selectedData);
+    }
+  }, [selectedProjects, projects]);
 
   const loadAITemplates = async () => {
     setLoadingAI(true);
@@ -457,19 +478,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
 
   const handleEventChange = (eventName) => {
     setSelectedEvent(eventName);
-    setSelectedProject('');
-    setSelectedProjectData(null);
-  };
-
-  const handleProjectChange = (projectId) => {
-    const project = projects.find(p => p.id === projectId);
-    if (project) {
-      setSelectedProject(projectId);
-      setSelectedProjectData(project);
-    } else {
-      setSelectedProject('');
-      setSelectedProjectData(null);
-    }
+    setSelectedProjects([]);
   };
 
   const handleInputChange = (field, value) => {
@@ -526,8 +535,9 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
   };
 
   const validateForm = () => {
-    if (!selectedProject) {
-      setError('Selecione um projeto');
+    // ALTERADO: Validação para múltiplos projetos
+    if (selectedProjects.length === 0) {
+      setError('Selecione ao menos um projeto');
       return false;
     }
     if (!formData.titulo.trim()) {
@@ -557,8 +567,9 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
     e.preventDefault();
     if (!validateForm()) return;
 
-    if (formData.area === AREAS.PRODUCTION && !selectedProjectData?.produtorId) {
-        setError('Não é possível criar o chamado: o projeto selecionado não possui um produtor responsável definido.');
+    // ALTERADO: Validação para produção baseada no primeiro projeto selecionado
+    if (formData.area === AREAS.PRODUCTION && !selectedProjectsData[0]?.produtorId) {
+        setError('O projeto principal selecionado não possui um produtor responsável definido.');
         return;
     }
 
@@ -570,12 +581,8 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
     try {
       let finalTicketData = { ...formData };
       
-      if (userProfile?.funcao === 'consultor') {
-        finalTicketData.areaDestinoOriginal = formData.area; 
-        finalTicketData.area = AREAS.PRODUCTION;
-        finalTicketData.observacoes = `${finalTicketData.observacoes || ''}\n\n[CHAMADO DE CONSULTOR] - Direcionado para o produtor avaliar e tratar ou escalar para área específica.`.trim();
-      }
-
+      // REMOVIDO: Bloco de código que redirecionava chamados de consultor para o produtor.
+      
       if (selectedAITemplate) {
         const aiTemplate = aiTemplates.find(t => t.id === selectedAITemplate);
         if (aiTemplate) {
@@ -586,7 +593,8 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
       const ticketData = {
         ...finalTicketData,
         isConfidential: formData.isConfidential,
-        projetoId: selectedProject,
+        // ALTERADO: Salva a lista de IDs de projetos no novo campo 'projetoIds'
+        projetoIds: selectedProjects,
         criadoPor: user.uid,
         criadoPorNome: userProfile?.nome || user.email,
         criadoPorFuncao: userProfile?.funcao,
@@ -597,9 +605,10 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         updatedAt: new Date(),
         chamadoPaiId: linkedTicket ? linkedTicket.id : null,
       };
-
+      
+      // ALTERADO: Lógica de atribuição para produção baseada no primeiro projeto
       if (formData.area === AREAS.PRODUCTION) {
-        const producerId = selectedProjectData.produtorId;
+        const producerId = selectedProjectsData[0].produtorId;
         Object.assign(ticketData, { 
           atribuidoA: producerId,
           atribuidoEm: new Date(), 
@@ -744,57 +753,57 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
             </Select>
           </div>
 
+          {/* ALTERADO: Componente de Seleção Única substituído por Multi-Seleção */}
           <div className="space-y-2">
-            <Label htmlFor="project">Selecione o Projeto *</Label>
-            <Select 
-              value={selectedProject} 
-              onValueChange={handleProjectChange}
-              disabled={!selectedEvent || !!linkedTicket}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={selectedEvent ? "Selecione o projeto" : "Primeiro selecione um evento"} />
-              </SelectTrigger>
-              <SelectContent>
-                {selectedEvent && getProjectsByEvent(selectedEvent).map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
-                    <div className="flex items-center space-x-2">
-                      <span>{project.nome}</span>
-                      <span className="text-xs text-gray-500">• {project.local}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            
-            {selectedProjectData && (
-              <div className="mt-3 p-4 bg-blue-50 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-medium text-blue-800">📋 Projeto Selecionado</h4>
-                  <Badge variant="secondary">{selectedProjectData.feira}</Badge>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="font-medium text-blue-600">Local</p>
-                    <p>{selectedProjectData.local}</p>
+            <Label>Selecione o(s) Projeto(s) *</Label>
+            <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={popoverOpen}
+                  className="w-full justify-between h-auto min-h-[40px]"
+                  disabled={!selectedEvent || !!linkedTicket}
+                >
+                  <div className="flex gap-1 flex-wrap">
+                    {selectedProjectsData.length > 0 ? selectedProjectsData.map(p => (
+                      <Badge key={p.id} variant="secondary" onClick={(e) => { e.stopPropagation(); setSelectedProjects(selectedProjects.filter(id => id !== p.id))}}>
+                        {p.nome}
+                        <X className="ml-1 h-3 w-3" />
+                      </Badge>
+                    )) : "Selecione o(s) projeto(s)..."}
                   </div>
-                  <div>
-                    <p className="font-medium text-blue-600">Metragem</p>
-                    <p>{selectedProjectData.metragem}</p>
-                  </div>
-                  <div>
-                    <p className="font-medium text-blue-600">Período</p>
-                    <p>
-                      {selectedProjectData.dataInicio && new Date(selectedProjectData.dataInicio.seconds * 1000).toLocaleDateString('pt-BR')} - {selectedProjectData.dataFim && new Date(selectedProjectData.dataFim.seconds * 1000).toLocaleDateString('pt-BR')}
-                    </p>
-                  </div>
-                </div>
-                {selectedProjectData.produtorNome && (
-                  <div className="mt-2 text-sm">
-                    <span className="font-medium text-blue-600">Produtor:</span> {selectedProjectData.produtorNome}
-                  </div>
-                )}
-              </div>
-            )}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                <Command>
+                  <CommandInput placeholder="Buscar projeto..." />
+                  <CommandList>
+                    <CommandEmpty>Nenhum projeto encontrado.</CommandEmpty>
+                    <CommandGroup>
+                      {getProjectsByEvent(selectedEvent).map((project) => (
+                        <CommandItem
+                          key={project.id}
+                          value={project.nome}
+                          onSelect={() => {
+                            const isSelected = selectedProjects.includes(project.id);
+                            if (isSelected) {
+                              setSelectedProjects(selectedProjects.filter(id => id !== project.id));
+                            } else {
+                              setSelectedProjects([...selectedProjects, project.id]);
+                            }
+                          }}
+                        >
+                          <Check className={cn("mr-2 h-4 w-4", selectedProjects.includes(project.id) ? "opacity-100" : "opacity-0")} />
+                          {project.nome}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           <div className="space-y-2 border-t pt-4">
@@ -1011,12 +1020,12 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
             </div>
           )}
 
-          {formData.area === AREAS.PRODUCTION && selectedProjectData && (
+          {formData.area === AREAS.PRODUCTION && selectedProjectsData.length > 0 && (
             <Alert variant="default" className="bg-blue-50 border-blue-200 mt-4">
               <AlertCircle className="h-4 w-4 text-blue-700" />
               <AlertDescription className="text-blue-800">
-                O chamado será <strong>automaticamente atribuído</strong> ao produtor do projeto: 
-                <span className="font-semibold ml-1">{selectedProjectData.produtorNome || 'Não identificado'}</span>.
+                O chamado será <strong>automaticamente atribuído</strong> ao produtor do projeto principal: 
+                <span className="font-semibold ml-1">{selectedProjectsData[0].produtorNome || 'Não identificado'}</span>.
               </AlertDescription>
             </Alert>
           )}
