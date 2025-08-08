@@ -80,30 +80,49 @@ const TicketDetailPage = () => {
     }
   }, [ticketId, user]);
 
-  const loadTicketData = async () => {
+ const loadTicketData = async () => {
+    console.log("PASSO 1: Iniciando o carregamento de dados do chamado...");
     try {
       setLoading(true);
+
+      console.log("PASSO 2: Buscando dados principais do chamado com ID:", ticketId);
       const ticketData = await ticketService.getTicketById(ticketId);
+      console.log("PASSO 3: Dados principais do chamado RECEBIDOS.", ticketData);
+
       if (!ticketData) {
         setError('Chamado não encontrado');
         setLoading(false);
+        console.log("FIM: Chamado não encontrado.");
         return;
       }
-      
       setTicket(ticketData);
 
+      // Carregar projetos
       if (ticketData.projetos?.length > 0) {
+        console.log("PASSO 4: Buscando projetos associados...");
         const projectsData = await Promise.allSettled(
-          ticketData.projetos.map(async (projectId) => {
-            if (!projectId) return null;
-            try {
-              return await projectService.getProjectById(projectId);
-            } catch (error) {
-              console.error('Erro ao carregar projeto:', projectId, error);
-              return null;
-            }
-          })
+          ticketData.projetos.map(projectId => projectService.getProjectById(projectId))
         );
+        const validProjects = projectsData
+          .filter(result => result.status === 'fulfilled' && result.value)
+          .map(result => result.value);
+        setProjects(validProjects);
+        console.log("PASSO 5: Projetos RECEBIDOS.", validProjects);
+      }
+
+      console.log("PASSO 6: Buscando mensagens do chamado...");
+      const messagesData = await messageService.getMessagesByTicket(ticketId);
+      console.log("PASSO 7: Mensagens RECEBIDAS.", messagesData);
+      setMessages(messagesData || []);
+
+    } catch (error) {
+      console.error('❌ OCORREU UM ERRO DENTRO DO loadTicketData:', error);
+      setError('Erro ao carregar os detalhes do chamado');
+    } finally {
+      console.log("PASSO FINAL: Fim do processo. Definindo loading como false.");
+      setLoading(false);
+    }
+};
         
         const validProjects = projectsData
           .filter(result => result.status === 'fulfilled' && result.value)
