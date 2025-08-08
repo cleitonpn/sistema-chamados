@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import ticketService from '@/services/TicketService';
+import ticketService from '@/services/ticketService';
 import messageService from '@/services/messageService';
 import projectService from '@/services/projectService';
 import userService from '@/services/userService';
