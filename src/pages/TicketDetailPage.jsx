@@ -80,48 +80,62 @@ const TicketDetailPage = () => {
     }
   }, [ticketId, user]);
 
- const loadTicketData = async () => {
-    console.log("PASSO 1: Iniciando o carregamento de dados do chamado...");
-    try {
-      setLoading(true);
+const loadTicketData = async () => {
+  console.log("PASSO 1: Iniciando o carregamento de dados do chamado...");
+  try {
+    setLoading(true);
 
-      console.log("PASSO 2: Buscando dados principais do chamado com ID:", ticketId);
-      const ticketData = await ticketService.getTicketById(ticketId);
-      console.log("PASSO 3: Dados principais do chamado RECEBIDOS.", ticketData);
+    console.log("PASSO 2: Buscando dados principais do chamado com ID:", ticketId);
+    const ticketData = await ticketService.getTicketById(ticketId);
+    console.log("PASSO 3: Dados principais do chamado RECEBIDOS.", ticketData);
 
-      if (!ticketData) {
-        setError('Chamado não encontrado');
-        setLoading(false);
-        console.log("FIM: Chamado não encontrado.");
-        return;
-      }
-      setTicket(ticketData);
-
-      // Carregar projetos
-      if (ticketData.projetos?.length > 0) {
-        console.log("PASSO 4: Buscando projetos associados...");
-        const projectsData = await Promise.allSettled(
-          ticketData.projetos.map(projectId => projectService.getProjectById(projectId))
-        );
-        const validProjects = projectsData
-          .filter(result => result.status === 'fulfilled' && result.value)
-          .map(result => result.value);
-        setProjects(validProjects);
-        console.log("PASSO 5: Projetos RECEBIDOS.", validProjects);
-      }
-
-      console.log("PASSO 6: Buscando mensagens do chamado...");
-      const messagesData = await messageService.getMessagesByTicket(ticketId);
-      console.log("PASSO 7: Mensagens RECEBIDAS.", messagesData);
-      setMessages(messagesData || []);
-
-    } catch (error) {
-      console.error('❌ OCORREU UM ERRO DENTRO DO loadTicketData:', error);
-      setError('Erro ao carregar os detalhes do chamado');
-    } finally {
-      console.log("PASSO FINAL: Fim do processo. Definindo loading como false.");
+    if (!ticketData) {
+      setError('Chamado não encontrado');
       setLoading(false);
+      console.log("FIM: Chamado não encontrado.");
+      return;
     }
+    setTicket(ticketData);
+
+    // Carregar projetos - compatibilidade com versões antigas e novas
+    const projectsToLoad = [];
+    
+    // Verifica se é um chamado antigo (com projetoId)
+    if (ticketData.projetoId) {
+      console.log("PASSO 4a: Chamado antigo - buscando projeto único por projetoId");
+      const projectData = await projectService.getProjectById(ticketData.projetoId);
+      if (projectData) {
+        projectsToLoad.push(projectData);
+      }
+    }
+    // Verifica se é um chamado novo (com projetos array)
+    else if (ticketData.projetos?.length > 0) {
+      console.log("PASSO 4b: Chamado novo - buscando múltiplos projetos");
+      const projectsData = await Promise.allSettled(
+        ticketData.projetos.map(projectId => projectService.getProjectById(projectId))
+      );
+      projectsData.forEach(result => {
+        if (result.status === 'fulfilled' && result.value) {
+          projectsToLoad.push(result.value);
+        }
+      });
+    }
+
+    setProjects(projectsToLoad);
+    console.log("PASSO 5: Projetos CARREGADOS.", projectsToLoad);
+
+    console.log("PASSO 6: Buscando mensagens do chamado...");
+    const messagesData = await messageService.getMessagesByTicket(ticketId);
+    console.log("PASSO 7: Mensagens RECEBIDAS.", messagesData);
+    setMessages(messagesData || []);
+
+  } catch (error) {
+    console.error('❌ OCORREU UM ERRO DENTRO DO loadTicketData:', error);
+    setError('Erro ao carregar os detalhes do chamado');
+  } finally {
+    console.log("PASSO FINAL: Fim do processo. Definindo loading como false.");
+    setLoading(false);
+  }
 };
         
       const loadUsers = async () => {
@@ -339,12 +353,16 @@ const TicketDetailPage = () => {
     }
   };
 
-  const handleEscalateToConsultor = async () => {
-    if (!escalationConsultorReason.trim()) {
-      alert('Por favor, informe o motivo da escalação para o consultor.');
-      return;
-    }
-
+ const handleEscalateToConsultor = async () => {
+  if (!escalationConsultorReason.trim()) {
+    alert('Por favor, informe o motivo da escalação para o consultor.');
+    return;
+  }
+  
+  if (projects.length === 0 || !projects[0]?.consultorId) {
+    alert('Erro: Consultor do projeto não encontrado');
+    return;
+  }
     try {
       const updateData = {
         escalationConsultorReason: escalationConsultorReason,
@@ -372,6 +390,10 @@ const TicketDetailPage = () => {
   };
 
   const handleTransferToProducer = async () => {
+  if (projects.length === 0 || !projects[0]?.produtorId) {
+    alert('Erro: Produtor do projeto não encontrado');
+    return;
+  }
     try {
       const updateData = {
         status: 'em_tratativa',
