@@ -1,0 +1,15 @@
+export const TICKET_STATUS = {
+  ABERTO: 'aberto',
+  EM_TRATATIVA: 'em_tratativa',
+  CONCLUIDO: 'concluido',
+  CANCELADO: 'cancelado',
+  DEVOLVIDO: 'enviado_para_area',
+  ARQUIVADO: 'arquivado',
+  AGUARDANDO_APROVACAO: 'aguardando_aprovacao',
+  EXECUTADO_AGUARDANDO_VALIDACAO: 'executado_aguardando_validacao',
+  APROVADO: 'aprovado',
+  REJEITADO: 'rejeitado',
+  ESCALADO_PARA_OUTRA_AREA: 'escalado_para_outra_area',
+  ESCALADO_PARA_CONSULTOR: 'escalado_para_consultor',
+  TRANSFERIDO_PARA_PRODUTOR: 'transferido_para_produtor',
+};
