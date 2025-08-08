@@ -42,7 +42,7 @@ import {
 const TicketDetailPage = () => {
   const { id: ticketId } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
   const [ticket, setTicket] = useState(null);
   const [projects, setProjects] = useState([]);
   const [messages, setMessages] = useState([]);
