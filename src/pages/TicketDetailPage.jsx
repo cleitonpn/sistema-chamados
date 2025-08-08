@@ -1,19 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { useUserProfile } from '../contexts/UserProfileContext';
-import ticketService from '../services/ticketService';
-import messageService from '../services/messageService';
-import projectService from '../services/projectService';
-import userService from '../services/userService';
-import notificationService from '../services/notificationService';
-import { TICKET_CATEGORIES } from '../constants/ticketCategories';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
-import { Button } from '../components/ui/Button';
-import { Badge } from '../components/ui/Badge';
-import { Textarea } from '../components/ui/Textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/Select';
-import { Input } from '../components/ui/Input';
+import { useAuth } from '@/contexts/AuthContext'; // Alterado para usar o caminho com alias
+import { useUserProfile } from '@/contexts/UserProfileContext'; // Alterado para usar o caminho com alias
+import ticketService from '@/services/ticketService'; // Alterado para usar o caminho com alias
+import messageService from '@/services/messageService'; // Alterado para usar o caminho com alias
+import projectService from '@/services/projectService'; // Alterado para usar o caminho com alias
+import userService from '@/services/userService'; // Alterado para usar o caminho com alias
+import notificationService from '@/services/notificationService'; // Alterado para usar o caminho com alias
+import { TICKET_CATEGORIES } from '@/constants/ticketCategories'; // Alterado para usar o caminho com alias
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'; // Alterado para usar o caminho com alias
+import { Button } from '@/components/ui/Button'; // Alterado para usar o caminho com alias
+import { Badge } from '@/components/ui/Badge'; // Alterado para usar o caminho com alias
+import { Textarea } from '@/components/ui/Textarea'; // Alterado para usar o caminho com alias
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'; // Alterado para usar o caminho com alias
+import { Input } from '@/components/ui/Input'; // Alterado para usar o caminho com alias
 import { 
   ArrowLeft, 
   Clock, 
