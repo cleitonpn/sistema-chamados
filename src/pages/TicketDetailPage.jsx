@@ -8,12 +8,12 @@ import userService from '../services/userService';
 import notificationService from '../services/notificationService';
 import { TICKET_STATUS } from '../constants/ticketStatus';
 import { TICKET_CATEGORIES } from '../constants/ticketCategories';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
-import { Button } from '../components/ui/Button';
-import { Badge } from '../components/ui/Badge';
-import { Textarea } from '../components/ui/Textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/Select';
-import { Input } from '../components/ui/Input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { 
   ArrowLeft, 
   Clock, 
@@ -43,7 +43,7 @@ import {
 const TicketDetailPage = () => {
   const { id: ticketId } = useParams();
   const navigate = useNavigate();
-  const { user, userProfile } = useAuth(); // ✅ CORRIGIDO: usar apenas useAuth
+  const { user, userProfile } = useAuth();
   const [ticket, setTicket] = useState(null);
   const [projects, setProjects] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -138,7 +138,7 @@ const TicketDetailPage = () => {
 
       // Carregar mensagens
       console.log('💬 Carregando mensagens do chamado');
-      const messagesData = await messageService.getMessagesByTicket(ticketId); // ✅ CORRIGIDO: nome correto da função
+      const messagesData = await messageService.getMessagesByTicket(ticketId);
       console.log('✅ Mensagens carregadas:', messagesData?.length || 0);
       setMessages(messagesData || []);
 
@@ -450,7 +450,7 @@ const TicketDetailPage = () => {
   };
 
   const handleCreateLinkedTicket = () => {
-    // ✅ CORRIGIDO: Navegar para NewTicketForm com dados do chamado atual via location.state
+    // Navegar para NewTicketForm com dados do chamado atual via location.state
     navigate('/novo-chamado', {
       state: {
         linkedTicketId: ticketId,
