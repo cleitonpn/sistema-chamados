@@ -1,19 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useUserProfile } from '../contexts/UserProfileContext';
 import ticketService from '../services/ticketService';
 import messageService from '../services/messageService';
 import projectService from '../services/projectService';
 import userService from '../services/userService';
 import notificationService from '../services/notificationService';
-import { TICKET_STATUS } from '../constants/ticketStatus';
 import { TICKET_CATEGORIES } from '../constants/ticketCategories';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Badge } from '../components/ui/Badge';
+import { Textarea } from '../components/ui/Textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/Select';
+import { Input } from '../components/ui/Input';
 import { 
   ArrowLeft, 
   Clock, 
@@ -43,7 +43,8 @@ import {
 const TicketDetailPage = () => {
   const { id: ticketId } = useParams();
   const navigate = useNavigate();
-  const { user, userProfile } = useAuth();
+  const { user } = useAuth();
+  const { userProfile } = useUserProfile();
   const [ticket, setTicket] = useState(null);
   const [projects, setProjects] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -242,7 +243,7 @@ const TicketDetailPage = () => {
       };
 
       // Adicionar dados específicos baseado no status
-      if (newStatus === TICKET_STATUS.COMPLETED && conclusionMessage) {
+      if (newStatus === 'concluido' && conclusionMessage) {
         updateData.conclusionMessage = conclusionMessage;
         updateData.conclusionImages = conclusionImages;
         updateData.completedAt = new Date();
@@ -450,20 +451,19 @@ const TicketDetailPage = () => {
   };
 
   const handleCreateLinkedTicket = () => {
-    // Navegar para NewTicketForm com dados do chamado atual via location.state
-    navigate('/novo-chamado', {
-      state: {
-        linkedTicketId: ticketId,
-        linkedTicketData: {
-          titulo: ticket.titulo,
-          descricao: ticket.descricao,
-          criadoPorNome: ticket.criadoPorNome,
-          area: ticket.area,
-          projectName: projects.length > 0 ? projects[0].nome : '',
-          eventName: projects.length > 0 ? projects[0].evento : ''
-        }
-      }
-    });
+    // Navegar para NewTicketForm com dados do chamado atual
+    const ticketData = {
+      linkedTicketId: ticketId,
+      linkedTicketTitle: ticket.titulo,
+      linkedTicketDescription: ticket.descricao,
+      linkedTicketCreator: ticket.criadoPorNome,
+      linkedTicketArea: ticket.area,
+      linkedTicketProject: projects.length > 0 ? projects[0].nome : '',
+      linkedTicketEvent: projects.length > 0 ? projects[0].evento : ''
+    };
+
+    const queryParams = new URLSearchParams(ticketData).toString();
+    navigate(`/novo-chamado?${queryParams}`);
   };
 
   const handleMentionInput = (e) => {
@@ -520,10 +520,10 @@ const TicketDetailPage = () => {
     // Administrador pode fazer qualquer ação
     if (isAdmin) {
       return [
-        { value: TICKET_STATUS.OPEN, label: 'Reabrir', description: 'Reabrir chamado' },
-        { value: TICKET_STATUS.IN_TREATMENT, label: 'Em Tratativa', description: 'Iniciar tratamento' },
-        { value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Executado', description: 'Marcar como executado' },
-        { value: TICKET_STATUS.COMPLETED, label: 'Concluído', description: 'Finalizar chamado' },
+        { value: 'aberto', label: 'Reabrir', description: 'Reabrir chamado' },
+        { value: 'em_tratativa', label: 'Em Tratativa', description: 'Iniciar tratamento' },
+        { value: 'executado_aguardando_validacao', label: 'Executado', description: 'Marcar como executado' },
+        { value: 'concluido', label: 'Concluído', description: 'Finalizar chamado' },
         { value: 'enviado_para_area', label: 'Rejeitar / Devolver', description: 'Devolver para área anterior' },
         { value: 'cancelado', label: 'Cancelar', description: 'Cancelar chamado' }
       ];
@@ -534,7 +534,7 @@ const TicketDetailPage = () => {
       if (currentStatus === 'executado_aguardando_validacao' || 
           currentStatus === 'executado_aguardando_validacao_operador') {
         return [
-          { value: TICKET_STATUS.COMPLETED, label: 'Validar e Concluir', description: 'Validar execução e finalizar' },
+          { value: 'concluido', label: 'Validar e Concluir', description: 'Validar execução e finalizar' },
           { value: 'enviado_para_area', label: 'Rejeitar / Devolver', description: 'Devolver para área responsável' }
         ];
       }
@@ -548,15 +548,15 @@ const TicketDetailPage = () => {
 
     // Operador da área responsável
     if (userProfile.funcao?.startsWith('operador_') && userArea === ticketArea) {
-      if (currentStatus === TICKET_STATUS.OPEN) {
+      if (currentStatus === 'aberto') {
         return [
-          { value: TICKET_STATUS.IN_TREATMENT, label: 'Iniciar Tratativa', description: 'Assumir responsabilidade' }
+          { value: 'em_tratativa', label: 'Iniciar Tratativa', description: 'Assumir responsabilidade' }
         ];
       }
       
-      if (currentStatus === TICKET_STATUS.IN_TREATMENT) {
+      if (currentStatus === 'em_tratativa') {
         return [
-          { value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Executado', description: 'Marcar como executado' },
+          { value: 'executado_aguardando_validacao', label: 'Executado', description: 'Marcar como executado' },
           { value: 'enviado_para_area', label: 'Rejeitar / Devolver', description: 'Devolver para área anterior' }
         ];
       }
@@ -566,8 +566,8 @@ const TicketDetailPage = () => {
     if (userProfile.funcao === 'consultor') {
       if (currentStatus === 'aguardando_consultor') {
         return [
-          { value: TICKET_STATUS.IN_TREATMENT, label: 'Dar Tratativa', description: 'Assumir tratamento' },
-          { value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Concluir', description: 'Finalizar diretamente' },
+          { value: 'em_tratativa', label: 'Dar Tratativa', description: 'Assumir tratamento' },
+          { value: 'executado_aguardando_validacao', label: 'Concluir', description: 'Finalizar diretamente' },
           { value: 'enviado_para_area', label: 'Enviar para Área', description: 'Escalar para área responsável' }
         ];
       }
@@ -575,9 +575,9 @@ const TicketDetailPage = () => {
 
     // Produtor
     if (userProfile.funcao === 'produtor') {
-      if (currentStatus === TICKET_STATUS.IN_TREATMENT && ticket.responsavelAtual === 'produtor') {
+      if (currentStatus === 'em_tratativa' && ticket.responsavelAtual === 'produtor') {
         return [
-          { value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Executado', description: 'Marcar como executado' },
+          { value: 'executado_aguardando_validacao', label: 'Executado', description: 'Marcar como executado' },
           { value: 'enviado_para_area', label: 'Rejeitar / Devolver', description: 'Devolver para área anterior' }
         ];
       }
@@ -587,7 +587,7 @@ const TicketDetailPage = () => {
     if (userProfile.funcao === 'gerencia') {
       if (currentStatus === 'aguardando_aprovacao_gerencial') {
         return [
-          { value: TICKET_STATUS.IN_TREATMENT, label: 'Aprovar', description: 'Aprovar e retornar para execução' },
+          { value: 'em_tratativa', label: 'Aprovar', description: 'Aprovar e retornar para execução' },
           { value: 'enviado_para_area', label: 'Rejeitar', description: 'Rejeitar solicitação' }
         ];
       }
@@ -598,10 +598,10 @@ const TicketDetailPage = () => {
 
   const getStatusLabel = (status) => {
     const statusMap = {
-      [TICKET_STATUS.OPEN]: 'Aberto',
-      [TICKET_STATUS.IN_TREATMENT]: 'Em Tratativa',
-      [TICKET_STATUS.EXECUTED_AWAITING_VALIDATION]: 'Executado - Aguardando Validação',
-      [TICKET_STATUS.COMPLETED]: 'Concluído',
+      'aberto': 'Aberto',
+      'em_tratativa': 'Em Tratativa',
+      'executado_aguardando_validacao': 'Executado - Aguardando Validação',
+      'concluido': 'Concluído',
       'enviado_para_area': 'Enviado para Área',
       'aguardando_consultor': 'Aguardando Consultor',
       'aguardando_aprovacao_gerencial': 'Aguardando Aprovação Gerencial',
@@ -612,10 +612,10 @@ const TicketDetailPage = () => {
 
   const getStatusColor = (status) => {
     const colorMap = {
-      [TICKET_STATUS.OPEN]: 'bg-blue-100 text-blue-800',
-      [TICKET_STATUS.IN_TREATMENT]: 'bg-yellow-100 text-yellow-800',
-      [TICKET_STATUS.EXECUTED_AWAITING_VALIDATION]: 'bg-purple-100 text-purple-800',
-      [TICKET_STATUS.COMPLETED]: 'bg-green-100 text-green-800',
+      'aberto': 'bg-blue-100 text-blue-800',
+      'em_tratativa': 'bg-yellow-100 text-yellow-800',
+      'executado_aguardando_validacao': 'bg-purple-100 text-purple-800',
+      'concluido': 'bg-green-100 text-green-800',
       'enviado_para_area': 'bg-orange-100 text-orange-800',
       'aguardando_consultor': 'bg-cyan-100 text-cyan-800',
       'aguardando_aprovacao_gerencial': 'bg-indigo-100 text-indigo-800',
@@ -830,17 +830,17 @@ const TicketDetailPage = () => {
                 </div>
 
                 {/* Link para chamado pai */}
-                {ticket.chamadoPaiId && (
+                {ticket.linkedTicketId && (
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                     <div className="flex items-center space-x-2">
                       <Link className="h-4 w-4 text-blue-600" />
                       <span className="text-sm font-medium text-blue-800">Chamado Vinculado</span>
                     </div>
                     <p className="text-sm text-blue-700 mt-1">
-                      Este chamado está vinculado ao chamado #{ticket.chamadoPaiId?.substring(0, 8)}
+                      Este chamado está vinculado ao chamado #{ticket.linkedTicketId?.substring(0, 8)}
                     </p>
                     <Button
-                      onClick={() => navigate(`/chamado/${ticket.chamadoPaiId}`)}
+                      onClick={() => navigate(`/chamado/${ticket.linkedTicketId}`)}
                       variant="outline"
                       size="sm"
                       className="mt-2 text-blue-600 border-blue-300 hover:bg-blue-50"
@@ -1228,7 +1228,7 @@ const TicketDetailPage = () => {
                   </div>
 
                   {/* Mensagem de conclusão */}
-                  {newStatus === TICKET_STATUS.COMPLETED && (
+                  {newStatus === 'concluido' && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Observações da Conclusão
@@ -1495,4 +1495,3 @@ const TicketDetailPage = () => {
 };
 
 export default TicketDetailPage;
-
