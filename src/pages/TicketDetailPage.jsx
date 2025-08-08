@@ -1,28 +1,30 @@
-// Arquivo: src/pages/TicketDetailPage.jsx - VERSÃO DE TESTE MÍNIMA
+// Arquivo: src/pages/TicketDetailPage.jsx - COM LOGS DE DIAGNÓSTICO
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ticketService } from '@/services/ticketService';
-import { Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import { projectService } from '@/services/projectService';
+import { messageService } from '@/services/messageService';
+import { Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button'; // Apenas para o botão de voltar
 
-const TicketDetailPage = () => {
+const TicketDetailPage = ({ navigate }) => { // Adicionado navigate como prop para simplicidade
   const { id: ticketId } = useParams();
   const { user } = useAuth();
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const navigate = useNavigate();
 
   useEffect(() => {
-    // Roda apenas quando o ticketId e o usuário estiverem prontos
     if (ticketId && user) {
-      const loadMinimalData = async () => {
-        console.log("--- INICIANDO TESTE DE CARREGAMENTO MÍNIMO ---");
+      const loadData = async () => {
+        console.log("--- PASSO 1: INICIANDO loadData ---");
         try {
           setLoading(true);
-          // A única chamada ao banco de dados
+          
+          console.log("--- PASSO 2: Chamando ticketService.getTicketById... ---");
           const data = await ticketService.getTicketById(ticketId);
-          console.log("--- DADOS RECEBIDOS NO TESTE:", data);
+          console.log("--- PASSO 3: DADOS DO TICKET RECEBIDOS:", data);
           
           if (data) {
             setTicket(data);
@@ -30,15 +32,15 @@ const TicketDetailPage = () => {
             setError(`O chamado com ID ${ticketId} não foi encontrado.`);
           }
         } catch (err) {
-          console.error("--- ERRO CAPTURADO DURANTE O TESTE:", err);
+          console.error("--- ERRO CAPTURADO NO PASSO 2 ou 3:", err);
           setError(err.message);
         } finally {
           setLoading(false);
-          console.log("--- TESTE DE CARREGAMENTO FINALIZADO ---");
+          console.log("--- PASSO FINAL: loadData finalizado. ---");
         }
       };
       
-      loadMinimalData();
+      loadData();
     }
   }, [ticketId, user]);
 
@@ -47,7 +49,7 @@ const TicketDetailPage = () => {
       <div className="min-h-screen flex items-center justify-center text-center p-4">
         <div>
           <Loader2 className="h-10 w-10 animate-spin text-blue-600 mx-auto" />
-          <p className="mt-4 text-gray-700 font-semibold">Testando carregamento do chamado...</p>
+          <p className="mt-4 text-gray-700 font-semibold">Carregando dados do chamado...</p>
         </div>
       </div>
     );
@@ -57,10 +59,9 @@ const TicketDetailPage = () => {
     return (
       <div className="min-h-screen flex items-center justify-center text-center p-4">
         <div className="p-6 border border-red-200 bg-red-50 rounded-lg">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-red-800">Erro no Teste</h2>
+          <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-red-800">Ocorreu um Erro</h2>
           <p className="text-red-700 mt-2 bg-red-100 p-2 rounded">{error}</p>
-          <Button onClick={() => navigate('/dashboard')} className="mt-6">Voltar</Button>
         </div>
       </div>
     );
@@ -70,11 +71,9 @@ const TicketDetailPage = () => {
     <div className="min-h-screen flex items-center justify-center text-center p-4">
        <div className="p-6 border border-green-200 bg-green-50 rounded-lg">
           <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-green-800">Teste de Carregamento bem-sucedido!</h1>
+          <h1 className="text-2xl font-bold text-green-800">Carregamento Concluído!</h1>
           <h2 className="mt-4 text-lg">Título do Chamado: <span className="font-semibold">{ticket?.titulo}</span></h2>
-          <p className="mt-4 text-gray-700">Se você está vendo esta mensagem, a busca principal do chamado está funcionando. O erro está na complexidade da versão completa do componente.</p>
-          <Button onClick={() => navigate('/dashboard')} className="mt-6">Voltar</Button>
-        </div>
+       </div>
     </div>
   );
 };
