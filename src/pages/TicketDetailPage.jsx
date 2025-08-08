@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/authcontext';
+import { useAuth } from '@/contexts/AuthContext';
 import ticketService from '@/services/ticketservice';
 import messageService from '@/services/messageservice';
 import projectService from '@/services/projectservice';
