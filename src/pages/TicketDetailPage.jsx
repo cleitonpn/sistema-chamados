@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import ticketService from '@/services/ticketservice';
-import messageService from '@/services/messageservice';
-import projectService from '@/services/projectservice';
-import userService from '@/services/userservice';
-import notificationService from '@/services/notificationservice';
-import { TICKET_CATEGORIES } from '@/constants/ticketcategories';
+import ticketService from '@/services/TicketService';
+import messageService from '@/services/messageService';
+import projectService from '@/services/projectService';
+import userService from '@/services/userService';
+import notificationService from '@/services/notificationService';
+import { TICKET_CATEGORIES } from '@/constants/ticketCategories';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
