@@ -1,129 +1,111 @@
+// Arquivo: src/components/ProtectedRoute.jsx - VERSÃO CORRIGIDA E BLINDADA
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext'; // Ajuste o caminho se necessário
 import { Loader2 } from 'lucide-react';
+
+const LoadingScreen = () => (
+  <div className="min-h-screen flex items-center justify-center">
+    <div className="text-center">
+      <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+      <p>Carregando...</p>
+    </div>
+  </div>
+);
+
+const AccessDeniedScreen = ({ message, debugInfo = {} }) => (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <p className="text-red-600 font-semibold">{message}</p>
+        <p className="text-sm text-gray-600 mt-2">
+          Você não tem permissão para acessar esta página.
+        </p>
+        <div className="mt-4 p-4 bg-gray-100 rounded text-left text-xs w-80 mx-auto">
+          <strong>Debug Info:</strong><br/>
+          {Object.entries(debugInfo).map(([key, value]) => (
+            <React.Fragment key={key}>
+              <span>{key}: "{value}"</span><br/>
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    </div>
+);
+
 
 const ProtectedRoute = ({ children, requiredRole = null, requiredRoles = null, requiredArea = null }) => {
   const { user, userProfile, loading } = useAuth();
   const location = useLocation();
 
-  // DEBUG: Log para identificar o problema
-  console.log('🔍 ProtectedRoute Debug:', {
-    user: user ? 'Logado' : 'Não logado',
-    userProfile: userProfile,
-    loading: loading,
-    requiredRole: requiredRole,
-    requiredRoles: requiredRoles,
-    currentPath: location.pathname
-  });
-
+  // 1. Se o contexto de autenticação ainda está carregando, mostramos o loading.
   if (loading) {
-    console.log('⏳ ProtectedRoute: Ainda carregando...');
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p>Carregando...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
+  // 2. Se não há usuário, redirecionamos para o login.
   if (!user) {
-    console.log('❌ ProtectedRoute: Usuário não logado, redirecionando para login');
-    // Redirecionar para login, salvando a localização atual
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Verificar se o perfil do usuário foi carregado
+  // 3. Se o usuário existe, mas o perfil ainda não foi carregado, esperamos.
   if (!userProfile) {
-    console.log('❌ ProtectedRoute: Perfil do usuário não carregado');
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-600">Erro ao carregar perfil do usuário</p>
-          <p className="text-sm text-gray-600 mt-2">
-            Entre em contato com o administrador
-          </p>
-          <div className="mt-4 p-4 bg-gray-100 rounded text-left text-xs">
-            <strong>Debug Info:</strong><br/>
-            User: {user ? 'Existe' : 'Null'}<br/>
-            UserProfile: {userProfile ? 'Existe' : 'Null'}<br/>
-            Loading: {loading ? 'True' : 'False'}
-          </div>
-        </div>
-      </div>
-    );
+    // Isso pode acontecer por um instante entre o login e a busca no Firestore.
+    return <LoadingScreen />;
+  }
+  
+  // 4. ***A NOVA VERIFICAÇÃO DE SEGURANÇA***
+  // Verificamos se os campos específicos necessários para esta rota já existem no perfil.
+  // Se a rota exige uma 'funcao', mas userProfile.funcao ainda é undefined, continuamos carregando.
+  if ((requiredRole || requiredRoles) && typeof userProfile.funcao === 'undefined') {
+    console.log("⏳ ProtectedRoute: Perfil existe, mas aguardando o campo 'funcao'...");
+    return <LoadingScreen />;
+  }
+  
+  // O mesmo para 'area'
+  if (requiredArea && typeof userProfile.area === 'undefined') {
+    console.log("⏳ ProtectedRoute: Perfil existe, mas aguardando o campo 'area'...");
+    return <LoadingScreen />;
   }
 
-  // DEBUG: Log da verificação de permissões
-  console.log('🔐 ProtectedRoute: Verificando permissões:', {
-    userFunction: userProfile.funcao,
-    requiredRole: requiredRole,
-    requiredRoles: requiredRoles,
-    hasAccess: requiredRole ? userProfile.funcao === requiredRole : true
-  });
-
-  // Verificar permissões de função (single role)
+  // 5. Agora que temos certeza que os dados existem, verificamos as permissões.
+  // Verificar permissão de função única
   if (requiredRole && userProfile.funcao !== requiredRole) {
-    console.log(`❌ ProtectedRoute: Acesso negado - Função atual: "${userProfile.funcao}", Requerida: "${requiredRole}"`);
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-600">Acesso negado. Esta página é restrita a administradores.</p>
-          <p className="text-sm text-gray-600 mt-2">
-            Você não tem permissão para acessar esta página
-          </p>
-          <div className="mt-4 p-4 bg-gray-100 rounded text-left text-xs">
-            <strong>Debug Info:</strong><br/>
-            Sua função: "{userProfile.funcao}"<br/>
-            Função requerida: "{requiredRole}"<br/>
-            Página: {location.pathname}
-          </div>
-        </div>
-      </div>
-    );
+    return <AccessDeniedScreen 
+              message="Acesso negado. Rota restrita." 
+              debugInfo={{
+                "Sua função": userProfile.funcao,
+                "Função requerida": requiredRole,
+                "Página": location.pathname
+              }} 
+            />;
   }
 
-  // Verificar permissões de função (multiple roles)
+  // Verificar permissão de múltiplas funções
   if (requiredRoles && !requiredRoles.includes(userProfile.funcao)) {
-    console.log(`❌ ProtectedRoute: Acesso negado - Função atual: "${userProfile.funcao}", Requeridas: [${requiredRoles.join(', ')}]`);
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-600">Acesso negado</p>
-          <p className="text-sm text-gray-600 mt-2">
-            Você não tem permissão para acessar esta página
-          </p>
-          <div className="mt-4 p-4 bg-gray-100 rounded text-left text-xs">
-            <strong>Debug Info:</strong><br/>
-            Sua função: "{userProfile.funcao}"<br/>
-            Funções requeridas: [{requiredRoles.join(', ')}]<br/>
-            Página: {location.pathname}
-          </div>
-        </div>
-      </div>
-    );
+    return <AccessDeniedScreen 
+              message="Acesso negado." 
+              debugInfo={{
+                "Sua função": userProfile.funcao,
+                "Funções permitidas": requiredRoles.join(', '),
+                "Página": location.pathname
+              }} 
+            />;
   }
 
-  // Verificar permissões de área
+  // Verificar permissão de área
   if (requiredArea && userProfile.area !== requiredArea) {
-    console.log(`❌ ProtectedRoute: Acesso negado - Área atual: "${userProfile.area}", Requerida: "${requiredArea}"`);
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-600">Acesso negado</p>
-          <p className="text-sm text-gray-600 mt-2">
-            Você não tem permissão para acessar esta área
-          </p>
-        </div>
-      </div>
-    );
+    return <AccessDeniedScreen 
+              message="Acesso de área negado." 
+              debugInfo={{
+                "Sua área": userProfile.area,
+                "Área requerida": requiredArea,
+                "Página": location.pathname
+              }} 
+            />;
   }
 
-  console.log('✅ ProtectedRoute: Acesso permitido, renderizando página');
+  // Se passou por todas as verificações, o acesso é permitido.
   return children;
 };
 
 export default ProtectedRoute;
-
