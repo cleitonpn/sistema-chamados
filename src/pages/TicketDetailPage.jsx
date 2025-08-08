@@ -1,19 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext'; // Alterado para usar o caminho com alias
-import { useUserProfile } from '@/contexts/UserProfileContext'; // Alterado para usar o caminho com alias
-import ticketService from '@/services/ticketService'; // Alterado para usar o caminho com alias
-import messageService from '@/services/messageService'; // Alterado para usar o caminho com alias
-import projectService from '@/services/projectService'; // Alterado para usar o caminho com alias
-import userService from '@/services/userService'; // Alterado para usar o caminho com alias
-import notificationService from '@/services/notificationService'; // Alterado para usar o caminho com alias
-import { TICKET_CATEGORIES } from '@/constants/ticketCategories'; // Alterado para usar o caminho com alias
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'; // Alterado para usar o caminho com alias
-import { Button } from '@/components/ui/Button'; // Alterado para usar o caminho com alias
-import { Badge } from '@/components/ui/Badge'; // Alterado para usar o caminho com alias
-import { Textarea } from '@/components/ui/Textarea'; // Alterado para usar o caminho com alias
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'; // Alterado para usar o caminho com alias
-import { Input } from '@/components/ui/Input'; // Alterado para usar o caminho com alias
+import { useAuth } from '@/contexts/AuthContext';
+import ticketService from '@/services/ticketService';
+import messageService from '@/services/messageService';
+import projectService from '@/services/projectService';
+import userService from '@/services/userService';
+import notificationService from '@/services/notificationService';
+import { TICKET_CATEGORIES } from '@/constants/ticketCategories';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { Textarea } from '@/components/ui/Textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select';
+import { Input } from '@/components/ui/Input';
 import { 
   ArrowLeft, 
   Clock, 
@@ -44,7 +43,6 @@ const TicketDetailPage = () => {
   const { id: ticketId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { userProfile } = useUserProfile();
   const [ticket, setTicket] = useState(null);
   const [projects, setProjects] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -69,7 +67,6 @@ const TicketDetailPage = () => {
   const [mentionSuggestions, setMentionSuggestions] = useState([]);
   const [showMentions, setShowMentions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
-  const [cursorPosition, setCursorPosition] = useState(0);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const conclusionFileInputRef = useRef(null);
@@ -86,9 +83,6 @@ const TicketDetailPage = () => {
   const loadTicketData = async () => {
     try {
       setLoading(true);
-      console.log('🔍 Carregando dados do chamado:', ticketId);
-      
-      // Carregar dados do chamado
       const ticketData = await ticketService.getTicketById(ticketId);
       if (!ticketData) {
         setError('Chamado não encontrado');
@@ -96,55 +90,42 @@ const TicketDetailPage = () => {
         return;
       }
       
-      console.log('📋 Dados do chamado carregados:', ticketData);
       setTicket(ticketData);
 
-      // Carregar projetos (múltiplos ou único)
-      if (ticketData.projetos && Array.isArray(ticketData.projetos) && ticketData.projetos.length > 0) {
-        console.log('📁 Carregando múltiplos projetos:', ticketData.projetos);
-        
+      if (ticketData.projetos?.length > 0) {
         const projectsData = await Promise.allSettled(
           ticketData.projetos.map(async (projectId) => {
-            if (!projectId || typeof projectId !== 'string') {
-              console.warn('⚠️ ID de projeto inválido:', projectId);
-              return null;
-            }
+            if (!projectId) return null;
             try {
               return await projectService.getProjectById(projectId);
             } catch (error) {
-              console.error('❌ Erro ao carregar projeto:', projectId, error);
+              console.error('Erro ao carregar projeto:', projectId, error);
               return null;
             }
           })
         );
         
         const validProjects = projectsData
-          .filter(result => result.status === 'fulfilled' && result.value !== null)
+          .filter(result => result.status === 'fulfilled' && result.value)
           .map(result => result.value);
         
-        console.log('✅ Projetos carregados:', validProjects);
         setProjects(validProjects);
       } else if (ticketData.projeto) {
-        // Compatibilidade com sistema antigo (projeto único)
-        console.log('📁 Carregando projeto único:', ticketData.projeto);
         try {
           const projectData = await projectService.getProjectById(ticketData.projeto);
           if (projectData) {
             setProjects([projectData]);
           }
         } catch (error) {
-          console.error('❌ Erro ao carregar projeto único:', error);
+          console.error('Erro ao carregar projeto único:', error);
         }
       }
 
-      // Carregar mensagens
-      console.log('💬 Carregando mensagens do chamado');
       const messagesData = await messageService.getMessagesByTicket(ticketId);
-      console.log('✅ Mensagens carregadas:', messagesData?.length || 0);
       setMessages(messagesData || []);
 
     } catch (error) {
-      console.error('❌ Erro ao carregar dados do chamado:', error);
+      console.error('Erro ao carregar dados do chamado:', error);
       setError('Erro ao carregar dados do chamado');
     } finally {
       setLoading(false);
@@ -187,15 +168,14 @@ const TicketDetailPage = () => {
         content: newMessage,
         images: selectedImages,
         senderId: user.uid,
-        senderName: userProfile?.nome || user.displayName || 'Usuário',
+        senderName: user.displayName || 'Usuário',
         timestamp: new Date()
       });
 
-      // Enviar notificação
       await notificationService.sendTicketNotification(
         ticket,
         'nova_mensagem',
-        `Nova mensagem de ${userProfile?.nome || user.displayName}`,
+        `Nova mensagem de ${user.displayName || 'Usuário'}`,
         user.uid
       );
 
@@ -230,7 +210,6 @@ const TicketDetailPage = () => {
     if (!newStatus) return;
 
     try {
-      // Verificar se é rejeição/devolução
       if (newStatus === 'enviado_para_area' && ticket.status !== 'aberto') {
         setShowRejectModal(true);
         return;
@@ -242,17 +221,15 @@ const TicketDetailPage = () => {
         updatedBy: user.uid
       };
 
-      // Adicionar dados específicos baseado no status
       if (newStatus === 'concluido' && conclusionMessage) {
         updateData.conclusionMessage = conclusionMessage;
         updateData.conclusionImages = conclusionImages;
         updateData.completedAt = new Date();
-        updateData.completedBy = user.uid;
+        updateData.completedBy: user.uid;
       }
 
       await ticketService.updateTicket(ticketId, updateData);
 
-      // Enviar notificação
       await notificationService.sendTicketNotification(
         ticket,
         'mudanca_status',
@@ -287,7 +264,6 @@ const TicketDetailPage = () => {
 
       await ticketService.updateTicket(ticketId, updateData);
 
-      // Enviar notificação para o criador
       await notificationService.sendTicketNotification(
         ticket,
         'chamado_rejeitado',
@@ -322,7 +298,6 @@ const TicketDetailPage = () => {
 
       await ticketService.updateTicket(ticketId, updateData);
 
-      // Enviar notificação
       await notificationService.sendTicketNotification(
         ticket,
         'escalacao_area',
@@ -357,7 +332,6 @@ const TicketDetailPage = () => {
 
       await ticketService.updateTicket(ticketId, updateData);
 
-      // Enviar notificação
       await notificationService.sendTicketNotification(
         ticket,
         'escalacao_gerencia',
@@ -391,7 +365,6 @@ const TicketDetailPage = () => {
 
       await ticketService.updateTicket(ticketId, updateData);
 
-      // Enviar notificação
       await notificationService.sendTicketNotification(
         ticket,
         'escalacao_consultor',
@@ -419,7 +392,6 @@ const TicketDetailPage = () => {
 
       await ticketService.updateTicket(ticketId, updateData);
 
-      // Enviar notificação
       await notificationService.sendTicketNotification(
         ticket,
         'transferencia_produtor',
@@ -451,7 +423,6 @@ const TicketDetailPage = () => {
   };
 
   const handleCreateLinkedTicket = () => {
-    // Navegar para NewTicketForm com dados do chamado atual
     const ticketData = {
       linkedTicketId: ticketId,
       linkedTicketTitle: ticket.titulo,
@@ -471,9 +442,7 @@ const TicketDetailPage = () => {
     const cursorPos = e.target.selectionStart;
     
     setNewMessage(value);
-    setCursorPosition(cursorPos);
 
-    // Detectar menções (@)
     const textBeforeCursor = value.substring(0, cursorPos);
     const mentionMatch = textBeforeCursor.match(/@(\w*)$/);
     
@@ -481,9 +450,9 @@ const TicketDetailPage = () => {
       const query = mentionMatch[1].toLowerCase();
       setMentionQuery(query);
       
-      const filteredUsers = users.filter(user => 
-        user.nome?.toLowerCase().includes(query) ||
-        user.email?.toLowerCase().includes(query)
+      const filteredUsers = users.filter(u => 
+        u.displayName?.toLowerCase().includes(query) ||
+        u.email?.toLowerCase().includes(query)
       ).slice(0, 5);
       
       setMentionSuggestions(filteredUsers);
@@ -493,31 +462,32 @@ const TicketDetailPage = () => {
     }
   };
 
-  const insertMention = (user) => {
-    const textBeforeCursor = newMessage.substring(0, cursorPosition);
-    const textAfterCursor = newMessage.substring(cursorPosition);
-    const mentionMatch = textBeforeCursor.match(/@(\w*)$/);
+  const insertMention = (selectedUser) => {
+    const message = newMessage;
+    const beforeCursor = message.substring(0, textareaRef.current.selectionStart - mentionQuery.length - 1);
+    const afterCursor = message.substring(textareaRef.current.selectionStart);
     
-    if (mentionMatch) {
-      const beforeMention = textBeforeCursor.substring(0, mentionMatch.index);
-      const newText = `${beforeMention}@${user.nome} ${textAfterCursor}`;
-      setNewMessage(newText);
-    }
-    
+    setNewMessage(`${beforeCursor}@${selectedUser.displayName} ${afterCursor}`);
     setShowMentions(false);
-    textareaRef.current?.focus();
+    setMentionQuery('');
+    setTimeout(() => {
+      textareaRef.current.focus();
+      textareaRef.current.setSelectionRange(
+        beforeCursor.length + selectedUser.displayName.length + 2,
+        beforeCursor.length + selectedUser.displayName.length + 2
+      );
+    }, 0);
   };
 
   const getAvailableStatuses = () => {
-    if (!ticket || !userProfile) return [];
+    if (!ticket || !user) return [];
 
     const currentStatus = ticket.status;
     const isCreator = ticket.criadoPor === user.uid;
-    const isAdmin = userProfile.funcao === 'administrador';
-    const userArea = userProfile.area;
+    const isAdmin = user.funcao === 'administrador';
+    const userArea = user.area || '';
     const ticketArea = ticket.area;
 
-    // Administrador pode fazer qualquer ação
     if (isAdmin) {
       return [
         { value: 'aberto', label: 'Reabrir', description: 'Reabrir chamado' },
@@ -529,7 +499,6 @@ const TicketDetailPage = () => {
       ];
     }
 
-    // Criador do chamado
     if (isCreator) {
       if (currentStatus === 'executado_aguardando_validacao' || 
           currentStatus === 'executado_aguardando_validacao_operador') {
@@ -546,8 +515,7 @@ const TicketDetailPage = () => {
       }
     }
 
-    // Operador da área responsável
-    if (userProfile.funcao?.startsWith('operador_') && userArea === ticketArea) {
+    if (user.funcao?.startsWith('operador_') && userArea === ticketArea) {
       if (currentStatus === 'aberto') {
         return [
           { value: 'em_tratativa', label: 'Iniciar Tratativa', description: 'Assumir responsabilidade' }
@@ -562,8 +530,7 @@ const TicketDetailPage = () => {
       }
     }
 
-    // Consultor
-    if (userProfile.funcao === 'consultor') {
+    if (user.funcao === 'consultor') {
       if (currentStatus === 'aguardando_consultor') {
         return [
           { value: 'em_tratativa', label: 'Dar Tratativa', description: 'Assumir tratamento' },
@@ -573,8 +540,7 @@ const TicketDetailPage = () => {
       }
     }
 
-    // Produtor
-    if (userProfile.funcao === 'produtor') {
+    if (user.funcao === 'produtor') {
       if (currentStatus === 'em_tratativa' && ticket.responsavelAtual === 'produtor') {
         return [
           { value: 'executado_aguardando_validacao', label: 'Executado', description: 'Marcar como executado' },
@@ -583,8 +549,7 @@ const TicketDetailPage = () => {
       }
     }
 
-    // Gerência
-    if (userProfile.funcao === 'gerencia') {
+    if (user.funcao === 'gerencia') {
       if (currentStatus === 'aguardando_aprovacao_gerencial') {
         return [
           { value: 'em_tratativa', label: 'Aprovar', description: 'Aprovar e retornar para execução' },
@@ -625,25 +590,14 @@ const TicketDetailPage = () => {
   };
 
   const canUserAccessTicket = () => {
-    if (!ticket || !userProfile) return false;
+    if (!ticket || !user) return false;
 
-    // Administrador pode acessar tudo
-    if (userProfile.funcao === 'administrador') return true;
-
-    // Criador do chamado
+    if (user.funcao === 'administrador') return true;
     if (ticket.criadoPor === user.uid) return true;
-
-    // Operador da área do chamado
-    if (userProfile.funcao?.startsWith('operador_') && userProfile.area === ticket.area) return true;
-
-    // Consultor do projeto
-    if (userProfile.funcao === 'consultor' && projects.some(project => project.consultorId === user.uid)) return true;
-
-    // Produtor do projeto
-    if (userProfile.funcao === 'produtor' && projects.some(project => project.produtorId === user.uid)) return true;
-
-    // Gerência
-    if (userProfile.funcao === 'gerencia') return true;
+    if (user.funcao?.startsWith('operador_') && user.area === ticket.area) return true;
+    if (user.funcao === 'consultor' && projects.some(p => p.consultorId === user.uid)) return true;
+    if (user.funcao === 'produtor' && projects.some(p => p.produtorId === user.uid)) return true;
+    if (user.funcao === 'gerencia') return true;
 
     return false;
   };
@@ -660,7 +614,7 @@ const TicketDetailPage = () => {
     return text.split(/(@\w+)/g).map((part, index) => {
       if (part.startsWith('@')) {
         const username = part.substring(1);
-        const mentionedUser = users.find(u => u.nome === username);
+        const mentionedUser = users.find(u => u.displayName === username);
         return (
           <span key={index} className="bg-blue-100 text-blue-800 px-1 rounded">
             {part}
@@ -759,7 +713,7 @@ const TicketDetailPage = () => {
               <Badge className={getStatusColor(ticket.status)}>
                 {getStatusLabel(ticket.status)}
               </Badge>
-              {userProfile?.funcao === 'administrador' && (
+              {user.funcao === 'administrador' && (
                 <Button
                   onClick={handleArchiveTicket}
                   variant="outline"
@@ -799,7 +753,6 @@ const TicketDetailPage = () => {
                   <p className="text-gray-600 mt-2">{ticket.descricao}</p>
                 </div>
 
-                {/* Flag de Item Extra */}
                 {ticket.itemExtra && (
                   <div className="flex items-center space-x-2 p-3 bg-orange-50 border border-orange-200 rounded-lg">
                     <div className="text-orange-600 text-lg">🔥</div>
@@ -829,7 +782,6 @@ const TicketDetailPage = () => {
                   </div>
                 </div>
 
-                {/* Link para chamado pai */}
                 {ticket.linkedTicketId && (
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                     <div className="flex items-center space-x-2">
@@ -1133,7 +1085,7 @@ const TicketDetailPage = () => {
                             className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
                             onClick={() => insertMention(user)}
                           >
-                            <p className="font-medium">{user.nome}</p>
+                            <p className="font-medium">{user.displayName}</p>
                             <p className="text-sm text-gray-500">{user.email}</p>
                           </div>
                         ))}
