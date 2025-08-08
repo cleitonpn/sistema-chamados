@@ -225,7 +225,7 @@ const TicketDetailPage = () => {
         updateData.conclusionMessage = conclusionMessage;
         updateData.conclusionImages = conclusionImages;
         updateData.completedAt = new Date();
-        updateData.completedBy; user.uid;
+        updateData.completedBy = user.uid;
       }
 
       await ticketService.updateTicket(ticketId, updateData);
@@ -484,8 +484,8 @@ const TicketDetailPage = () => {
 
     const currentStatus = ticket.status;
     const isCreator = ticket.criadoPor === user.uid;
-    const isAdmin = user.funcao === 'administrador';
-    const userArea = user.area || '';
+    const isAdmin = userProfile.funcao === 'administrador';
+    const userArea = userProfile.area || '';
     const ticketArea = ticket.area;
 
     if (isAdmin) {
@@ -515,7 +515,7 @@ const TicketDetailPage = () => {
       }
     }
 
-    if (user.funcao?.startsWith('operador_') && userArea === ticketArea) {
+    if (userProfile.funcao?.startsWith('operador_') && userArea === ticketArea) {
       if (currentStatus === 'aberto') {
         return [
           { value: 'em_tratativa', label: 'Iniciar Tratativa', description: 'Assumir responsabilidade' }
@@ -530,7 +530,7 @@ const TicketDetailPage = () => {
       }
     }
 
-    if (user.funcao === 'consultor') {
+    if (userProfile.funcao === 'consultor') {
       if (currentStatus === 'aguardando_consultor') {
         return [
           { value: 'em_tratativa', label: 'Dar Tratativa', description: 'Assumir tratamento' },
@@ -540,7 +540,7 @@ const TicketDetailPage = () => {
       }
     }
 
-    if (user.funcao === 'produtor') {
+    if (userProfile.funcao === 'produtor') {
       if (currentStatus === 'em_tratativa' && ticket.responsavelAtual === 'produtor') {
         return [
           { value: 'executado_aguardando_validacao', label: 'Executado', description: 'Marcar como executado' },
@@ -549,7 +549,7 @@ const TicketDetailPage = () => {
       }
     }
 
-    if (user.funcao === 'gerencia') {
+    if (userProfile.funcao === 'gerencia') {
       if (currentStatus === 'aguardando_aprovacao_gerencial') {
         return [
           { value: 'em_tratativa', label: 'Aprovar', description: 'Aprovar e retornar para execução' },
@@ -592,12 +592,12 @@ const TicketDetailPage = () => {
   const canUserAccessTicket = () => {
     if (!ticket || !user) return false;
 
-    if (user.funcao === 'administrador') return true;
+    if (userProfile.funcao === 'administrador') return true;
     if (ticket.criadoPor === user.uid) return true;
-    if (user.funcao?.startsWith('operador_') && user.area === ticket.area) return true;
-    if (user.funcao === 'consultor' && projects.some(p => p.consultorId === user.uid)) return true;
-    if (user.funcao === 'produtor' && projects.some(p => p.produtorId === user.uid)) return true;
-    if (user.funcao === 'gerencia') return true;
+    if (userProfile.funcao?.startsWith('operador_') && userProfile.area === ticket.area) return true;
+    if (userProfile.funcao === 'consultor' && projects.some(p => p.consultorId === user.uid)) return true;
+    if (userProfile.funcao === 'produtor' && projects.some(p => p.produtorId === user.uid)) return true;
+    if (userProfile.funcao === 'gerencia') return true;
 
     return false;
   };
@@ -713,7 +713,7 @@ const TicketDetailPage = () => {
               <Badge className={getStatusColor(ticket.status)}>
                 {getStatusLabel(ticket.status)}
               </Badge>
-              {user.funcao === 'administrador' && (
+              {userProfile.funcao === 'administrador' && (
                 <Button
                   onClick={handleArchiveTicket}
                   variant="outline"
