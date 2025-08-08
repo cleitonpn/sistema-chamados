@@ -225,7 +225,7 @@ const TicketDetailPage = () => {
         updateData.conclusionMessage = conclusionMessage;
         updateData.conclusionImages = conclusionImages;
         updateData.completedAt = new Date();
-        updateData.completedBy: user.uid;
+        updateData.completedBy; user.uid;
       }
 
       await ticketService.updateTicket(ticketId, updateData);
