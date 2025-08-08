@@ -124,34 +124,7 @@ const TicketDetailPage = () => {
     }
 };
         
-        const validProjects = projectsData
-          .filter(result => result.status === 'fulfilled' && result.value)
-          .map(result => result.value);
-        
-        setProjects(validProjects);
-      } else if (ticketData.projeto) {
-        try {
-          const projectData = await projectService.getProjectById(ticketData.projeto);
-          if (projectData) {
-            setProjects([projectData]);
-          }
-        } catch (error) {
-          console.error('Erro ao carregar projeto único:', error);
-        }
-      }
-
-      const messagesData = await messageService.getMessagesByTicket(ticketId);
-      setMessages(messagesData || []);
-
-    } catch (error) {
-      console.error('Erro ao carregar dados do chamado:', error);
-      setError('Erro ao carregar dados do chamado');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadUsers = async () => {
+      const loadUsers = async () => {
     try {
       const usersData = await userService.getAllUsers();
       setUsers(usersData || []);
