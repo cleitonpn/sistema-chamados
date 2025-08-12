@@ -422,7 +422,8 @@ const projectNamesMap = {};
         });
         setProjectNames(projectNamesMap);
         
-      } else if (userProfile?.funcao === 'gerente') {
+      }
+    else if (userProfile?.funcao === 'gerente') {
         console.log('👔 Gerente: carregando TODOS os dados');
         const [allProjects, allTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
