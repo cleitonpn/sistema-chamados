@@ -395,18 +395,28 @@ const DashboardPage = () => {
         setProjectNames(projectNamesMap);
         
       } else if (userProfile?.funcao === 'operador') {
-        console.log('⚙️ Operador: carregando chamados da área');
-        const [allProjects, operatorTickets, allUsers] = await Promise.all([
+        console.log('⚙️ Operador: carregando chamados da área (filtro local)');
+        const [allProjects, allTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
-          ticketService.getTicketsByAreaInvolved(userProfile.area),
+          ticketService.getAllTickets(),
           userService.getAllUsers()
         ]);
-        
+        const areaOp = userProfile.area;
+        const operatorTickets = allTickets.filter(ticket => {
+          const mesmaArea = ticket.area === areaOp;
+          const destinoEscalonado = ticket.areaDestino === areaOp;
+          const devolvidoParaArea = ticket.status === 'enviado_para_area' && (ticket.area === areaOp || ticket.areaDeOrigem === areaOp);
+          const atribuidoDireto = ticket.atribuidoA === user.uid;
+          return (mesmaArea || destinoEscalonado || devolvidoParaArea || atribuidoDireto);
+        });
         setProjects(allProjects);
         setTickets(operatorTickets);
         setUsers(allUsers);
-        
         const projectNamesMap = {};
+        allProjects.forEach(project => { projectNamesMap[project.id] = project.nome; });
+        setProjectNames(projectNamesMap);
+      }
+const projectNamesMap = {};
         allProjects.forEach(project => {
           projectNamesMap[project.id] = project.nome;
         });
