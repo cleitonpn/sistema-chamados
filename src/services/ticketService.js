@@ -53,7 +53,6 @@ export const TICKET_TYPES = {
   MAINTENANCE_PRODUCTION: 'manutencao_producao',
   MAINTENANCE_FURNITURE: 'manutencao_mobiliario',
   MAINTENANCE_VISUAL: 'manutencao_comunicacao_visual',
-  PAYMENT_FREIGHT: 'pagamento_frete', // ✅ NOVO: Tipo para pagamento de frete
   OTHER: 'outro'
 };
 
@@ -66,13 +65,13 @@ export const PRIORITIES = {
 };
 
 export const ticketService = {
-  // ✅ MODIFICADO: Criar chamado com suporte a vinculação (mantendo lógica original)
+  // Criar chamado
   async createTicket(ticketData) {
     try {
       // Importar AREAS para usar constante correta
       const { AREAS } = await import('./userService');
       
-      // ✅ MANTIDO: Roteamento baseado em quem criou o chamado (LÓGICA ORIGINAL)
+      // CORREÇÃO: Roteamento baseado em quem criou o chamado
       const finalTicketData = {
         ...ticketData,
         status: TICKET_STATUS.OPEN,
@@ -90,11 +89,7 @@ export const ticketService = {
           responsavel: ticketData.criadoPor,
           comentario: 'Chamado criado'
         }],
-        // ✅ NOVO: Campos para vinculação (SEM ALTERAR LÓGICA ORIGINAL)
-        chamadoVinculado: ticketData.chamadoVinculado || null,
-        isVinculado: !!ticketData.chamadoVinculado,
-        tipoVinculacao: ticketData.chamadoVinculado ? 'pagamento_frete' : null,
-        // ✅ MANTIDO: Roteamento inteligente baseado no criador (LÓGICA ORIGINAL)
+        // Roteamento inteligente baseado no criador
         areaOriginal: ticketData.area, // Salva área original para escalação posterior
         area: (() => {
           // Se foi criado por consultor, sempre vai para produção primeiro (triagem)
@@ -108,7 +103,7 @@ export const ticketService = {
           // Fallback para área especificada
           return ticketData.area;
         })(),
-        // ✅ MANTIDO: Definir responsável atual baseado no criador (LÓGICA ORIGINAL)
+        // Definir responsável atual baseado no criador
         responsavelAtual: (() => {
           if (ticketData.criadoPorFuncao === 'consultor') {
             return 'produtor'; // Consultor -> Produtor (triagem)
@@ -125,18 +120,7 @@ export const ticketService = {
       
       const ticketId = docRef.id;
       
-      // ✅ NOVO: Se é um chamado vinculado, atualizar o chamado original
-      if (ticketData.chamadoVinculado) {
-        try {
-          await this.linkTickets(ticketData.chamadoVinculado.id, ticketId);
-          console.log('✅ Vinculação entre chamados criada com sucesso');
-        } catch (linkError) {
-          console.error('❌ Erro ao criar vinculação:', linkError);
-          // Não falhar a criação do chamado por causa da vinculação
-        }
-      }
-      
-      // ✅ MANTIDO: Enviar notificações (LÓGICA ORIGINAL)
+      // Enviar notificações (não bloquear se falhar)
       try {
         // Importar serviços dinamicamente para evitar dependência circular
         const { userService } = await import('./userService');
@@ -154,14 +138,7 @@ export const ticketService = {
         
         // Enviar notificações via sistema unificado (SendGrid)
         const ticketWithId = { ...ticketData, id: ticketId };
-        
-        // ✅ NOVO: Notificação específica para chamados vinculados
-        if (ticketData.chamadoVinculado) {
-          await unifiedNotificationService.notifyLinkedTicketCreated(ticketWithId, ticketData.chamadoVinculado);
-        } else {
-          await unifiedNotificationService.notifyTicketCreated(ticketWithId);
-        }
-        
+        await unifiedNotificationService.notifyTicketCreated(ticketWithId);
         console.log('✅ Notificações de criação SendGrid enviadas com sucesso');
         
       } catch (notificationError) {
@@ -176,82 +153,7 @@ export const ticketService = {
     }
   },
 
-  // ✅ NOVO: Função para vincular dois chamados
-  async linkTickets(originalTicketId, newTicketId) {
-    try {
-      // Atualizar chamado original com referência ao novo
-      const originalTicketRef = doc(db, 'chamados', originalTicketId);
-      await updateDoc(originalTicketRef, {
-        chamadosVinculados: arrayUnion(newTicketId),
-        temChamadosVinculados: true,
-        updatedAt: new Date()
-      });
-
-      // Atualizar novo chamado com referência ao original
-      const newTicketRef = doc(db, 'chamados', newTicketId);
-      await updateDoc(newTicketRef, {
-        chamadoOriginal: originalTicketId,
-        isVinculado: true,
-        updatedAt: new Date()
-      });
-
-      console.log('✅ Vinculação criada entre chamados:', originalTicketId, '<->', newTicketId);
-    } catch (error) {
-      console.error('❌ Erro ao vincular chamados:', error);
-      throw error;
-    }
-  },
-
-  // ✅ NOVO: Buscar chamados vinculados
-  async getLinkedTickets(ticketId) {
-    try {
-      const ticket = await this.getTicketById(ticketId);
-      if (!ticket) return [];
-
-      const linkedTickets = [];
-
-      // Se tem chamados vinculados (é o original)
-      if (ticket.chamadosVinculados && ticket.chamadosVinculados.length > 0) {
-        for (const linkedId of ticket.chamadosVinculados) {
-          const linkedTicket = await this.getTicketById(linkedId);
-          if (linkedTicket) {
-            linkedTickets.push({
-              ...linkedTicket,
-              tipoRelacao: 'vinculado'
-            });
-          }
-        }
-      }
-
-      // Se é um chamado vinculado (buscar o original)
-      if (ticket.chamadoOriginal) {
-        const originalTicket = await this.getTicketById(ticket.chamadoOriginal);
-        if (originalTicket) {
-          linkedTickets.push({
-            ...originalTicket,
-            tipoRelacao: 'original'
-          });
-        }
-      }
-
-      return linkedTickets;
-    } catch (error) {
-      console.error('Erro ao buscar chamados vinculados:', error);
-      return [];
-    }
-  },
-
-  // ✅ NOVO: Verificar se um chamado pode ser vinculado
-  canLinkTicket(ticket, userProfile) {
-    // Apenas operadores de logística podem vincular chamados ao executar
-    return (
-      userProfile.area === 'logistica' &&
-      userProfile.funcao === 'operador' &&
-      ticket.status === TICKET_STATUS.IN_TREATMENT
-    );
-  },
-
-  // ✅ MANTIDO: Buscar chamado por ID (LÓGICA ORIGINAL)
+  // Buscar chamado por ID
   async getTicketById(ticketId) {
     try {
       const docRef = doc(db, 'chamados', ticketId);
@@ -268,7 +170,7 @@ export const ticketService = {
     }
   },
 
-  // ✅ MANTIDO: Listar todos os chamados (LÓGICA ORIGINAL)
+  // Listar todos os chamados (apenas para administradores)
   async getAllTickets() {
     try {
       const querySnapshot = await getDocs(
@@ -292,7 +194,7 @@ export const ticketService = {
     }
   },
 
-  // ✅ MANTIDO: Buscar chamados por projeto (LÓGICA ORIGINAL)
+  // Buscar chamados por projeto
   async getTicketsByProject(projectId) {
     try {
       if (!projectId || typeof projectId !== 'string') {
@@ -323,7 +225,7 @@ export const ticketService = {
     }
   },
 
-  // ✅ MANTIDO: Buscar chamados por múltiplos projetos (LÓGICA ORIGINAL)
+  // Buscar chamados por múltiplos projetos (para produtores/consultores)
   async getTicketsByProjects(projectIds) {
     try {
       if (!projectIds || !Array.isArray(projectIds) || projectIds.length === 0) {
@@ -376,7 +278,7 @@ export const ticketService = {
     }
   },
 
-  // ✅ MANTIDO: Buscar chamados por área (LÓGICA ORIGINAL PRESERVADA)
+  // Buscar chamados por área
   async getTicketsByArea(area) {
     try {
       if (!area || typeof area !== 'string') {
@@ -384,7 +286,7 @@ export const ticketService = {
         return [];
       }
 
-      // ✅ MANTIDO: Buscar chamados da área E chamados escalados para gerência da área (LÓGICA ORIGINAL)
+      // Buscar chamados da área E chamados escalados para gerência da área
       const queries = [
         // Chamados normais da área
         query(collection(db, 'chamados'), where('area', '==', area)),
@@ -418,7 +320,7 @@ export const ticketService = {
     }
   },
 
-  // ✅ MANTIDO: Buscar chamados por status (LÓGICA ORIGINAL)
+  // Buscar chamados por status
   async getTicketsByStatus(status) {
     try {
       if (!status || typeof status !== 'string') {
@@ -449,7 +351,7 @@ export const ticketService = {
     }
   },
 
-  // ✅ MANTIDO: Buscar chamados por usuário (LÓGICA ORIGINAL)
+  // Buscar chamados por usuário (criados pelo usuário)
   async getTicketsByUser(userId) {
     try {
       if (!userId || typeof userId !== 'string') {
@@ -480,7 +382,7 @@ export const ticketService = {
     }
   },
 
-  // ✅ MANTIDO: Atualizar status do chamado (LÓGICA ORIGINAL)
+  // Atualizar status do chamado
   async updateTicketStatus(ticketId, newStatus, userId, comment, ticket) {
     try {
       if (!ticketId || !newStatus || !userId) {
@@ -567,12 +469,11 @@ export const ticketService = {
         } else {
           await unifiedNotificationService.notifyTicketUpdated(ticketWithId);
         }
-        
         console.log('✅ Notificações de atualização SendGrid enviadas com sucesso');
         
       } catch (notificationError) {
         console.error('❌ Erro ao enviar notificações (não crítico):', notificationError);
-        // Não falhar a atualização por causa das notificações
+        // Não falhar a atualização do chamado por causa das notificações
       }
 
       return true;
@@ -582,14 +483,52 @@ export const ticketService = {
     }
   },
 
-  // ✅ MANTIDO: Atualizar chamado (LÓGICA ORIGINAL)
-  async updateTicket(ticketId, updateData) {
+  // Atualizar chamado
+  // Atualizar chamado com lógica de roteamento
+  async updateTicket(ticketId, ticketData) {
     try {
       const docRef = doc(db, 'chamados', ticketId);
+      
+      // Buscar dados atuais do chamado
+      const currentTicket = await this.getTicketById(ticketId);
+      if (!currentTicket) {
+        throw new Error('Chamado não encontrado');
+      }
+      
+      // NOVO: Se o status está sendo alterado, adicionar ao histórico
+      if (ticketData.status && ticketData.status !== currentTicket.status) {
+        const historicoEntry = {
+          statusAnterior: currentTicket.status,
+          novoStatus: ticketData.status,
+          data: new Date(),
+          responsavel: ticketData.updatedBy || 'sistema',
+          comentario: ticketData.comentario || null
+        };
+
+        // Adicionar ao histórico existente ou criar novo
+        if (currentTicket.historicoStatus) {
+          ticketData.historicoStatus = [...currentTicket.historicoStatus, historicoEntry];
+        } else {
+          ticketData.historicoStatus = [historicoEntry];
+        }
+      }
+      
+      // Aplicar lógica de roteamento baseada no novo status
+      const updatedData = await this.applyRoutingLogic(currentTicket, ticketData);
+      
+      // Filtrar campos undefined para evitar erro no Firebase
+      const filteredData = Object.fromEntries(
+        Object.entries(updatedData).filter(([_, value]) => value !== undefined)
+      );
+      
       await updateDoc(docRef, {
-        ...updateData,
+        ...filteredData,
         updatedAt: new Date()
       });
+      
+      // Enviar notificações se necessário
+      await this.sendStatusUpdateNotifications(ticketId, currentTicket, updatedData);
+      
       return true;
     } catch (error) {
       console.error('Erro ao atualizar chamado:', error);
@@ -597,7 +536,283 @@ export const ticketService = {
     }
   },
 
-  // ✅ MANTIDO: Deletar chamado (LÓGICA ORIGINAL)
+  // Aplicar lógica de roteamento baseada no status e ação
+  async applyRoutingLogic(currentTicket, updateData) {
+    const { AREAS } = await import('./userService');
+    const newStatus = updateData.status;
+    const userRole = updateData.atualizadoPorFuncao || updateData.userRole;
+    
+    let routingData = { ...updateData };
+    
+    // Lógica para CONSULTOR (apenas validação final)
+    if (userRole === USER_ROLES.CONSULTOR) {
+      // Consultor só pode validar chamados que ele mesmo abriu
+      if (currentTicket.criadoPorFuncao === 'consultor' && 
+          currentTicket.status === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION &&
+          newStatus === TICKET_STATUS.COMPLETED) {
+        routingData.responsavelAtual = null;
+        routingData.validadoEm = new Date().toISOString();
+        routingData.validadoPor = 'consultor';
+      }
+    }
+    
+    // Lógica para PRODUTOR
+    else if (userRole === USER_ROLES.PRODUTOR) {
+      switch (newStatus) {
+        case TICKET_STATUS.SENT_TO_AREA:
+          // Enviar para área específica (operador da área)
+          routingData.area = updateData.areaDestino || currentTicket.areaOriginal || currentTicket.area;
+          routingData.responsavelAtual = USER_ROLES.OPERADOR;
+          routingData.enviadoParaArea = true;
+          break;
+          
+        case TICKET_STATUS.IN_EXECUTION:
+          // Produtor executando no pavilhão - mantém na produção
+          routingData.area = AREAS.PRODUCTION;
+          routingData.responsavelAtual = USER_ROLES.PRODUTOR;
+          routingData.executandoNoPavilhao = true;
+          break;
+          
+        case TICKET_STATUS.EXECUTED_AWAITING_VALIDATION:
+          // Produtor executou, agora aguarda validação do consultor (se foi aberto por consultor) ou auto-valida
+          if (currentTicket.criadoPorFuncao === 'consultor') {
+            // Volta para consultor E produtor validarem
+            routingData.responsavelAtual = 'consultor_produtor';
+            routingData.aguardandoValidacao = true;
+          } else {
+            // Chamado do produtor, ele mesmo valida
+            routingData.status = TICKET_STATUS.COMPLETED;
+            routingData.responsavelAtual = null;
+            routingData.validadoEm = new Date().toISOString();
+            routingData.validadoPor = 'produtor';
+          }
+          break;
+          
+        case TICKET_STATUS.COMPLETED:
+          // Produtor validando chamado que estava aguardando validação
+          if (currentTicket.status === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION) {
+            routingData.responsavelAtual = null;
+            routingData.validadoEm = new Date().toISOString();
+            routingData.validadoPor = 'produtor';
+          }
+          break;
+      }
+    }
+    
+    // Lógica para OPERADOR (área específica)
+    else if (userRole === USER_ROLES.OPERADOR) {
+      switch (newStatus) {
+        case TICKET_STATUS.IN_TREATMENT:
+          // Operador iniciou tratativa
+          routingData.responsavelAtual = USER_ROLES.OPERADOR;
+          routingData.inicioTratativa = new Date().toISOString();
+          break;
+          
+        case TICKET_STATUS.EXECUTED_AWAITING_VALIDATION:
+          // Área executou, volta para quem criou o chamado
+          if (currentTicket.criadoPorFuncao === 'consultor') {
+            // Chamado do consultor: volta para consultor E produtor
+            routingData.area = AREAS.PRODUCTION;
+            routingData.responsavelAtual = 'consultor_produtor';
+          } else if (currentTicket.criadoPorFuncao === 'produtor') {
+            // Chamado do produtor: volta apenas para produtor
+            routingData.area = AREAS.PRODUCTION;
+            routingData.responsavelAtual = USER_ROLES.PRODUTOR;
+          } else if (currentTicket.criadoPorFuncao === 'operador') {
+            // Chamado do operador: volta para o operador que criou
+            routingData.area = currentTicket.areaOriginal || currentTicket.area;
+            routingData.responsavelAtual = USER_ROLES.OPERADOR;
+          }
+          routingData.aguardandoValidacao = true;
+          routingData.executadoEm = new Date().toISOString();
+          break;
+          
+        case TICKET_STATUS.ESCALATED_TO_OTHER_AREA:
+          // Escalado para outra área
+          routingData.area = updateData.areaDestino;
+          routingData.responsavelAtual = USER_ROLES.OPERADOR;
+          routingData.escalonamentos = currentTicket.escalonamentos || [];
+          routingData.escalonamentos.push({
+            de: currentTicket.area,
+            para: updateData.areaDestino,
+            motivo: updateData.motivoEscalonamento,
+            data: new Date().toISOString(),
+            usuario: updateData.atualizadoPor
+          });
+          break;
+          
+        case TICKET_STATUS.AWAITING_APPROVAL:
+          // Escalado para gerência
+          console.log('DEBUG-Escalação: Chamado escalado com o status:', TICKET_STATUS.AWAITING_APPROVAL);
+          routingData.responsavelAtual = USER_ROLES.GERENTE;
+          // Usar areaGerencia em vez de gerenteDestino
+          if (updateData.areaGerencia) {
+            routingData.gerenteDestino = updateData.areaGerencia;
+          }
+          routingData.escalonamentos = currentTicket.escalonamentos || [];
+          routingData.escalonamentos.push({
+            de: currentTicket.area,
+            para: 'gerencia',
+            gerente: updateData.areaGerencia || updateData.gerenteDestino,
+            motivo: updateData.escalationReason || updateData.motivoEscalonamento,
+            data: new Date().toISOString(),
+            usuario: updateData.escaladoPor || updateData.atualizadoPor
+          });
+          break;
+      }
+    }
+    
+    // Lógica para GERENTE
+    else if (userRole === USER_ROLES.GERENTE) {
+      switch (newStatus) {
+        case TICKET_STATUS.APPROVED:
+          // Aprovado, volta para área original
+          routingData.area = currentTicket.areaOriginal || currentTicket.area;
+          routingData.responsavelAtual = USER_ROLES.OPERADOR;
+          routingData.aprovadoEm = new Date().toISOString();
+          break;
+          
+        case TICKET_STATUS.REJECTED:
+          // Rejeitado, encerra chamado
+          routingData.responsavelAtual = null;
+          routingData.rejeitadoEm = new Date().toISOString();
+          routingData.status = TICKET_STATUS.CANCELLED;
+          break;
+      }
+    }
+    
+    return routingData;
+  },
+
+  // Enviar notificações de atualização de status
+  async sendStatusUpdateNotifications(ticketId, oldTicket, newData) {
+    try {
+      const { notificationService } = await import('./notificationService');
+      
+      // Determinar quem deve receber a notificação baseado no novo responsável
+      let targetRole = newData.responsavelAtual;
+      let targetArea = newData.area;
+      
+      if (targetRole && targetArea) {
+        await notificationService.createNotification({
+          tipo: 'status_update',
+          titulo: `Chamado #${ticketId.slice(-8)} atualizado`,
+          mensagem: `Status alterado para: ${this.getStatusText(newData.status)}`,
+          ticketId,
+          targetRole,
+          targetArea,
+          criadoEm: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.warn('Erro ao enviar notificações:', error);
+    }
+  },
+
+  // Obter texto do status
+  getStatusText(status) {
+    const statusTexts = {
+      [TICKET_STATUS.OPEN]: 'Aberto',
+      [TICKET_STATUS.IN_ANALYSIS]: 'Em Análise',
+      [TICKET_STATUS.SENT_TO_AREA]: 'Enviado para Área',
+      [TICKET_STATUS.IN_EXECUTION]: 'Em Execução',
+      [TICKET_STATUS.AWAITING_APPROVAL]: 'Aguardando Aprovação',
+      [TICKET_STATUS.APPROVED]: 'Aprovado',
+      [TICKET_STATUS.REJECTED]: 'Rejeitado',
+      [TICKET_STATUS.EXECUTED_AWAITING_VALIDATION]: 'Executado - Aguardando Validação',
+      [TICKET_STATUS.COMPLETED]: 'Concluído',
+      [TICKET_STATUS.CANCELLED]: 'Cancelado'
+    };
+    return statusTexts[status] || 'Status Desconhecido';
+  },
+
+  // Escalar chamado para outra área
+  async escalateTicket(ticketId, targetArea, userId, comment, ticket) {
+    try {
+      if (!ticketId || !targetArea || !userId) {
+        throw new Error('Parâmetros obrigatórios não fornecidos para escalação');
+      }
+
+      const docRef = doc(db, 'chamados', ticketId);
+      
+      // Criar histórico de escalação
+      const escalationHistory = ticket.escalationHistory || [];
+      const newEscalation = {
+        fromArea: ticket.area,
+        toArea: targetArea,
+        escalatedBy: userId,
+        escalatedAt: new Date(),
+        comment: comment || '',
+        status: 'escalated'
+      };
+      
+      const updateData = {
+        status: TICKET_STATUS.ESCALATED,
+        area: targetArea, // Nova área responsável
+        escaladoPara: targetArea,
+        escaladoPor: userId,
+        escaladoEm: new Date(),
+        escalationHistory: [...escalationHistory, newEscalation],
+        updatedAt: new Date(),
+        updatedBy: userId
+      };
+
+      await updateDoc(docRef, updateData);
+
+      // Adicionar mensagem ao chat sobre a escalação
+      if (comment) {
+        const { messageService } = await import('./messageService');
+        await messageService.sendMessage(ticketId, {
+          texto: `🔄 Chamado escalado de ${ticket.area.replace(/_/g, ' ').toUpperCase()} para ${targetArea.replace(/_/g, ' ').toUpperCase()}.\n\nMotivo: ${comment}`,
+          autorId: userId,
+          autorNome: 'Sistema de Escalação'
+        });
+      }
+
+      // Enviar notificação por e-mail (não bloquear se falhar)
+      try {
+        const { userService } = await import('./userService');
+        const { projectService } = await import('./projectService');
+        
+        // Buscar nome do projeto
+        let projectName = 'Projeto não identificado';
+        if (ticket?.projetoId) {
+          const project = await projectService.getProjectById(ticket.projetoId);
+          if (project) {
+            projectName = project.nome;
+          }
+        }
+        
+        // Obter e-mails da nova área responsável
+        const areaEmails = await emailService.getEmailsByArea(targetArea, userService);
+        const adminEmails = await emailService.getAdminEmails(userService);
+        const allEmails = [...new Set([...areaEmails, ...adminEmails])];
+        
+        if (allEmails.length > 0) {
+          // Usar sistema unificado de notificações (SendGrid)
+          const { unifiedNotificationService } = await import('./unifiedNotificationService');
+          const updatedTicket = { 
+            ...ticket, 
+            area: targetArea, 
+            escaladoPara: targetArea,
+            status: TICKET_STATUS.ESCALATED 
+          };
+          
+          await unifiedNotificationService.notifyTicketEscalated(updatedTicket);
+          console.log('✅ Notificação de escalação SendGrid enviada com sucesso');
+        }
+      } catch (emailError) {
+        console.error('❌ Erro ao enviar notificação de escalação (não crítico):', emailError);
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Erro ao escalar chamado:', error);
+      throw error;
+    }
+  },
+
+  // Deletar chamado
   async deleteTicket(ticketId) {
     try {
       const docRef = doc(db, 'chamados', ticketId);
@@ -609,40 +824,199 @@ export const ticketService = {
     }
   },
 
-  // ✅ MANTIDO: Calcular SLA (LÓGICA ORIGINAL)
+  // Calcular SLA em horas
   calculateSLA(startDate, endDate) {
-    const diffInMs = endDate - startDate;
-    const diffInHours = diffInMs / (1000 * 60 * 60);
-    return Math.round(diffInHours * 100) / 100; // Arredondar para 2 casas decimais
+    const start = startDate?.toDate?.() || new Date(startDate);
+    const end = endDate?.toDate?.() || new Date(endDate);
+    const diffInMs = end - start;
+    return Math.round(diffInMs / (1000 * 60 * 60)); // Converter para horas
   },
 
-  // ✅ MANTIDO: Escutar mudanças em tempo real (LÓGICA ORIGINAL)
-  subscribeToTicket(ticketId, callback) {
-    const docRef = doc(db, 'chamados', ticketId);
-    return onSnapshot(docRef, (doc) => {
-      if (doc.exists()) {
-        callback({ id: doc.id, ...doc.data() });
-      } else {
-        callback(null);
+  // Listener em tempo real para chamados
+  onTicketsSnapshot(callback, filters = {}) {
+    try {
+      let q = collection(db, 'chamados');
+      
+      if (filters.projectId) {
+        q = query(q, where('projetoId', '==', filters.projectId));
       }
-    });
+      if (filters.area) {
+        q = query(q, where('area', '==', filters.area));
+      }
+      if (filters.status) {
+        q = query(q, where('status', '==', filters.status));
+      }
+      
+      return onSnapshot(q, (querySnapshot) => {
+        const tickets = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+
+        // Ordenar por data de criação (mais recente primeiro)
+        const sortedTickets = tickets.sort((a, b) => {
+          const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt);
+          const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt);
+          return dateB - dateA;
+        });
+
+        callback(sortedTickets);
+      });
+    } catch (error) {
+      console.error('Erro ao configurar listener de chamados:', error);
+      throw error;
+    }
   },
 
-  // ✅ MANTIDO: Escutar mudanças em chamados por área (LÓGICA ORIGINAL)
-  subscribeToTicketsByArea(area, callback) {
-    const q = query(
-      collection(db, 'chamados'),
-      where('area', '==', area),
-      orderBy('createdAt', 'desc')
-    );
-    
-    return onSnapshot(q, (querySnapshot) => {
-      const tickets = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      callback(tickets);
-    });
+  // NOVO: Função específica para escalação com arrayUnion
+  async escalateTicketToArea(ticketId, newArea, updateData = {}) {
+    try {
+      console.log('DEBUG-Escalação: Escalando chamado', ticketId, 'para área:', newArea);
+      console.log('DEBUG-Escalação: Dados de entrada:', updateData);
+      
+      const docRef = doc(db, 'chamados', ticketId);
+      
+      // Buscar dados atuais do chamado para logs
+      const currentDoc = await getDoc(docRef);
+      if (currentDoc.exists()) {
+        const currentData = currentDoc.data();
+        console.log('DEBUG-Escalação: Dados antes da atualização:', {
+          id: ticketId,
+          areaAtual: currentData.area,
+          areasEnvolvidasAntes: currentData.areasEnvolvidas || [],
+          status: currentData.status
+        });
+      }
+      
+      // Dados de atualização com arrayUnion para areasEnvolvidas
+      const escalationData = {
+        ...updateData,
+        area: newArea, // Atualizar área atual
+        areasEnvolvidas: arrayUnion(newArea), // Adicionar nova área ao histórico
+        updatedAt: new Date()
+      };
+      
+      console.log('DEBUG-Escalação: Dados de atualização completos:', escalationData);
+      console.log('DEBUG-Escalação: Nova área será adicionada a areasEnvolvidas:', newArea);
+      
+      await updateDoc(docRef, escalationData);
+      
+      console.log('DEBUG-Escalação: Chamado escalado com sucesso');
+      
+      // Verificar dados após atualização
+      const updatedDoc = await getDoc(docRef);
+      if (updatedDoc.exists()) {
+        const updatedData = updatedDoc.data();
+        console.log('DEBUG-Escalação: Dados após atualização:', {
+          id: ticketId,
+          areaAtual: updatedData.area,
+          areasEnvolvidasDepois: updatedData.areasEnvolvidas || [],
+          status: updatedData.status
+        });
+      }
+      
+    } catch (error) {
+      console.error('Erro ao escalar chamado:', error);
+      throw error;
+    }
+  },
+
+  // NOVO: Função para buscar chamados por área envolvida (array-contains)
+  async getTicketsByAreaInvolved(area) {
+    try {
+      console.log('DEBUG: Iniciando consulta com índice...');
+      console.log('DEBUG-TicketService: Buscando chamados para área:', area);
+      
+      const ticketsRef = collection(db, 'chamados');
+      
+      // CORREÇÃO: Usar createdAt para corresponder ao índice composto existente
+      // Índice: areasEnvolvidas (array) + createdAt (desc)
+      const q = query(
+        ticketsRef,
+        where('areasEnvolvidas', 'array-contains', area),
+        orderBy('createdAt', 'desc')
+      );
+      
+      console.log('DEBUG: Executando consulta com índice composto (areasEnvolvidas + createdAt)...');
+      const querySnapshot = await getDocs(q);
+      console.log('DEBUG: Consulta executada. Documentos encontrados:', querySnapshot.size);
+      
+      const tickets = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        console.log('DEBUG: Documento mapeado:', {
+          id: doc.id,
+          area: data.area,
+          areasEnvolvidas: data.areasEnvolvidas,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
+          titulo: data.titulo,
+          status: data.status
+        });
+        return {
+          id: doc.id,
+          ...data
+        };
+      });
+      
+      console.log('DEBUG: Chamados mapeados:', tickets.length, 'total');
+      console.log('DEBUG-TicketService: Encontrados', tickets.length, 'chamados para área', area);
+      
+      // Verificar estrutura dos dados para debug
+      if (tickets.length > 0) {
+        console.log('DEBUG-TicketService: Exemplo de chamado:', {
+          id: tickets[0].id,
+          titulo: tickets[0].titulo,
+          area: tickets[0].area,
+          areasEnvolvidas: tickets[0].areasEnvolvidas,
+          createdAt: tickets[0].createdAt,
+          updatedAt: tickets[0].updatedAt,
+          status: tickets[0].status
+        });
+        
+        // Validar se todos os chamados têm o campo areasEnvolvidas
+        const chamadosSemAreasEnvolvidas = tickets.filter(t => !t.areasEnvolvidas || !Array.isArray(t.areasEnvolvidas));
+        if (chamadosSemAreasEnvolvidas.length > 0) {
+          console.warn('DEBUG-TicketService: Encontrados', chamadosSemAreasEnvolvidas.length, 'chamados sem campo areasEnvolvidas válido');
+        }
+        
+        // Verificar se a área está presente em areasEnvolvidas
+        const chamadosComAreaCorreta = tickets.filter(t => t.areasEnvolvidas && t.areasEnvolvidas.includes(area));
+        console.log('DEBUG-TicketService: Chamados com área', area, 'em areasEnvolvidas:', chamadosComAreaCorreta.length);
+      } else {
+        console.log('DEBUG-TicketService: Nenhum chamado encontrado para área:', area);
+      }
+      
+      return tickets;
+      
+    } catch (error) {
+      console.error('Erro ao buscar chamados por área envolvida:', error);
+      console.error('DEBUG: Stack trace completo:', error.stack);
+      
+      // Fallback: se der erro (ex: campo não existe ainda), buscar por área atual
+      console.log('DEBUG-TicketService: Usando fallback - busca por área atual');
+      
+      try {
+        const ticketsRef = collection(db, 'chamados');
+        const q = query(
+          ticketsRef,
+          where('area', '==', area),
+          orderBy('createdAt', 'desc')
+        );
+        
+        const querySnapshot = await getDocs(q);
+        const tickets = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        console.log('DEBUG-TicketService: Fallback encontrou', tickets.length, 'chamados');
+        
+        return tickets;
+      } catch (fallbackError) {
+        console.error('DEBUG-TicketService: Erro no fallback também:', fallbackError);
+        return [];
+      }
+    }
   }
 };
 
