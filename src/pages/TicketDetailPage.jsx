@@ -379,6 +379,11 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
         return [ { value: 'concluido', label: 'Validar e Concluir' }, { value: 'enviado_para_area', label: 'Rejeitar / Devolver' } ];
     }
 
+    if (isCreator && currentStatus === 'enviado_para_area') {
+        return [{ value: 'cancelado', label: 'Cancelar Chamado' }];
+    }
+
+
     if (userRole === 'administrador') {
       if (currentStatus === 'aberto' || currentStatus === 'escalado_para_outra_area' || currentStatus === 'enviado_para_area') return [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
       if (currentStatus === 'em_tratativa') return [ { value: 'executado_aguardando_validacao', label: 'Executado' } ];
@@ -659,11 +664,10 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
           updateData.consultorResponsavelId = null; 
           systemMessageContent = `👨‍🎯 **Chamado executado pelo consultor e devolvido para:** ${ticket.areaDeOrigem?.replace('_', ' ').toUpperCase()}`;
             } else if (statusToUpdate === 'cancelado') {
-          updateData.canceladoEm = new Date();
+updateData.canceladoEm = new Date();
           updateData.canceladoPor = user.uid;
           systemMessageContent = `🚫 **Chamado cancelado pelo criador**`;
-
-      else {
+      } else {
           systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(statusToUpdate)}`;
       }
 
