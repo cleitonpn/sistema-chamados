@@ -783,38 +783,59 @@ const TicketDetailPage = () => {
                   </div>
                 </div>
 
-                {/* Flag de Item Extra */}
                 {ticket.itemExtra && (
                   <div className="flex items-center space-x-2 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                    <AlertTriangle className="h-5 w-5 text-orange-600" />
+                    <div className="text-orange-600 text-lg">🔥</div>
                     <div>
                       <p className="font-semibold text-orange-800">ITEM EXTRA</p>
-                      {ticket.motivoItemExtra && (
-                        <p className="text-sm text-orange-700">{ticket.motivoItemExtra}</p>
-                      )}
+                      <p className="text-sm text-orange-700">{ticket.motivoItemExtra}</p>
                     </div>
                   </div>
                 )}
 
-                {/* Link para chamado pai */}
-                {parentTicketForLink && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Área</p>
+                    <p className="text-gray-900">{ticket.area}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Tipo</p>
+                    <p className="text-gray-900">{ticket.tipo}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Criado em</p>
+                    <p className="text-gray-900">{formatDate(ticket.criadoEm)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Criado por</p>
+                    <p className="text-gray-900">{ticket.criadoPorNome}</p>
+                  </div>
+                </div>
+
+                {ticket.linkedTicketId && (
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                     <div className="flex items-center space-x-2">
-                      <LinkIcon className="h-4 w-4 text-blue-600" />
-                      <span className="text-sm font-medium text-blue-900">Chamado Vinculado:</span>
-                      <Link 
-                        to={`/chamado/${parentTicketForLink.id}`}
-                        className="text-blue-600 hover:text-blue-800 underline"
-                      >
-                        #{parentTicketForLink.numero} - {parentTicketForLink.titulo}
-                      </Link>
+                      <Link className="h-4 w-4 text-blue-600" />
+                      <span className="text-sm font-medium text-blue-800">Chamado Vinculado</span>
                     </div>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Este chamado está vinculado ao chamado #{ticket.linkedTicketId?.substring(0, 8)}
+                    </p>
+                    <Button
+                      onClick={() => navigate(`/chamado/${ticket.linkedTicketId}`)}
+                      variant="outline"
+                      size="sm"
+                      className="mt-2 text-blue-600 border-blue-300 hover:bg-blue-50"
+                    >
+                      <ExternalLink className="h-3 w-3 mr-1" />
+                      Ver Chamado Original
+                    </Button>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Múltiplos Projetos */}
+            {/* Projetos */}
             {projects.length > 0 && (
               <Card>
                 <CardHeader>
@@ -829,23 +850,36 @@ const TicketDetailPage = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {projects.map((proj, index) => (
-                      <div key={index} className="p-4 border border-gray-200 rounded-lg">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h3 className="font-semibold text-gray-900">{proj.nome}</h3>
-                            <p className="text-sm text-gray-600">{proj.evento}</p>
-                            <p className="text-sm text-gray-500">
-                              {proj.cidade} - {formatDate(proj.dataInicio)} a {formatDate(proj.dataFim)}
-                            </p>
-                          </div>
+                    {projects.map((project, index) => (
+                      <div key={project.id || index} className="p-4 border border-gray-200 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-semibold text-lg">{project.nome}</h4>
                           <Button
+                            onClick={() => navigate(`/projeto/${project.id}`)}
                             variant="outline"
                             size="sm"
-                            onClick={() => window.open(`/projeto/${proj.id}`, '_blank')}
                           >
-                            <ExternalLink className="h-4 w-4" />
+                            <ExternalLink className="h-3 w-3 mr-1" />
+                            Ver Projeto
                           </Button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <p className="font-medium text-gray-500">Evento</p>
+                            <p className="text-gray-900">{project.evento}</p>
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-500">Local</p>
+                            <p className="text-gray-900">{project.local}</p>
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-500">Consultor</p>
+                            <p className="text-gray-900">{project.consultorNome}</p>
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-500">Produtor</p>
+                            <p className="text-gray-900">{project.produtorNome}</p>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -853,327 +887,6 @@ const TicketDetailPage = () => {
                 </CardContent>
               </Card>
             )}
-
-            {/* Conversas */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <MessageSquare className="h-5 w-5 mr-2" />
-                  Conversas ({messages.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4 max-h-96 overflow-y-auto">
-                  {messages.length === 0 ? (
-                    <p className="text-gray-500 text-center py-4">Nenhuma mensagem ainda</p>
-                  ) : (
-                    messages.map((message, index) => (
-                      <div key={index} className="flex space-x-3">
-                        <div className="flex-shrink-0">
-                          <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                            <User className="h-4 w-4 text-white" />
-                          </div>
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2">
-                            <p className="font-semibold text-sm">{message.remetenteNome}</p>
-                            <p className="text-xs text-gray-500">{formatDate(message.criadoEm)}</p>
-                          </div>
-                          <div 
-                            className="mt-1"
-                            dangerouslySetInnerHTML={{ __html: renderMentions(message.conteudo) }}
-                          />
-                          {message.imagens && message.imagens.length > 0 && (
-                            <div className="mt-2 flex space-x-2">
-                              {message.imagens.map((image, imgIndex) => (
-                                <img
-                                  key={imgIndex}
-                                  src={image}
-                                  alt={`Anexo ${imgIndex + 1}`}
-                                  className="w-20 h-20 object-cover rounded cursor-pointer"
-                                  onClick={() => window.open(image, '_blank')}
-                                />
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                {/* Nova mensagem */}
-                <div className="mt-4 border-t pt-4">
-                  <Textarea 
-                    placeholder="Digite sua mensagem..." 
-                    value={newMessage} 
-                    onChange={(e) => setNewMessage(e.target.value)} 
-                    disabled={sendingMessage || isArchived}
-                  />
-                  <div className="mt-2 flex justify-end">
-                    <Button 
-                      onClick={handleSendMessage} 
-                      disabled={sendingMessage || (!newMessage.trim() && chatImages.length === 0) || isArchived}
-                    >
-                      {sendingMessage ? 
-                        <Loader2 className="h-4 w-4 animate-spin mr-2"/> : 
-                        <Send className="h-4 w-4 mr-2" />
-                      }
-                      Enviar
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Ações */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Ações</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {/* Botão Criar Chamado Vinculado */}
-                {userProfile?.area === 'logistica' && (
-                  <Button
-                    onClick={handleCreateLinkedTicket}
-                    className="w-full"
-                    variant="outline"
-                    disabled={isArchived}
-                  >
-                    <LinkIcon className="h-4 w-4 mr-2" />
-                    Criar Chamado Vinculado
-                  </Button>
-                )}
-
-                {/* Botão Rejeitar/Devolver */}
-                <Button
-                  onClick={() => setShowRejectModal(true)}
-                  className="w-full"
-                  variant="destructive"
-                  disabled={isArchived}
-                >
-                  <XCircle className="h-4 w-4 mr-2" />
-                  Rejeitar / Devolver
-                </Button>
-
-                {/* Atualizar Status */}
-                {getAvailableStatuses().length > 0 && (
-                  <div className="space-y-2">
-                    <Label>Atualizar Status</Label>
-                    <Select 
-                      value={newStatus} 
-                      onValueChange={setNewStatus}
-                      disabled={isArchived}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione um status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {getAvailableStatuses().map((status) => (
-                          <SelectItem key={status.value} value={status.value}>
-                            {status.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {newStatus && (
-                      <Button
-                        onClick={handleStatusUpdate}
-                        disabled={updating || isArchived}
-                        className="w-full"
-                      >
-                        {updating ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <CheckCircle className="h-4 w-4 mr-2" />
-                        )}
-                        Atualizar
-                      </Button>
-                    )}
-                  </div>
-                )}
-
-                {/* Seletor de Área */}
-                {showAreaSelector && (
-                  <div className="space-y-2">
-                    <Label>Área de Destino</Label>
-                    <Select value={selectedArea} onValueChange={setSelectedArea}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione uma área" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="comercial">Comercial</SelectItem>
-                        <SelectItem value="operacao">Operação</SelectItem>
-                        <SelectItem value="logistica">Logística</SelectItem>
-                        <SelectItem value="financeiro">Financeiro</SelectItem>
-                        <SelectItem value="compras">Compras</SelectItem>
-                        <SelectItem value="locacao">Locação</SelectItem>
-                        <SelectItem value="almoxarifado">Almoxarifado</SelectItem>
-                        <SelectItem value="comunicacao_visual">Comunicação Visual</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                {/* Conclusão com observações */}
-                {(newStatus === 'concluido' || newStatus === 'rejeitado' || newStatus === 'enviado_para_area') && (
-                  <div className="space-y-2">
-                    <Label>Observações / Motivo</Label>
-                    <Textarea
-                      value={conclusionDescription}
-                      onChange={(e) => setConclusionDescription(e.target.value)}
-                      placeholder="Descreva o motivo..."
-                    />
-                  </div>
-                )}
-
-                {/* Arquivar/Desarquivar */}
-                {userProfile?.funcao === 'administrador' && (
-                  <>
-                    {ticket.status === 'arquivado' ? (
-                      <Button
-                        onClick={handleUnarchiveTicket}
-                        disabled={updating}
-                        variant="outline"
-                        className="w-full"
-                      >
-                        <ArchiveRestore className="h-4 w-4 mr-2" />
-                        Desarquivar
-                      </Button>
-                    ) : ticket.status === 'concluido' && (
-                      <Button
-                        onClick={handleArchiveTicket}
-                        disabled={updating}
-                        variant="outline"
-                        className="w-full"
-                      >
-                        <Archive className="h-4 w-4 mr-2" />
-                        Arquivar
-                      </Button>
-                    )}
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Escalações */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Escalações</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Escalar para Área */}
-                <div className="space-y-2">
-                  <Label>Escalar para Área</Label>
-                  <Select 
-                    value={escalationArea} 
-                    onValueChange={setEscalationArea}
-                    disabled={isArchived}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione uma área" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="comercial">Comercial</SelectItem>
-                      <SelectItem value="operacao">Operação</SelectItem>
-                      <SelectItem value="logistica">Logística</SelectItem>
-                      <SelectItem value="financeiro">Financeiro</SelectItem>
-                      <SelectItem value="compras">Compras</SelectItem>
-                      <SelectItem value="locacao">Locação</SelectItem>
-                      <SelectItem value="almoxarifado">Almoxarifado</SelectItem>
-                      <SelectItem value="comunicacao_visual">Comunicação Visual</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Textarea
-                    value={escalationReason}
-                    onChange={(e) => setEscalationReason(e.target.value)}
-                    placeholder="Motivo da escalação..."
-                    disabled={isArchived}
-                  />
-                  <Button
-                    onClick={handleEscalation}
-                    disabled={isEscalating || !escalationArea || !escalationReason.trim() || isArchived}
-                    className="w-full"
-                    variant="outline"
-                  >
-                    {isEscalating ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <ArrowLeft className="h-4 w-4 mr-2" />
-                    )}
-                    Escalar para Área
-                  </Button>
-                </div>
-
-                {/* Escalar para Gerência */}
-                <div className="space-y-2">
-                  <Label>Escalar para Gerência</Label>
-                  <Select 
-                    value={managementArea} 
-                    onValueChange={setManagementArea}
-                    disabled={isArchived}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione uma gerência" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="gerente_operacional">Gerente Operacional</SelectItem>
-                      <SelectItem value="gerente_comercial">Gerente Comercial</SelectItem>
-                      <SelectItem value="gerente_producao">Gerente Produção</SelectItem>
-                      <SelectItem value="gerente_financeiro">Gerente Financeiro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Textarea
-                    value={managementReason}
-                    onChange={(e) => setManagementReason(e.target.value)}
-                    placeholder="Motivo da escalação..."
-                    disabled={isArchived}
-                  />
-                  <Button
-                    onClick={handleEscalationToManagement}
-                    disabled={isEscalatingToManagement || !managementArea || !managementReason.trim() || isArchived}
-                    className="w-full"
-                    variant="outline"
-                  >
-                    {isEscalatingToManagement ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Shield className="h-4 w-4 mr-2" />
-                    )}
-                    Escalar para Gerência
-                  </Button>
-                </div>
-
-                {/* Escalar para Consultor */}
-                {projects.length > 0 && projects[0]?.consultorId && (
-                  <div className="space-y-2">
-                    <Label>Escalar para Consultor</Label>
-                    <Textarea
-                      value={consultorReason}
-                      onChange={(e) => setConsultorReason(e.target.value)}
-                      placeholder="Motivo da escalação..."
-                      disabled={isArchived}
-                    />
-                    <Button
-                      onClick={handleConsultorEscalation}
-                      disabled={isEscalatingToConsultor || !consultorReason.trim() || isArchived}
-                      className="w-full"
-                      variant="outline"
-                    >
-                      {isEscalatingToConsultor ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <UserCheck className="h-4 w-4 mr-2" />
-                      )}
-                      Escalar para Consultor
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
 
             {/* Pessoas Envolvidas */}
             <Card>
