@@ -6,8 +6,6 @@ import { projectService } from '@/services/projectService';
 import { userService } from '@/services/userService';
 import { messageService } from '@/services/messageService';
 import notificationService from '@/services/notificationService';
-import ImageUpload from '@/components/ImageUpload'; // Mantenha este import se ImageUpload for um arquivo separado
-import Header from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,17 +23,7 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
-  Camera,
-  Calendar,
-  MapPin,
-  Loader2,
-  ExternalLink,
-  Upload,
-  Image as ImageIcon,
-  Settings,
-  AtSign,
   Lock,
-  UserCheck,
   PlusCircle,
   Shield,
   ThumbsUp,
@@ -44,9 +32,64 @@ import {
   ArchiveRestore,
   Link as LinkIcon,
   ClipboardEdit,
+  Users,
+  History,
   FolderOpen,
   Folder,
+  AlertTriangle,
+  Paperclip,
+  ExternalLink,
+  Loader2,
+  Image as ImageIcon,
+  Settings,
+  MapPin
 } from 'lucide-react';
+
+// ===================================================================================
+// COMPONENTES INTERNOS PARA AUTOSSUFICIÊNCIA DO ARQUIVO
+// ===================================================================================
+
+const Header = ({ title }) => (
+    <header className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
+            <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
+        </div>
+    </header>
+);
+
+const ImageUpload = ({ onImagesUploaded, existingImages = [], maxImages = 5, buttonText = "Anexar Imagens" }) => {
+    const fileInputRef = useRef(null);
+    const handleFileChange = (event) => {
+        if (!event.target.files) return;
+        const files = Array.from(event.target.files);
+        onImagesUploaded([...existingImages, ...files].slice(0, maxImages));
+    };
+    const handleRemoveImage = (index) => onImagesUploaded(existingImages.filter((_, i) => i !== index));
+    return (
+        <div>
+            <input type="file" multiple accept="image/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+            <Button variant="outline" className="w-full" onClick={() => fileInputRef.current?.click()}>
+                <ImageIcon className="h-4 w-4 mr-2" />
+                {buttonText} ({existingImages.length}/{maxImages})
+            </Button>
+            {existingImages.length > 0 && (
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                    {existingImages.map((image, index) => (
+                        <div key={index} className="relative">
+                            <img src={URL.createObjectURL(image)} alt={`preview ${index + 1}`} className="w-full h-20 object-cover rounded" />
+                            <button onClick={() => handleRemoveImage(index)} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs">×</button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+
+// ===================================================================================
+// COMPONENTE PRINCIPAL DA PÁGINA
+// ===================================================================================
 
 const TicketDetailPage = () => {
     const { ticketId } = useParams();
@@ -55,7 +98,7 @@ const TicketDetailPage = () => {
 
     // Estados
     const [ticket, setTicket] = useState(null);
-    const [projects, setProjects] = useState([]); // <<-- ÚNICA FONTE DA VERDADE PARA PROJETOS
+    const [projects, setProjects] = useState([]);
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [updating, setUpdating] = useState(false);
@@ -91,49 +134,37 @@ const TicketDetailPage = () => {
             setError(null);
             setAccessDenied(false);
 
-            // Carregamentos que não dependem do chamado podem vir primeiro
-            const usersData = await userService.getAllUsers();
+            const [usersData, ticketData] = await Promise.all([
+                userService.getAllUsers(),
+                ticketService.getTicketById(ticketId)
+            ]);
+            
             setUsers(usersData || []);
 
-            // Carrega o chamado principal
-            const ticketData = await ticketService.getTicketById(ticketId);
             if (!ticketData) throw new Error('Chamado não encontrado');
             setTicket(ticketData);
 
-            // --- LÓGICA DE CARREGAMENTO DE PROJETOS CORRIGIDA ---
             const projectsToLoad = [];
-            if (ticketData.projetoId) { // Formato antigo: um projeto
-                console.log("Formato antigo detectado, carregando projeto único...");
+            if (ticketData.projetoId) {
                 const projectData = await projectService.getProjectById(ticketData.projetoId);
-                if (projectData) {
-                    projectsToLoad.push(projectData);
-                }
-            } else if (ticketData.projetos?.length > 0) { // Formato novo: múltiplos projetos
-                console.log("Formato novo detectado, carregando múltiplos projetos...");
-                const projectPromises = ticketData.projetos.map(id => projectService.getProjectById(id));
-                const results = await Promise.allSettled(projectPromises);
+                if (projectData) projectsToLoad.push(projectData);
+            } else if (ticketData.projetos?.length > 0) {
+                const results = await Promise.allSettled(ticketData.projetos.map(id => projectService.getProjectById(id)));
                 results.forEach(result => {
-                    if (result.status === 'fulfilled' && result.value) {
-                        projectsToLoad.push(result.value);
-                    }
+                    if (result.status === 'fulfilled' && result.value) projectsToLoad.push(result.value);
                 });
             }
             setProjects(projectsToLoad);
-            // --- FIM DA LÓGICA CORRIGIDA ---
 
-            // Carrega o resto em paralelo
-            const promises = [];
+            const otherPromises = [];
             if (ticketData.chamadoPaiId) {
-                promises.push(ticketService.getTicketById(ticketData.chamadoPaiId).then(setParentTicketForLink));
+                otherPromises.push(ticketService.getTicketById(ticketData.chamadoPaiId).then(setParentTicketForLink));
             }
-
-            promises.push(messageService.getMessagesByTicket(ticketId).then(m => setMessages(m || [])));
-
+            otherPromises.push(messageService.getMessagesByTicket(ticketId).then(m => setMessages(m || [])));
             if (user?.uid) {
-                promises.push(notificationService.markTicketNotificationsAsRead(user.uid, ticketId));
+                otherPromises.push(notificationService.markTicketNotificationsAsRead(user.uid, ticketId));
             }
-
-            await Promise.all(promises);
+            await Promise.all(otherPromises);
 
         } catch (err) {
             console.error('Erro ao carregar dados da página:', err);
@@ -149,122 +180,30 @@ const TicketDetailPage = () => {
         }
     }, [ticketId, user]);
 
-    useEffect(() => {
-        if (ticket && userProfile && user) {
-            if (ticket.isConfidential) {
-                const isCreator = ticket.criadoPor === user.uid;
-                const isAdmin = userProfile.funcao === 'administrador';
-                const isInvolvedOperator = userProfile.funcao === 'operador' &&
-                                           (userProfile.area === ticket.area || userProfile.area === ticket.areaDeOrigem);
-                if (!isCreator && !isAdmin && !isInvolvedOperator) {
-                    setAccessDenied(true);
-                }
-            }
-        }
-    }, [ticket, userProfile, user]);
-
-    useEffect(() => {
-        if (ticket && users.length > 0) {
-            const getUserNameById = (userId) => {
-                if (!userId) return 'Sistema';
-                const userFound = users.find(u => u.uid === userId || u.id === userId);
-                return userFound?.nome || 'Usuário Desconhecido';
-            };
-
-            const events = [];
-            if (ticket.criadoEm) events.push({ date: ticket.criadoEm, description: 'Chamado criado por', userName: ticket.criadoPorNome || getUserNameById(ticket.criadoPor), Icon: PlusCircle, color: 'text-blue-500' });
-            if (ticket.escaladoEm && ticket.motivoEscalonamentoGerencial) events.push({ date: ticket.escaladoEm, description: 'Escalado para gerência por', userName: getUserNameById(ticket.escaladoPor), Icon: Shield, color: 'text-purple-500' });
-            if (ticket.aprovadoEm) events.push({ date: ticket.aprovadoEm, description: 'Aprovado por', userName: getUserNameById(ticket.aprovadoPor), Icon: ThumbsUp, color: 'text-green-500' });
-            if (ticket.rejeitadoEm) events.push({ date: ticket.rejeitadoEm, description: 'Rejeitado / Devolvido por', userName: getUserNameById(ticket.rejeitadoPor), Icon: ThumbsDown, color: 'text-red-500' });
-            if (ticket.concluidoEm) events.push({ date: ticket.concluidoEm, description: 'Concluído por', userName: getUserNameById(ticket.concluidoPor), Icon: CheckCircle, color: 'text-green-600' });
-            if (ticket.arquivadoEm) events.push({ date: ticket.arquivadoEm, description: 'Arquivado por', userName: getUserNameById(ticket.arquivadoPor), Icon: Archive, color: 'text-gray-500' });
-
-            const sortedEvents = events.sort((a, b) => (a.date?.toDate ? a.date.toDate() : new Date(a.date)) - (b.date?.toDate ? b.date.toDate() : new Date(b.date)));
-            setHistoryEvents(sortedEvents);
-        }
-    }, [ticket, users]);
-
-    const formatDate = (date) => {
-        if (!date) return 'Data não disponível';
-        try {
-            const dateObj = (date.toDate && typeof date.toDate === 'function') ? date.toDate() : new Date(date);
-            if (isNaN(dateObj.getTime())) return 'Data inválida';
-            return dateObj.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-        } catch (error) {
-            return 'Erro na data';
-        }
-    };
-
-    const getStatusColor = (status) => {
-        const colors = {
-            'aberto': 'bg-blue-100 text-blue-800', 'em_tratativa': 'bg-yellow-100 text-yellow-800',
-            'enviado_para_area': 'bg-purple-100 text-purple-800', 'escalado_para_outra_area': 'bg-purple-100 text-purple-800',
-            'aguardando_aprovacao': 'bg-orange-100 text-orange-800', 'executado_aguardando_validacao': 'bg-indigo-100 text-indigo-800',
-            'concluido': 'bg-green-100 text-green-800', 'cancelado': 'bg-red-100 text-red-800',
-            'devolvido': 'bg-pink-100 text-pink-800', 'aprovado': 'bg-green-100 text-green-800',
-            'reprovado': 'bg-red-100 text-red-800', 'arquivado': 'bg-gray-100 text-gray-700',
-            'escalado_para_consultor': 'bg-cyan-100 text-cyan-800', 'executado_pelo_consultor': 'bg-teal-100 text-teal-800',
-            'executado_aguardando_validacao_operador': 'bg-indigo-100 text-indigo-800'
-        };
-        return colors[status] || 'bg-gray-100 text-gray-800';
-    };
-
-    const getStatusText = (status) => {
-        const statusTexts = {
-            'aberto': 'Aberto', 'em_tratativa': 'Em Tratativa', 'enviado_para_area': 'Enviado para Área',
-            'escalado_para_outra_area': 'Escalado para Outra Área', 'aguardando_aprovacao': 'Aguardando Aprovação',
-            'executado_aguardando_validacao': 'Aguardando Validação', 'concluido': 'Concluído',
-            'cancelado': 'Cancelado', 'devolvido': 'Devolvido', 'aprovado': 'Aprovado',
-            'reprovado': 'Reprovado', 'arquivado': 'Arquivado', 'escalado_para_consultor': 'Escalado para Consultor',
-            'executado_pelo_consultor': 'Executado pelo Consultor',
-            'executado_aguardando_validacao_operador': 'Aguardando Validação do Operador'
-        };
-        return statusTexts[status] || status.replace(/_/g, ' ');
-    };
-
-    const getAvailableStatuses = () => {
-        if (!ticket || !userProfile || !user) return [];
-        const { status: currentStatus, criadoPor, area, atribuidoA, areaDeOrigem, consultorResponsavelId } = ticket;
-        const { funcao, area: userArea, uid: userId } = userProfile;
-        const isCreator = criadoPor === userId;
-
-        if (isCreator && ['executado_aguardando_validacao', 'executado_aguardando_validacao_operador'].includes(currentStatus)) {
-            return [{ value: 'concluido', label: 'Validar e Concluir' }, { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }];
-        }
-        if (funcao === 'administrador') {
-            if (['aberto', 'escalado_para_outra_area', 'enviado_para_area'].includes(currentStatus)) return [{ value: 'em_tratativa', label: 'Iniciar Tratativa' }];
-            if (currentStatus === 'em_tratativa') return [{ value: 'executado_aguardando_validacao', label: 'Executado' }];
-            if (currentStatus === 'executado_aguardando_validacao' && !isCreator) return [{ value: 'concluido', label: 'Forçar Conclusão (Admin)' }];
-            if (currentStatus === 'aguardando_aprovacao') return [{ value: 'aprovado', label: 'Aprovar' }, { value: 'rejeitado', label: 'Reprovar' }];
-        }
-        if (funcao === 'operador' && (area === userArea || atribuidoA === userId)) {
-            if (['aberto', 'escalado_para_outra_area', 'enviado_para_area'].includes(currentStatus)) {
-                const actions = [{ value: 'em_tratativa', label: 'Iniciar Tratativa' }];
-                if (areaDeOrigem && areaDeOrigem !== area) {
-                    actions.push({ value: 'enviado_para_area', label: 'Rejeitar / Devolver' });
-                }
-                return actions;
-            }
-            if (currentStatus === 'em_tratativa') return [{ value: 'executado_aguardando_validacao_operador', label: 'Executado' }];
-            if (currentStatus === 'executado_pelo_consultor') return [{ value: 'em_tratativa', label: 'Continuar Tratativa' }, { value: 'executado_aguardando_validacao', label: 'Finalizar Execução' }];
-        }
-        if (funcao === 'consultor' && consultorResponsavelId === userId && currentStatus === 'escalado_para_consultor') {
-            return [{ value: 'executado_pelo_consultor', label: 'Executar e Devolver para a Área' }];
-        }
-        return [];
-    };
-
     const handleSendMessage = async () => {
         if ((!newMessage.trim() && chatImages.length === 0) || !user || !ticket) return;
         setSendingMessage(true);
         try {
             const messageData = {
-                userId: user.uid, remetenteNome: userProfile?.nome || user.email,
-                conteudo: newMessage.trim(), imagens: chatImages, criadoEm: new Date(), type: 'user_message'
+                userId: user.uid,
+                remetenteNome: userProfile?.nome || user.email,
+                conteudo: newMessage.trim(),
+                imagens: [], // Deverá ser preenchido com as URLs após o upload
+                criadoEm: new Date(),
+                type: 'user_message'
             };
+
+            // Se você tiver uma função de upload que retorna URLs
+            // const imageUrls = await uploadService.uploadImages(chatImages);
+            // messageData.imagens = imageUrls;
+
             await messageService.sendMessage(ticketId, messageData);
             await notificationService.notifyNewMessage(ticketId, ticket, messageData, user.uid);
-            await loadAllData();
+            
+            // Recarrega apenas as mensagens para uma atualização mais rápida
+            const updatedMessages = await messageService.getMessagesByTicket(ticketId);
+            setMessages(updatedMessages || []);
+
             setNewMessage('');
             setChatImages([]);
         } catch (error) {
@@ -275,7 +214,7 @@ const TicketDetailPage = () => {
     };
     
     const handleStatusUpdate = async () => {
-        if (!newStatus) return;
+        if (!newStatus || !ticket) return;
         if ((newStatus === 'rejeitado' || newStatus === 'enviado_para_area') && !conclusionDescription.trim()) {
             alert('Por favor, forneça um motivo para a rejeição/devolução.');
             return;
@@ -287,7 +226,7 @@ const TicketDetailPage = () => {
 
             if (newStatus === 'concluido') {
                 updateData.conclusaoDescricao = conclusionDescription;
-                updateData.conclusaoImagens = conclusionImages;
+                updateData.conclusaoImagens = []; // Adicionar URLs das imagens de conclusão aqui
                 updateData.concluidoEm = new Date();
                 updateData.concluidoPor = user.uid;
                 systemMessageContent = `✅ Chamado concluído por ${userProfile.nome}.`;
@@ -297,7 +236,7 @@ const TicketDetailPage = () => {
                 updateData.rejeitadoPor = user.uid;
                 systemMessageContent = `❌ Chamado reprovado pelo gerente. Motivo: ${conclusionDescription}`;
             } else if (newStatus === 'enviado_para_area') {
-                if (!ticket.areaDeOrigem) throw new Error('A área de origem para devolução não foi encontrada.');
+                if (!ticket.areaDeOrigem) { throw new Error('A área de origem para devolução não foi encontrada.'); }
                 updateData.motivoRejeicao = conclusionDescription;
                 updateData.rejeitadoEm = new Date();
                 updateData.rejeitadoPor = user.uid;
@@ -334,32 +273,18 @@ const TicketDetailPage = () => {
         if (!window.confirm('Tem certeza que deseja arquivar este chamado?')) return;
         setUpdating(true);
         try {
-            await ticketService.updateTicket(ticketId, {
-                status: 'arquivado', arquivadoEm: new Date(), arquivadoPor: user.uid,
-                dataUltimaAtualizacao: new Date()
-            });
+            await ticketService.updateTicket(ticketId, { status: 'arquivado', arquivadoEm: new Date(), arquivadoPor: user.uid, dataUltimaAtualizacao: new Date() });
             await loadAllData();
-        } catch (error) {
-            setError('Ocorreu um erro ao arquivar o chamado.');
-        } finally {
-            setUpdating(false);
-        }
+        } catch (error) { setError('Ocorreu um erro ao arquivar o chamado.'); } finally { setUpdating(false); }
     };
 
     const handleUnarchiveTicket = async () => {
         if (!window.confirm('Deseja desarquivar este chamado?')) return;
         setUpdating(true);
         try {
-            await ticketService.updateTicket(ticketId, {
-                status: 'concluido', arquivadoEm: null, arquivadoPor: null,
-                dataUltimaAtualizacao: new Date()
-            });
+            await ticketService.updateTicket(ticketId, { status: 'concluido', arquivadoEm: null, arquivadoPor: null, dataUltimaAtualizacao: new Date() });
             await loadAllData();
-        } catch (error) {
-            setError('Ocorreu um erro ao desarquivar o chamado.');
-        } finally {
-            setUpdating(false);
-        }
+        } catch (error) { setError('Ocorreu um erro ao desarquivar o chamado.'); } finally { setUpdating(false); }
     };
 
     const handleEscalation = async () => {
@@ -368,22 +293,12 @@ const TicketDetailPage = () => {
         try {
             await ticketService.escalateTicketToArea(ticketId, escalationArea, {
                 status: 'escalado_para_outra_area', area: escalationArea,
-                motivoEscalonamento: escalationReason, atualizadoPor: user?.uid,
-                dataUltimaAtualizacao: new Date()
+                motivoEscalonamento: escalationReason, atualizadoPor: user?.uid, dataUltimaAtualizacao: new Date()
             });
-            await messageService.sendMessage(ticketId, {
-                userId: 'system', remetenteNome: 'Sistema',
-                conteudo: `🔄 Chamado escalado para ${escalationArea.replace('_', ' ').toUpperCase()}. Motivo: ${escalationReason}`,
-                criadoEm: new Date(), type: 'escalation'
-            });
+            await messageService.sendMessage(ticketId, { userId: 'system', remetenteNome: 'Sistema', conteudo: `🔄 Chamado escalado para ${escalationArea.replace('_', ' ').toUpperCase()}. Motivo: ${escalationReason}`, criadoEm: new Date(), type: 'escalation' });
             await loadAllData();
-            setEscalationArea('');
-            setEscalationReason('');
-        } catch (error) {
-            setError('Erro ao escalar chamado: ' + error.message);
-        } finally {
-            setIsEscalating(false);
-        }
+            setEscalationArea(''); setEscalationReason('');
+        } catch (error) { setError('Erro ao escalar chamado: ' + error.message); } finally { setIsEscalating(false); }
     };
     
     const handleManagementEscalation = async () => {
@@ -391,29 +306,16 @@ const TicketDetailPage = () => {
         const targetArea = managementArea.replace('gerente_', '');
         const targetManager = users.find(u => u.funcao === 'gerente' && u.area === targetArea);
         if (!targetManager) { alert(`Erro: Nenhum gerente encontrado para a área "${targetArea}".`); return; }
-        
         setIsEscalatingToManagement(true);
         try {
-            const updateData = {
-                status: 'aguardando_aprovacao', areaDeOrigem: ticket.area,
-                gerenteResponsavelId: targetManager.uid, motivoEscalonamentoGerencial: managementReason,
-                escaladoPor: user.uid, escaladoEm: new Date(),
-                dataUltimaAtualizacao: new Date()
-            };
-            await ticketService.updateTicket(ticketId, updateData);
-            await messageService.sendMessage(ticketId, {
-                userId: 'system', remetenteNome: 'Sistema',
-                conteudo: `👨‍💼 Chamado escalado para Gerência. Motivo: ${managementReason}`,
-                criadoEm: new Date(), type: 'management_escalation'
+            await ticketService.updateTicket(ticketId, {
+                status: 'aguardando_aprovacao', areaDeOrigem: ticket.area, gerenteResponsavelId: targetManager.uid,
+                motivoEscalonamentoGerencial: managementReason, escaladoPor: user.uid, escaladoEm: new Date(), dataUltimaAtualizacao: new Date()
             });
+            await messageService.sendMessage(ticketId, { userId: 'system', remetenteNome: 'Sistema', conteudo: `👨‍💼 Chamado escalado para Gerência. Motivo: ${managementReason}`, criadoEm: new Date(), type: 'management_escalation' });
             await loadAllData();
-            setManagementArea('');
-            setManagementReason('');
-        } catch (error) {
-            setError('Erro ao escalar para gerência: ' + error.message);
-        } finally {
-            setIsEscalatingToManagement(false);
-        }
+            setManagementArea(''); setManagementReason('');
+        } catch (error) { setError('Erro ao escalar para gerência: ' + error.message); } finally { setIsEscalatingToManagement(false); }
     };
 
     const handleConsultorEscalation = async () => {
@@ -422,23 +324,13 @@ const TicketDetailPage = () => {
         setIsEscalatingToConsultor(true);
         try {
             await ticketService.updateTicket(ticketId, {
-                status: 'escalado_para_consultor', areaDeOrigem: ticket.area,
-                consultorResponsavelId: mainProject.consultorId, motivoEscalonamentoConsultor: consultorReason,
-                escaladoPor: user.uid, escaladoEm: new Date(),
-                dataUltimaAtualizacao: new Date()
+                status: 'escalado_para_consultor', areaDeOrigem: ticket.area, consultorResponsavelId: mainProject.consultorId,
+                motivoEscalonamentoConsultor: consultorReason, escaladoPor: user.uid, escaladoEm: new Date(), dataUltimaAtualizacao: new Date()
             });
-            await messageService.sendMessage(ticketId, {
-                userId: 'system', remetenteNome: 'Sistema',
-                conteudo: `👨‍🎯 Chamado escalado para CONSULTOR. Motivo: ${consultorReason}`,
-                criadoEm: new Date(), type: 'consultor_escalation'
-            });
+            await messageService.sendMessage(ticketId, { userId: 'system', remetenteNome: 'Sistema', conteudo: `👨‍🎯 Chamado escalado para CONSULTOR. Motivo: ${consultorReason}`, criadoEm: new Date(), type: 'consultor_escalation' });
             await loadAllData();
             setConsultorReason('');
-        } catch (error) {
-            setError('Erro ao escalar para consultor: ' + error.message);
-        } finally {
-            setIsEscalatingToConsultor(false);
-        }
+        } catch (error) { setError('Erro ao escalar para consultor: ' + error.message); } finally { setIsEscalatingToConsultor(false); }
     };
 
     const handleTransferToProducer = async () => {
@@ -448,20 +340,11 @@ const TicketDetailPage = () => {
         try {
             await ticketService.updateTicket(ticketId, {
                 status: 'transferido_para_produtor', produtorResponsavelId: mainProject.produtorId,
-                transferidoPor: user.uid, transferidoEm: new Date(),
-                dataUltimaAtualizacao: new Date()
+                transferidoPor: user.uid, transferidoEm: new Date(), dataUltimaAtualizacao: new Date()
             });
-            await messageService.sendMessage(ticketId, {
-                userId: 'system', remetenteNome: 'Sistema',
-                conteudo: `🏭 Chamado transferido para PRODUTOR DO PROJETO.`,
-                criadoEm: new Date(), type: 'producer_transfer'
-            });
+            await messageService.sendMessage(ticketId, { userId: 'system', remetenteNome: 'Sistema', conteudo: `🏭 Chamado transferido para PRODUTOR DO PROJETO.`, criadoEm: new Date(), type: 'producer_transfer' });
             await loadAllData();
-        } catch (error) {
-            setError('Erro ao transferir para produtor: ' + error.message);
-        } finally {
-            setUpdating(false);
-        }
+        } catch (error) { setError('Erro ao transferir para produtor: ' + error.message); } finally { setUpdating(false); }
     };
 
     const handleResubmitTicket = async () => {
@@ -469,23 +352,39 @@ const TicketDetailPage = () => {
         setIsResubmitting(true);
         try {
             await ticketService.updateTicket(ticketId, {
-                status: 'aberto', area: ticket.areaQueRejeitou,
-                areaDeOrigem: ticket.area, areaQueRejeitou: null,
+                status: 'aberto', area: ticket.areaQueRejeitou, areaDeOrigem: ticket.area, areaQueRejeitou: null,
                 descricao: `${ticket.descricao}\n\n--- INFORMAÇÕES ADICIONAIS (${formatDate(new Date())}) ---\n${additionalInfo}`,
                 atualizadoPor: user.uid, dataUltimaAtualizacao: new Date()
             });
-            await messageService.sendMessage(ticketId, {
-                userId: 'system', remetenteNome: 'Sistema',
-                conteudo: `📬 Chamado reenviado com informações adicionais para a área: ${ticket.areaQueRejeitou.replace(/_/g, ' ')}.`,
-                criadoEm: new Date(), type: 'status_update'
-            });
+            await messageService.sendMessage(ticketId, { userId: 'system', remetenteNome: 'Sistema', conteudo: `📬 Chamado reenviado com informações para: ${ticket.areaQueRejeitou.replace(/_/g, ' ')}.`, criadoEm: new Date(), type: 'status_update' });
             await loadAllData();
             setAdditionalInfo('');
-        } catch (error) {
-            setError('Ocorreu um erro ao reenviar o chamado: ' + error.message);
-        } finally {
-            setIsResubmitting(false);
-        }
+        } catch (error) { setError('Ocorreu um erro ao reenviar o chamado: ' + error.message); } finally { setIsResubmitting(false); }
+    };
+    
+    const formatDate = (date) => {
+        if (!date) return 'Data não disponível';
+        const dateObj = date.toDate ? date.toDate() : new Date(date);
+        if (isNaN(dateObj)) return 'Data inválida';
+        return dateObj.toLocaleString('pt-BR');
+    };
+
+    const getStatusText = (status) => {
+        const statusMap = {
+          'aberto': 'Aberto', 'em_tratativa': 'Em Tratativa', 'executado_aguardando_validacao': 'Executado - Aguardando Validação',
+          'concluido': 'Concluído', 'enviado_para_area': 'Enviado para Área', 'aguardando_consultor': 'Aguardando Consultor',
+          'aguardando_aprovacao_gerencial': 'Aguardando Aprovação Gerencial', 'cancelado': 'Cancelado', 'arquivado': 'Arquivado'
+        };
+        return statusMap[status] || status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    };
+    
+    const getStatusColor = (status) => {
+        const colorMap = {
+          'aberto': 'bg-blue-100 text-blue-800', 'em_tratativa': 'bg-yellow-100 text-yellow-800', 'executado_aguardando_validacao': 'bg-purple-100 text-purple-800',
+          'concluido': 'bg-green-100 text-green-800', 'enviado_para_area': 'bg-orange-100 text-orange-800', 'aguardando_consultor': 'bg-cyan-100 text-cyan-800',
+          'aguardando_aprovacao_gerencial': 'bg-indigo-100 text-indigo-800', 'cancelado': 'bg-red-100 text-red-800', 'arquivado': 'bg-gray-100 text-gray-800'
+        };
+        return colorMap[status] || 'bg-gray-100 text-gray-800';
     };
 
     if (loading) return (<div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="text-center"><Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" /><p className="text-lg font-semibold">Carregando chamado...</p></div></div>);
@@ -498,7 +397,7 @@ const TicketDetailPage = () => {
 
     return (
         <div className="min-h-screen bg-gray-50">
-            <Header title={`Chamado #${ticket.numero || ticketId.slice(-8)}`} />
+            <Header title={`Chamado #${ticket.id?.substring(0, 8) || 'N/A'}`} />
             <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-8">
                 <div className="mb-4 sm:mb-6">
                     <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')} className="mb-3 sm:mb-4"><ArrowLeft className="h-4 w-4 mr-1 sm:mr-2" />Voltar ao Dashboard</Button>
@@ -525,25 +424,10 @@ const TicketDetailPage = () => {
                     <div className="lg:col-span-1 space-y-6">
                         {projects.length > 0 && (
                             <Card>
-                                <CardHeader>
-                                    <CardTitle className="flex items-center">
-                                        {projects.length > 1 ? <FolderOpen className="h-5 w-5 mr-2"/> : <Folder className="h-5 w-5 mr-2"/>}
-                                        {projects.length > 1 ? `Projetos (${projects.length})` : 'Projeto'}
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-3">
-                                    {projects.map((p) => (
-                                        <div key={p.id} className="p-3 border rounded-lg">
-                                            <p className="font-semibold">{p.nome}</p>
-                                            <p className="text-sm text-gray-600">{p.cliente}</p>
-                                            {p.local && <p className="text-sm text-gray-500">{p.local}</p>}
-                                            <Button variant="outline" size="sm" className="w-full mt-2" onClick={() => navigate(`/projeto/${p.id}`)}><ExternalLink className="h-4 w-4 mr-2"/>Ver Detalhes do Projeto</Button>
-                                        </div>
-                                    ))}
-                                </CardContent>
+                                <CardHeader><CardTitle className="flex items-center">{projects.length > 1 ? <FolderOpen className="h-5 w-5 mr-2"/> : <Folder className="h-5 w-5 mr-2"/>}{projects.length > 1 ? `Projetos (${projects.length})` : 'Projeto'}</CardTitle></CardHeader>
+                                <CardContent className="space-y-3">{projects.map((p) => (<div key={p.id} className="p-3 border rounded-lg"><p className="font-semibold">{p.nome}</p><p className="text-sm text-gray-600">{p.cliente}</p>{p.local && <p className="text-sm text-gray-500">{p.local}</p>}<Button variant="outline" size="sm" className="w-full mt-2" onClick={() => navigate(`/projeto/${p.id}`)}><ExternalLink className="h-4 w-4 mr-2"/>Ver Detalhes</Button></div>))}</CardContent>
                             </Card>
                         )}
-                        
                         {!isArchived && <Card><CardHeader><CardTitle className="flex items-center"><LinkIcon className="h-5 w-5 mr-2"/>Vincular Chamado</CardTitle></CardHeader><CardContent><p className="text-sm text-gray-600 mb-4">Crie um novo chamado que ficará vinculado a este.</p><Button className="w-full" variant="outline" onClick={() => navigate('/novo-chamado', { state: { linkedTicketId: ticket.id } })}><PlusCircle className="h-4 w-4 mr-2"/>Criar Chamado Vinculado</Button></CardContent></Card>}
                         {!isArchived && availableStatuses.length > 0 && <Card><CardHeader><CardTitle className="flex items-center"><Settings className="h-5 w-5 mr-2"/>Ações</CardTitle></CardHeader><CardContent className="space-y-4"><div><Label>Alterar Status</Label><Select value={newStatus} onValueChange={setNewStatus}><SelectTrigger><SelectValue placeholder="Selecione uma ação"/></SelectTrigger><SelectContent>{availableStatuses.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent></Select></div>{(newStatus === 'concluido' || newStatus === 'enviado_para_area' || newStatus === 'rejeitado') && <div className="space-y-3"><div><Label>{newStatus === 'concluido' ? 'Descrição da Conclusão' : 'Motivo da Rejeição/Devolução'}</Label><Textarea placeholder={newStatus === 'concluido' ? "Descreva como foi resolvido..." : "Explique o motivo..."} value={conclusionDescription} onChange={(e) => setConclusionDescription(e.target.value)} rows={3}/></div>{newStatus === 'concluido' && <div><Label>Evidências (Imagens)</Label><ImageUpload onImagesUploaded={setConclusionImages} existingImages={conclusionImages} maxImages={5} buttonText="Anexar Evidências"/></div>}</div>}<Button onClick={handleStatusUpdate} disabled={!newStatus || updating} className="w-full">{updating ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : <CheckCircle className="h-4 w-4 mr-2"/>}{updating ? 'Atualizando...' : 'Confirmar Ação'}</Button></CardContent></Card>}
                         {!isArchived && userProfile?.funcao === 'administrador' && ticket.status === 'concluido' && <Card><CardHeader><CardTitle className="flex items-center"><Archive className="h-5 w-5 mr-2"/>Ações de Arquivo</CardTitle></CardHeader><CardContent><Button onClick={handleArchiveTicket} disabled={updating} variant="outline" className="w-full">{updating ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : <Archive className="h-4 w-4 mr-2"/>}Arquivar Chamado</Button></CardContent></Card>}
