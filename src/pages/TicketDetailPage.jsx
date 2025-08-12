@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ticketService } from '@/services/ticketService';
@@ -107,63 +107,50 @@ const TicketDetailPage = () => {
     const loadInitialData = async () => {
       setPageStatus('loading');
       try {
-        // 1. Busca os dados primários (chamado e todos os usuários).
-        // Usamos allSettled para garantir que ambas as promessas terminem.
-        const results = await Promise.allSettled([
-          ticketService.getTicketById(ticketId),
-          userService.getAllUsers()
-        ]);
-
-        // Validação da busca do chamado (crítico para a página)
-        if (results[0].status === 'rejected' || !results[0].value) {
-          throw new Error('Chamado não encontrado ou falha ao carregar.');
+        const ticketData = await ticketService.getTicketById(ticketId);
+        if (!ticketData) {
+          throw new Error('Chamado não encontrado.');
         }
-        const ticketData = results[0].value;
         setTicket(ticketData);
 
-        // Validação da busca de usuários
-        const allUsers = results[1].status === 'fulfilled' ? results[1].value : [];
-        setUsers(allUsers);
-        
-        // 2. Verifica permissão de acesso
-        if (ticketData.isConfidential) {
-          const isCreator = ticketData.criadoPor === user.uid;
-          const isAdmin = userProfile.funcao === 'administrador';
-          const isInvolvedOperator = userProfile.funcao === 'operador' &&
-            (userProfile.area === ticketData.area || userProfile.area === ticketData.areaDeOrigem);
-          if (!isCreator && !isAdmin && !isInvolvedOperator) {
-            setPageStatus('denied');
-            return;
-          }
+        // Verifica permissão ANTES de carregar o resto
+        if (ticketData.isConfidential && userProfile) {
+            const isCreator = ticketData.criadoPor === user.uid;
+            const isAdmin = userProfile.funcao === 'administrador';
+            const isInvolvedOperator = userProfile.funcao === 'operador' &&
+              (userProfile.area === ticketData.area || userProfile.area === ticketData.areaDeOrigem);
+            if (!isCreator && !isAdmin && !isInvolvedOperator) {
+              setPageStatus('denied');
+              return; // Para a execução aqui
+            }
         }
 
-        // 3. Busca os dados secundários em paralelo
-        const secondaryDataResults = await Promise.allSettled([
-          // Carregar projetos
-          (async () => {
-            if (ticketData.projetoId) {
-              return [await projectService.getProjectById(ticketData.projetoId)];
-            } else if (ticketData.projetos?.length > 0) {
-              const projectPromises = ticketData.projetos.map(id => projectService.getProjectById(id));
-              return (await Promise.allSettled(projectPromises))
-                .filter(res => res.status === 'fulfilled')
-                .map(res => res.value);
-            }
-            return [];
-          })(),
-          // Carregar mensagens
-          messageService.getMessagesByTicket(ticketId),
-          // Carregar chamado pai
-          ticketData.chamadoPaiId ? ticketService.getTicketById(ticketData.chamadoPaiId) : Promise.resolve(null)
+        // Carrega o resto em paralelo
+        const [usersData, messagesData, parentData] = await Promise.all([
+            userService.getAllUsers(),
+            messageService.getMessagesByTicket(ticketId),
+            ticketData.chamadoPaiId ? ticketService.getTicketById(ticketData.chamadoPaiId) : Promise.resolve(null)
         ]);
-        
-        setProjects(secondaryDataResults[0].status === 'fulfilled' ? secondaryDataResults[0].value.filter(p => p) : []);
-        setMessages(secondaryDataResults[1].status === 'fulfilled' ? secondaryDataResults[1].value || [] : []);
-        setParentTicketForLink(secondaryDataResults[2].status === 'fulfilled' ? secondaryDataResults[2].value : null);
+        setUsers(usersData || []);
+        setMessages(messagesData || []);
+        setParentTicketForLink(parentData);
 
-        // 4. Marca notificações como lidas
+        // Carrega projetos
+        const projectsToLoad = [];
+        if (ticketData.projetoId) {
+            try {
+                const projectData = await projectService.getProjectById(ticketData.projetoId);
+                if (projectData) projectsToLoad.push(projectData);
+            } catch (err) { console.warn("Erro ao carregar projeto único:", err); }
+        } else if (ticketData.projetos?.length > 0) {
+            const results = await Promise.allSettled(ticketData.projetos.map(id => projectService.getProjectById(id)));
+            results.forEach(res => {
+                if (res.status === 'fulfilled' && res.value) projectsToLoad.push(res.value);
+            });
+        }
+        setProjects(projectsToLoad);
+
         await notificationService.markTicketNotificationsAsRead(user.uid, ticketId);
-
         setPageStatus('success');
 
       } catch (err) {
@@ -174,7 +161,7 @@ const TicketDetailPage = () => {
     };
 
     loadInitialData();
-  }, [ticketId, user, userProfile]);
+  }, [ticketId, user]); // Dependência segura
 
   // Efeito para construir o histórico de eventos (roda após o carregamento bem-sucedido)
   useEffect(() => {
