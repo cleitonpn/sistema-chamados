@@ -173,6 +173,11 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
     if (ticket && userProfile && user) {
       if (ticket.isConfidential) {
         const isCreator = ticket.criadoPor === user.uid;
+
+    // Criador pode cancelar quando o chamado foi devolvido
+    if (isCreator && currentStatus === 'enviado_para_area') {
+        return [{ value: 'cancelado', label: 'Cancelar Chamado' }];
+    }
         const isAdmin = userProfile.funcao === 'administrador';
         const isInvolvedOperator = userProfile.funcao === 'operador' &&
                                    (userProfile.area === ticket.area || userProfile.area === ticket.areaDeOrigem);
@@ -653,7 +658,11 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
           updateData.area = ticket.areaDeOrigem;
           updateData.consultorResponsavelId = null; 
           systemMessageContent = `👨‍🎯 **Chamado executado pelo consultor e devolvido para:** ${ticket.areaDeOrigem?.replace('_', ' ').toUpperCase()}`;
-      }
+            } else if (statusToUpdate === 'cancelado') {
+          updateData.canceladoEm = new Date();
+          updateData.canceladoPor = user.uid;
+          systemMessageContent = `🚫 **Chamado cancelado pelo criador**`;
+
       else {
           systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(statusToUpdate)}`;
       }
@@ -1468,7 +1477,7 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
               </Card>
             )}
 
-            {!isArchived && userProfile?.funcao === 'administrador' && ticket.status === 'concluido' && (
+            {!isArchived && userProfile?.funcao === 'administrador' && (ticket.status === 'concluido' || ticket.status === 'cancelado') && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center text-base sm:text-lg">
