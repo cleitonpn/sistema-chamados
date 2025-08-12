@@ -415,15 +415,7 @@ const DashboardPage = () => {
         const projectNamesMap = {};
         allProjects.forEach(project => { projectNamesMap[project.id] = project.nome; });
         setProjectNames(projectNamesMap);
-      }
-const projectNamesMap = {};
-        allProjects.forEach(project => {
-          projectNamesMap[project.id] = project.nome;
-        });
-        setProjectNames(projectNamesMap);
-        
-      }
-    else if (userProfile?.funcao === 'gerente') {
+      } else if (userProfile?.funcao === 'gerente') {
         console.log('👔 Gerente: carregando TODOS os dados');
         const [allProjects, allTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
