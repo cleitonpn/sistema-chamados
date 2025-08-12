@@ -6,7 +6,6 @@ import { projectService } from '@/services/projectService';
 import { userService } from '@/services/userService';
 import { messageService } from '@/services/messageService';
 import notificationService from '@/services/notificationService';
-import ImageUpload from '@/components/ImageUpload';
 import Header from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,23 +18,15 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
   ArrowLeft,
-  Clock,
   User,
   MessageSquare,
   Send,
   CheckCircle,
   XCircle,
   AlertCircle,
-  Camera,
   Calendar,
-  MapPin,
   Loader2,
   ExternalLink,
-  Upload,
-  X,
-  Image as ImageIcon,
-  Settings,
-  AtSign,
   Lock,
   UserCheck,
   PlusCircle,
@@ -46,20 +37,15 @@ import {
   ArchiveRestore,
   Link as LinkIcon,
   ClipboardEdit,
-  Building,
-  Tag,
-  Paperclip,
-  Download,
   Users,
   History,
   FolderOpen,
   Folder,
   AlertTriangle,
-  Plus
+  Paperclip
 } from 'lucide-react';
 
 const TicketDetailPage = () => {
-  // ✅ CORREÇÃO: Usar ticketId diretamente como no arquivo que funciona
   const { ticketId } = useParams();
   const navigate = useNavigate();
   const { user, userProfile } = useAuth();
@@ -67,7 +53,7 @@ const TicketDetailPage = () => {
   // Estados principais
   const [ticket, setTicket] = useState(null);
   const [project, setProject] = useState(null);
-  const [projects, setProjects] = useState([]); // ✅ NOVO: Para múltiplos projetos
+  const [projects, setProjects] = useState([]);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -76,63 +62,43 @@ const TicketDetailPage = () => {
 
   // Estados do chat
   const [newMessage, setNewMessage] = useState('');
-  const [sendingMessage, setSendingMessage] = useState(false);
-  const [chatImages, setChatImages] = useState([]);
+  const [selectedImages, setSelectedImages] = useState([]);
+  const [sending, setSending] = useState(false);
 
   // Estados de atualização de status
   const [newStatus, setNewStatus] = useState('');
-  const [conclusionImages, setConclusionImages] = useState([]);
   const [conclusionDescription, setConclusionDescription] = useState('');
   const [selectedArea, setSelectedArea] = useState('');
   const [showAreaSelector, setShowAreaSelector] = useState(false);
 
-  // Estados para escalação separada
+  // Estados para escalação
   const [escalationArea, setEscalationArea] = useState('');
   const [escalationReason, setEscalationReason] = useState('');
   const [isEscalating, setIsEscalating] = useState(false);
-
-  // Estados para escalação para gerência
   const [managementArea, setManagementArea] = useState('');
   const [managementReason, setManagementReason] = useState('');
   const [isEscalatingToManagement, setIsEscalatingToManagement] = useState(false);
-
-  // Estados para escalação para consultor
   const [consultorReason, setConsultorReason] = useState('');
   const [isEscalatingToConsultor, setIsEscalatingToConsultor] = useState(false);
 
-  // Estados para menções de usuários e histórico
+  // Estados para menções e histórico
   const [users, setUsers] = useState([]);
   const [historyEvents, setHistoryEvents] = useState([]);
-  const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
   const [mentionSuggestions, setMentionSuggestions] = useState([]);
   const [mentionQuery, setMentionQuery] = useState('');
-  const [cursorPosition, setCursorPosition] = useState(0);
+  const [showMentions, setShowMentions] = useState(false);
   const textareaRef = useRef(null);
   
-  // Estados para o fluxo de correção e reenvio
+  // Estados para rejeição e reenvio
   const [isResubmitting, setIsResubmitting] = useState(false);
   const [additionalInfo, setAdditionalInfo] = useState('');
-
-  // Estado para exibir link do chamado pai
-  const [parentTicketForLink, setParentTicketForLink] = useState(null);
-
-  // ✅ NOVOS ESTADOS para funcionalidades do arquivo (40)
-  const [sending, setSending] = useState(false);
-  const [selectedImages, setSelectedImages] = useState([]);
-  const [conclusionMessage, setConclusionMessage] = useState('');
-  const [escalationManagement, setEscalationManagement] = useState('');
-  const [escalationManagementReason, setEscalationManagementReason] = useState('');
-  const [escalationConsultorReason, setEscalationConsultorReason] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectModal, setShowRejectModal] = useState(false);
-  const [managements, setManagements] = useState([]);
-  const [areas, setAreas] = useState([]);
-  const [showMentions, setShowMentions] = useState(false);
+  const [parentTicketForLink, setParentTicketForLink] = useState(null);
+  
   const fileInputRef = useRef(null);
-  const conclusionFileInputRef = useRef(null);
 
   const loadTicketData = async () => {
-    console.log("🔍 Iniciando carregamento do chamado:", ticketId);
     try {
       setLoading(true);
       setError(null);
@@ -144,39 +110,31 @@ const TicketDetailPage = () => {
       }
 
       setTicket(ticketData);
-      console.log("✅ Chamado carregado:", ticketData);
 
       if (ticketData.chamadoPaiId) {
-          const parentTicketData = await ticketService.getTicketById(ticketData.chamadoPaiId);
-          setParentTicketForLink(parentTicketData);
+        const parentTicketData = await ticketService.getTicketById(ticketData.chamadoPaiId);
+        setParentTicketForLink(parentTicketData);
       }
 
-      // ✅ NOVO: Carregar múltiplos projetos com compatibilidade
+      // Carregar projetos (suporte a múltiplos projetos)
       const projectsToLoad = [];
       
-      // Verifica se é um chamado antigo (com projetoId)
       if (ticketData.projetoId) {
-        console.log("📁 Carregando projeto único:", ticketData.projetoId);
         try {
           const projectData = await projectService.getProjectById(ticketData.projetoId);
           if (projectData) {
-            setProject(projectData); // Manter compatibilidade
+            setProject(projectData);
             projectsToLoad.push(projectData);
           }
         } catch (err) {
-          console.warn("⚠️ Erro ao carregar projeto único:", err);
+          console.warn("Erro ao carregar projeto único:", err);
         }
       }
-      // Verifica se é um chamado novo (com projetos array)
       else if (ticketData.projetos?.length > 0) {
-        console.log("📁 Carregando múltiplos projetos:", ticketData.projetos);
         try {
           const projectsData = await Promise.allSettled(
             ticketData.projetos.map(projectId => {
-              if (!projectId || typeof projectId !== 'string') {
-                console.warn('⚠️ ID de projeto inválido:', projectId);
-                return Promise.resolve(null);
-              }
+              if (!projectId || typeof projectId !== 'string') return null;
               return projectService.getProjectById(projectId);
             })
           );
@@ -187,34 +145,30 @@ const TicketDetailPage = () => {
             }
           });
           
-          // Se há múltiplos projetos, usar o primeiro como projeto principal para compatibilidade
           if (projectsToLoad.length > 0) {
             setProject(projectsToLoad[0]);
           }
         } catch (err) {
-          console.warn("⚠️ Erro ao carregar múltiplos projetos:", err);
+          console.warn("Erro ao carregar múltiplos projetos:", err);
         }
       }
 
       setProjects(projectsToLoad);
-      console.log("✅ Projetos carregados:", projectsToLoad);
 
       // Carregar mensagens
       try {
         const messagesData = await messageService.getMessagesByTicket(ticketId);
         setMessages(messagesData || []);
-        console.log("✅ Mensagens carregadas:", messagesData?.length || 0);
       } catch (err) {
-        console.warn("⚠️ Erro ao carregar mensagens:", err);
+        console.warn("Erro ao carregar mensagens:", err);
         setMessages([]);
       }
 
     } catch (err) {
-      console.error('❌ Erro ao carregar dados do chamado:', err);
+      console.error('Erro ao carregar dados do chamado:', err);
       setError(err.message || 'Erro ao carregar chamado');
     } finally {
       setLoading(false);
-      console.log("🏁 Carregamento finalizado");
     }
   };
 
@@ -223,8 +177,6 @@ const TicketDetailPage = () => {
       loadTicketData();
       markNotificationsAsRead();
       loadUsers();
-      loadManagements();
-      loadAreas();
     }
   }, [ticketId, user]);
 
@@ -248,11 +200,10 @@ const TicketDetailPage = () => {
     try {
       await notificationService.markTicketNotificationsAsRead(user.uid, ticketId);
     } catch (error) {
-      console.error('❌ Erro ao marcar notificações como lidas:', error);
+      console.error('Erro ao marcar notificações como lidas:', error);
     }
   };
 
-  // ✅ NOVAS FUNÇÕES para carregar dados adicionais
   const loadUsers = async () => {
     try {
       const usersData = await userService.getAllUsers();
@@ -262,25 +213,6 @@ const TicketDetailPage = () => {
     }
   };
 
-  const loadManagements = async () => {
-    try {
-      const managementsData = await userService.getManagements();
-      setManagements(managementsData || []);
-    } catch (error) {
-      console.error('Erro ao carregar gerências:', error);
-    }
-  };
-
-  const loadAreas = async () => {
-    try {
-      const areasData = await userService.getAreas();
-      setAreas(areasData || []);
-    } catch (error) {
-      console.error('Erro ao carregar áreas:', error);
-    }
-  };
-
-  // ✅ NOVA FUNÇÃO: Criar chamado vinculado
   const handleCreateLinkedTicket = () => {
     if (!ticket) return;
     
@@ -297,7 +229,6 @@ const TicketDetailPage = () => {
     navigate('/novo-chamado', { state: linkedTicketData });
   };
 
-  // ✅ NOVA FUNÇÃO: Rejeitar/devolver chamado
   const handleRejectTicket = async () => {
     if (!rejectReason.trim()) {
       alert('Por favor, informe o motivo da rejeição/devolução.');
@@ -392,53 +323,6 @@ const TicketDetailPage = () => {
     }
   }, [ticket, users]);
 
-  const detectMentions = (text, position) => {
-    const beforeCursor = text.substring(0, position);
-    const mentionMatch = beforeCursor.match(/@(\w*)$/);
-    if (mentionMatch) {
-      const query = mentionMatch[1].toLowerCase();
-      const filtered = users.filter(user => user.nome.toLowerCase().includes(query) || user.email.toLowerCase().includes(query)).slice(0, 5);
-      setMentionQuery(query);
-      setMentionSuggestions(filtered);
-      setShowMentionSuggestions(true);
-    } else {
-      setShowMentionSuggestions(false);
-      setMentionSuggestions([]);
-      setMentionQuery('');
-    }
-  };
-
-  const insertMention = (user) => {
-    const beforeCursor = newMessage.substring(0, cursorPosition);
-    const afterCursor = newMessage.substring(cursorPosition);
-    const beforeMention = beforeCursor.replace(/@\w*$/, '');
-    const newText = beforeMention + `@${user.nome} ` + afterCursor;
-    setNewMessage(newText);
-    setShowMentionSuggestions(false);
-    setTimeout(() => {
-      if (textareaRef.current) {
-        const newPosition = beforeMention.length + user.nome.length + 2;
-        textareaRef.current.setSelectionRange(newPosition, newPosition);
-        textareaRef.current.focus();
-      }
-    }, 0);
-  };
-
-  const handleTextareaChange = (e) => {
-    const value = e.target.value;
-    const position = e.target.selectionStart;
-    setNewMessage(value);
-    setCursorPosition(position);
-    detectMentions(value, position);
-  };
-
-  const handleTextareaKeyDown = (e) => {
-    if (showMentionSuggestions && e.key === 'Escape') {
-      setShowMentionSuggestions(false);
-    }
-  };
-
-  // ✅ NOVA FUNÇÃO: Lidar com menções no input (compatível com arquivo 40)
   const handleMentionInput = (e) => {
     const value = e.target.value;
     setNewMessage(value);
@@ -461,7 +345,6 @@ const TicketDetailPage = () => {
     }
   };
 
-  // ✅ NOVA FUNÇÃO: Selecionar menção (compatível com arquivo 40)
   const selectMention = (user) => {
     const lastAtIndex = newMessage.lastIndexOf('@');
     const beforeMention = newMessage.substring(0, lastAtIndex);
@@ -533,7 +416,6 @@ const TicketDetailPage = () => {
     const userRole = userProfile.funcao;
     const isCreator = ticket.criadoPor === user.uid;
 
-    // ✅ NOVA REGRA: Criador pode cancelar quando rejeitado/devolvido
     if (isCreator && currentStatus === 'enviado_para_area' && ticket.rejectedAt) {
       return [
         { value: 'cancelado', label: 'Cancelar Chamado', description: 'Cancelar este chamado' }
@@ -599,19 +481,17 @@ const TicketDetailPage = () => {
         status: 'escalado_para_outra_area',
         area: escalationArea || null,
         escalationReason: escalationReason || '',
-        userRole: userProfile?.funcao || 'operador',
         areaDestino: escalationArea || null,
         motivoEscalonamento: escalationReason || '',
         atualizadoPor: user?.uid || null,
         updatedAt: new Date()
       };
       await ticketService.escalateTicketToArea(ticketId, escalationArea, updateData);
-      console.log('✅ Escalação realizada com sucesso');
       setEscalationArea('');
       setEscalationReason('');
       await loadTicketData();
     } catch (error) {
-      console.error('❌ Erro na escalação:', error);
+      console.error('Erro na escalação:', error);
       alert('Erro ao escalar chamado');
     } finally {
       setIsEscalating(false);
@@ -697,9 +577,6 @@ const TicketDetailPage = () => {
         if (conclusionDescription) {
           updateData.observacoesConclusao = conclusionDescription;
         }
-        if (conclusionImages.length > 0) {
-          updateData.imagensConclusao = conclusionImages;
-        }
       }
       if (status === 'enviado_para_area' && selectedArea) {
         updateData.area = selectedArea;
@@ -707,7 +584,6 @@ const TicketDetailPage = () => {
       }
       await ticketService.updateTicket(ticketId, updateData);
       setConclusionDescription('');
-      setConclusionImages([]);
       setSelectedArea('');
       setShowAreaSelector(false);
       await loadTicketData();
@@ -719,28 +595,6 @@ const TicketDetailPage = () => {
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!newMessage.trim() && chatImages.length === 0) return;
-    setSendingMessage(true);
-    try {
-      await messageService.sendMessage(ticketId, {
-        content: newMessage,
-        images: chatImages,
-        senderId: user.uid,
-        senderName: userProfile?.nome || user.email
-      });
-      setNewMessage('');
-      setChatImages([]);
-      await loadTicketData();
-    } catch (error) {
-      console.error('Erro ao enviar mensagem:', error);
-      alert('Erro ao enviar mensagem');
-    } finally {
-      setSendingMessage(false);
-    }
-  };
-
-  // ✅ NOVA FUNÇÃO: Enviar mensagem (compatível com arquivo 40)
   const handleSendMessageNew = async () => {
     if (!newMessage.trim() && selectedImages.length === 0) return;
 
@@ -796,7 +650,6 @@ const TicketDetailPage = () => {
     }
   };
 
-  // ✅ NOVA FUNÇÃO: Renderizar menções (compatível com arquivo 40)
   const renderMentions = (content) => {
     if (!content) return '';
     
@@ -953,7 +806,7 @@ const TicketDetailPage = () => {
                   </div>
                 </div>
 
-                {/* ✅ NOVA FUNCIONALIDADE: Flag de Item Extra */}
+                {/* Flag de Item Extra */}
                 {ticket.itemExtra && (
                   <div className="flex items-center space-x-2 p-3 bg-orange-50 border border-orange-200 rounded-lg">
                     <AlertTriangle className="h-5 w-5 text-orange-600" />
@@ -984,7 +837,7 @@ const TicketDetailPage = () => {
               </CardContent>
             </Card>
 
-            {/* ✅ NOVA FUNCIONALIDADE: Múltiplos Projetos */}
+            {/* Múltiplos Projetos */}
             {projects.length > 0 && (
               <Card>
                 <CardHeader>
@@ -1109,19 +962,18 @@ const TicketDetailPage = () => {
                       ref={textareaRef}
                       value={newMessage}
                       onChange={handleMentionInput}
-                      onKeyDown={handleTextareaKeyDown}
                       placeholder="Digite sua mensagem... (use @ para mencionar usuários)"
                       className="min-h-[80px] pr-20"
                     />
                     
                     {/* Sugestões de menção */}
-                    {(showMentionSuggestions || showMentions) && mentionSuggestions.length > 0 && (
+                    {showMentions && mentionSuggestions.length > 0 && (
                       <div className="absolute bottom-full left-0 w-full bg-white border border-gray-300 rounded-md shadow-lg z-10 max-h-40 overflow-y-auto">
                         {mentionSuggestions.map((user, index) => (
                           <div
                             key={index}
                             className="p-2 hover:bg-gray-100 cursor-pointer"
-                            onClick={() => showMentions ? selectMention(user) : insertMention(user)}
+                            onClick={() => selectMention(user)}
                           >
                             <p className="font-medium">{user.nome}</p>
                             <p className="text-sm text-gray-500">{user.email}</p>
@@ -1199,7 +1051,7 @@ const TicketDetailPage = () => {
                 <CardTitle>Ações</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {/* ✅ NOVA FUNCIONALIDADE: Botão Criar Chamado Vinculado */}
+                {/* Botão Criar Chamado Vinculado */}
                 {userProfile?.area === 'logistica' && (
                   <Button
                     onClick={handleCreateLinkedTicket}
@@ -1211,7 +1063,7 @@ const TicketDetailPage = () => {
                   </Button>
                 )}
 
-                {/* ✅ NOVA FUNCIONALIDADE: Botão Rejeitar/Devolver */}
+                {/* Botão Rejeitar/Devolver */}
                 <Button
                   onClick={() => setShowRejectModal(true)}
                   className="w-full"
@@ -1422,7 +1274,7 @@ const TicketDetailPage = () => {
               </CardContent>
             </Card>
 
-            {/* ✅ NOVA FUNCIONALIDADE: Pessoas Envolvidas */}
+            {/* Pessoas Envolvidas */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
@@ -1473,7 +1325,7 @@ const TicketDetailPage = () => {
               </CardContent>
             </Card>
 
-            {/* ✅ NOVA FUNCIONALIDADE: Histórico Detalhado */}
+            {/* Histórico Detalhado */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
@@ -1495,7 +1347,6 @@ const TicketDetailPage = () => {
 
                   {/* Eventos do histórico */}
                   {historyEvents.map((event, index) => {
-                    const Icon = event.Icon;
                     return (
                       <div key={index} className="flex items-start space-x-3">
                         <div className="w-3 h-3 bg-gray-400 rounded-full mt-2"></div>
@@ -1580,7 +1431,7 @@ const TicketDetailPage = () => {
         </div>
       </div>
 
-      {/* ✅ NOVO MODAL: Modal de Rejeição */}
+      {/* Modal de Rejeição */}
       {showRejectModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
