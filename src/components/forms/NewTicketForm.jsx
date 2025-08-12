@@ -501,7 +501,8 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         confidencial: formData.isConfidential,
         observacoes: formData.observacoes.trim() || null,
         projetos: selectedProjects, // ✅ MUDANÇA: Array de projetos
-        linkedTicketId: linkedTicket?.id || null
+        linkedTicketId: linkedTicket?.id || null,
+        areaDeOrigem: formData.area
       };
 
       // Para compatibilidade, usar o primeiro projeto como principal
