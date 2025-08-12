@@ -1617,4 +1617,3 @@ const TicketDetailPage = () => {
 };
 
 export default TicketDetailPage;
-
