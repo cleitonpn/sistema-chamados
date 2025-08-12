@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
-// https://vite.dev/config/
+// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react(),tailwindcss()],
   resolve: {
@@ -37,4 +37,7 @@ export default defineConfig({
     'process.env.VITE_APP_DOMAIN': JSON.stringify(process.env.VITE_APP_DOMAIN || 'sistemastands.com.br'),
     'process.env.VITE_APP_ENVIRONMENT': JSON.stringify(process.env.VITE_APP_ENVIRONMENT || 'production'),
   },
+  base: '/',
+  publicDir: 'public', // ✅ NOVO: Garante que o diretório public seja servido
 })
+
