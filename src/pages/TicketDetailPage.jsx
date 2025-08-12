@@ -641,9 +641,8 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
         systemMessageContent = `❌ **Chamado reprovado pelo gerente**\n\n**Motivo:** ${conclusionDescription}`;
       } else if (statusToUpdate === 'enviado_para_area') {
          if (!ticket.areaDeOrigem) {
-           alert('Erro Crítico: A área de origem para devolução não foi encontrada.');
-           setUpdating(false);
-           return;
+           // fallback: assume área atual como origem se não existir registro legado
+           updateData.areaDeOrigem = ticket.area;
         }
         updateData.motivoRejeicao = conclusionDescription;
         updateData.rejeitadoEm = new Date();
