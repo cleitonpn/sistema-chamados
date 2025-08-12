@@ -78,6 +78,7 @@ const TicketDetailPage = () => {
     // Estados unificados
     const [ticket, setTicket] = useState(null);
     const [projects, setProjects] = useState([]);
+    const [projects, setProjects] = useState([]);
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [updating, setUpdating] = useState(false);
