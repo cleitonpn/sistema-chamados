@@ -534,9 +534,13 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         baseTicketData.transferidoEm = new Date();
         if (mainProject?.produtorId) baseTicketData.produtorResponsavelId = mainProject.produtorId;
       }
-dOperator,
-          atribuidoEm: new Date(), 
-          atribuidoPor: user.uid 
+
+      // Atribuição manual: se um operador foi escolhido pelo criador
+      if (selectedOperator) {
+        Object.assign(baseTicketData, {
+          atribuidoA: selectedOperator,
+          atribuidoEm: new Date(),
+          atribuidoPor: user.uid
         });
       }
 
