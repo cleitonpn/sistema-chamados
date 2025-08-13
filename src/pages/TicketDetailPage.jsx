@@ -171,7 +171,7 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
 
   useEffect(() => {
     if (ticket && userProfile && user) {
-      if (ticket.isConfidential) {
+      if (ticket.confidencial || ticket.isConfidential) {
         const isCreator = ticket.criadoPor === user.uid;
 
     // Criador pode cancelar quando o chamado foi devolvido
@@ -1303,7 +1303,7 @@ updateData.canceladoEm = new Date();
                 <CardContent>
                   <div className="space-y-4">
                     <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-sm text-blue-800 mb-2"><strong>Produtor do Projeto:</strong> {users.find(u => u.uid === project.produtorId)?.nome || 'Não identificado'}</p>
+                      <p className="text-sm text-blue-800 mb-2"><strong>Produtor do Projeto:</strong> {resolveUserNameByProjectField(project, 'produtor') || 'Não identificado'}</p>
                       <p className="text-xs text-blue-600">O chamado será transferido para o produtor responsável por este projeto.</p>
                     </div>
                     <Button
@@ -1384,7 +1384,7 @@ updateData.canceladoEm = new Date();
                   <div>
                     <Label className="text-xs sm:text-sm font-medium text-gray-700">Produtor</Label>
                     <p className="text-sm sm:text-base text-gray-900 break-words">
-                      {users.find(u => u.uid === project.produtorId)?.nome || 'Não identificado'}
+                      {resolveUserNameByProjectField(project, 'produtor') || 'Não identificado'}
                     </p>
                   </div>
                 )}
@@ -1392,7 +1392,7 @@ updateData.canceladoEm = new Date();
                   <div>
                     <Label className="text-xs sm:text-sm font-medium text-gray-700">Consultor</Label>
                     <p className="text-sm sm:text-base text-gray-900 break-words">
-                      {users.find(u => u.uid === project.consultorId)?.nome || 'Não identificado'}
+                      {resolveUserNameByProjectField(project, 'consultor') || 'Não identificado'}
                     </p>
                   </div>
                 )}
