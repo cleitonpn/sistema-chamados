@@ -505,7 +505,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         motivoItemExtra: formData.isExtra ? formData.motivoExtra.trim() : null,
         confidencial: formData.isConfidential,
         observacoes: formData.observacoes.trim() || null,
-        projetos: selectedProjects.map(pid => ({ id: pid, titulo: formData.titulo.trim(), tipo: formData.tipo, status: 'aberto', responsavelAtual: formData.area })), // ✅ MUDANÇA: array de objetos
+        projetos: selectedProjects, // ✅ MUDANÇA: Array de projetos
         linkedTicketId: linkedTicket?.id || null,
         areaDeOrigem: formData.area
       };
@@ -533,10 +533,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         baseTicketData.transferidoPor = user.uid;
         baseTicketData.transferidoEm = new Date();
         if (mainProject?.produtorId) baseTicketData.produtorResponsavelId = mainProject.produtorId;
-        // Ajusta a lista de projetos para refletir o responsável correto
-        baseTicketData.projetos = baseTicketData.projetos.map(p => ({ ...p, status: 'transferido_para_produtor', responsavelAtual: 'produtor' }));
       }
-
 
       // Atribuição manual: se um operador foi escolhido pelo criador
       if (selectedOperator) {
@@ -547,15 +544,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         });
       }
 
-      // Histórico inicial respeitando o status definido
-      baseTicketData.historicoStatus = [{
-        comentario: 'Chamado criado',
-        data: new Date(),
-        novoStatus: baseTicketData.status,
-        responsavel: user.uid,
-        statusAnterior: null
-      }];
-      
       ticketId = await ticketService.createTicket(baseTicketData);
 
       try {
