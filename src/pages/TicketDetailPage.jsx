@@ -1371,7 +1371,32 @@ updateData.canceladoEm = new Date();
                     <p className="text-sm sm:text-base text-gray-900 break-words">{project.local}</p>
                   </div>
                 )}
-                {project && (
+                
+                {project && (project.tipoMontagem || project.tipo_de_montagem || project.tipoMontagemPrincipal || project.montagem) && (
+                  <div>
+                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Tipo de Montagem</Label>
+                    <p className="text-sm sm:text-base text-gray-900 break-words">
+                      {project.tipoMontagem || project.tipo_de_montagem || project.tipoMontagemPrincipal || project.montagem}
+                    </p>
+                  </div>
+                )}
+                {project?.produtorId && (
+                  <div>
+                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Produtor</Label>
+                    <p className="text-sm sm:text-base text-gray-900 break-words">
+                      {users.find(u => u.uid === project.produtorId)?.nome || 'Não identificado'}
+                    </p>
+                  </div>
+                )}
+                {project?.consultorId && (
+                  <div>
+                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Consultor</Label>
+                    <p className="text-sm sm:text-base text-gray-900 break-words">
+                      {users.find(u => u.uid === project.consultorId)?.nome || 'Não identificado'}
+                    </p>
+                  </div>
+                )}
+{project && (
                   <div className="pt-3 mt-3 border-t">
                     <Button
                       variant="outline"
