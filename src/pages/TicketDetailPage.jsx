@@ -412,7 +412,9 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
     if (userRole === 'operador') {
       if ((ticket.area === userProfile.area || ticket.atribuidoA === user.uid)) {
         if (currentStatus === 'aberto' || currentStatus === 'escalado_para_outra_area' || currentStatus === 'enviado_para_area') {
-            const actions = [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
+            const actions = currentStatus === 'transferido_para_produtor'
+              ? [ { value: 'em_tratativa', label: 'Iniciar Tratativa (Produção)' }, { value: 'aberto', label: 'Transferir para Área Selecionada' } ]
+              : [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
             if (ticket.areaDeOrigem) {
                 actions.push({ value: 'enviado_para_area', label: 'Rejeitar / Devolver' });
             }
@@ -684,6 +686,9 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
 updateData.canceladoEm = new Date();
           updateData.canceladoPor = user.uid;
           systemMessageContent = `🚫 **Chamado cancelado pelo criador**`;
+      } else if (statusToUpdate === 'aberto' && ticket.status === 'transferido_para_produtor') {
+          updateData.area = ticket.areaInicial || ticket.areaDeOrigem || ticket.area;
+          systemMessageContent = `🔄 **Transferido para área selecionada:** ${ (updateData.area || '').replace(/_/g, ' ').toUpperCase() }`;
       } else {
           systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(statusToUpdate)}`;
       }
