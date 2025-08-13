@@ -387,59 +387,135 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
     return statusTexts[status] || status;
   };
 
-  const getAvailableStatuses = () => {
-    if (!ticket || !userProfile || !user) return [];
-    const currentStatus = ticket.status;
-    const userRole = userProfile.funcao;
-    const isCreator = ticket.criadoPor === user.uid;
+  
+const getAvailableStatuses = () => {
+  if (!ticket || !userProfile || !user) return [];
+  const status = ticket.status;
+  const role = userProfile.funcao;
+  const myUid = user.uid;
+  const myArea = userProfile.area;
+  const isAdmin = role === 'administrador';
+  const isGerente = role === 'gerente';
+  const isOperador = role === 'operador';
+  const isConsultor = role === 'consultor';
+  const isProdutor = role === 'produtor';
+  const isCreator = ticket.criadoPor === myUid;
 
-    if (isCreator && (currentStatus === 'executado_aguardando_validacao' || currentStatus === 'executado_aguardando_validacao_operador')) {
-        return [ { value: 'concluido', label: 'Validar e Concluir' }, { value: 'enviado_para_area', label: 'Rejeitar / Devolver' } ];
-    }
+  // Helpers
+  const isResponsibleArea = !!(ticket.area === myArea || ticket.atribuidoA === myUid);
+  const isEscalationTargetGerencia = !!(status === 'aguardando_aprovacao' && ticket.gerenciaDestinoId && userProfile?.gerenciaId && ticket.gerenciaDestinoId === userProfile.gerenciaId);
 
-    if (isCreator && currentStatus === 'enviado_para_area') {
-        return [{ value: 'cancelado', label: 'Cancelar Chamado' }];
-    }
+  // 1) status "concluido" / "cancelado" -> somente admin pode "arquivar"
+  if (status === 'concluido' || status === 'cancelado') {
+    return isAdmin ? [ { value: 'arquivado', label: 'Arquivar chamado' } ] : [];
+  }
 
+  // 2) status "aberto" -> qualquer usuário vê "iniciar tratativa" e "rejeitar / devolver"
+  if (status === 'aberto') {
+    return [
+      { value: 'em_tratativa', label: 'Iniciar tratativa' },
+      { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }
+    ];
+  }
 
-    if (userRole === 'administrador') {
-      if (currentStatus === 'aberto' || currentStatus === 'escalado_para_outra_area' || currentStatus === 'enviado_para_area') return [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
-      if (currentStatus === 'em_tratativa') return [ { value: 'executado_aguardando_validacao', label: 'Executado' } ];
-      if (currentStatus === 'executado_aguardando_validacao' && !isCreator) return [ { value: 'concluido', label: 'Forçar Conclusão (Admin)' } ];
-      if (currentStatus === 'aguardando_aprovacao') return [ { value: 'aprovado', label: 'Aprovar' }, { value: 'rejeitado', label: 'Reprovar' } ];
+  // 3) status "em_tratativa" -> só o responsável (minha área/meu usuário) pode agir
+  if (status === 'em_tratativa') {
+    if (isAdmin || isResponsibleArea) {
+      // próximo passo permitido: executar
+      return [
+        { value: 'em_execucao', label: 'Executar' },
+        { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }
+      ];
     }
-    
-    if (userRole === 'operador') {
-      if ((ticket.area === userProfile.area || ticket.atribuidoA === user.uid)) {
-        if (currentStatus === 'aberto' || currentStatus === 'escalado_para_outra_area' || currentStatus === 'enviado_para_area') {
-            const actions = currentStatus === 'transferido_para_produtor'
-              ? [ { value: 'em_tratativa', label: 'Iniciar Tratativa (Produção)' }, { value: 'aberto', label: 'Transferir para Área Selecionada' } ]
-              : [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
-            if (ticket.areaDeOrigem) {
-                actions.push({ value: 'enviado_para_area', label: 'Rejeitar / Devolver' });
-            }
-            return actions;
-        }
-        if (currentStatus === 'em_tratativa') {
-            return [ { value: 'executado_aguardando_validacao_operador', label: 'Executado' } ];
-        }
-        if (currentStatus === 'executado_pelo_consultor') {
-            return [
-                { value: 'em_tratativa', label: 'Continuar Tratativa' },
-                { value: 'executado_aguardando_validacao', label: 'Finalizar Execução' }
-            ];
-        }
-      }
-    }
-
-    if (userRole === 'consultor' && ticket.consultorResponsavelId === user.uid) {
-        if (ticket.status === 'escalado_para_consultor') {
-            return [{ value: 'executado_pelo_consultor', label: 'Executar e Devolver para a Área' }];
-        }
-    }
-    
     return [];
-  };
+  }
+
+  // 4) status "escalado_para_outra_area" -> nova área recebe com duas ações
+  if (status === 'escalado_para_outra_area') {
+    if (isAdmin || isResponsibleArea) {
+      return [
+        { value: 'em_tratativa', label: 'Iniciar tratativa' },
+        { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }
+      ];
+    }
+    return [];
+  }
+
+  // 5) status "aguardando_aprovacao" -> somente o gerente de destino
+  if (status === 'aguardando_aprovacao') {
+    if (isAdmin || (isGerente && isEscalationTargetGerencia)) {
+      return [
+        { value: 'aprovado', label: 'Aprovar' },
+        { value: 'cancelado', label: 'Reprovar (Cancelar chamado)' }
+      ];
+    }
+    return [];
+  }
+
+  // 6) status "aprovado" -> volta para área anterior com mesmas ações de "aberto"
+  if (status === 'aprovado') {
+    return [
+      { value: 'em_tratativa', label: 'Iniciar tratativa' },
+      { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }
+    ];
+  }
+
+  // 7) status "transferido_para_produtor" (abertura por consultor p/ produção OU escalado para produtor)
+  if (status === 'transferido_para_produtor') {
+    // produtor do projeto (ou admin) pode agir
+    const isProjProdutor = !!(project && (project.produtorId === myUid || project?.responsaveis?.produtor?.id === myUid));
+    if (isAdmin || isProjProdutor) {
+      // quando veio via escalação, o produtor pode executar ou devolver para área
+      // quando veio via abertura do consultor, também precisa iniciar tratativa antes de executar
+      return [
+        { value: 'em_tratativa', label: 'Iniciar tratativa' },
+        { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }
+      ];
+    }
+    return [];
+  }
+
+  // 8) status "escalado_para_consultor"
+  if (status === 'escalado_para_consultor') {
+    // consultor do projeto (ou admin) pode agir
+    const isProjConsultor = !!(project && (project.consultorId === myUid || project?.responsaveis?.consultor?.id === myUid));
+    if (isAdmin || isProjConsultor) {
+      return [
+        { value: 'em_tratativa', label: 'Iniciar tratativa' },
+        { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }
+      ];
+    }
+    return [];
+  }
+
+  // 9) status "em_execucao" -> ao executar, volta para origem com validação pendente
+  if (status === 'em_execucao') {
+    if (isAdmin || isResponsibleArea) {
+      // fluxo de execução finalizado: marcar como executado aguardando validação
+      return [
+        { value: 'executado_aguardando_validacao', label: 'Finalizar execução (aguardar validação criador)' },
+        { value: 'executado_aguardando_validacao_operador', label: 'Finalizar execução (aguardar validação operador)' }
+      ];
+    }
+    return [];
+  }
+
+  // 10) status "executado_aguardando_validacao" ou "executado_aguardando_validacao_operador"
+  if (status === 'executado_aguardando_validacao' || status === 'executado_aguardando_validacao_operador') {
+    // volta para o criador (ou operador de origem) validar
+    if (isAdmin || isCreator || (isOperador && isResponsibleArea)) {
+      return [
+        { value: 'concluido', label: 'Validar e Concluir' },
+        { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }
+      ];
+    }
+    return [];
+  }
+
+  // fallback
+  return [];
+};
+;
 
   const handleEscalation = async () => {
     if (!escalationArea) {
@@ -637,77 +713,94 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
     await proceedWithStatusUpdate(newStatus);
   };
     
-  const proceedWithStatusUpdate = async (statusToUpdate) => {
-    if ((statusToUpdate === 'rejeitado' || statusToUpdate === 'enviado_para_area') && !conclusionDescription.trim()) {
-      alert('Por favor, forneça um motivo para a rejeição/devolução');
-      return;
-    }
-    setUpdating(true);
-    try {
-      let updateData = {};
-      let systemMessageContent = '';
-      
-      updateData = { status: statusToUpdate, atualizadoPor: user.uid, updatedAt: new Date() };
-      if (statusToUpdate === 'concluido') {
-        updateData.conclusaoDescricao = conclusionDescription;
-        updateData.conclusaoImagens = conclusionImages;
-        updateData.concluidoEm = new Date();
-        updateData.concluidoPor = user.uid;
-        systemMessageContent = `✅ **Chamado concluído**\n\n**Descrição:** ${conclusionDescription}`;
-      } else if (statusToUpdate === 'rejeitado') {
-        updateData.motivoRejeicao = conclusionDescription;
-        updateData.rejeitadoEm = new Date();
-        updateData.rejeitadoPor = user.uid;
-        systemMessageContent = `❌ **Chamado reprovado pelo gerente**\n\n**Motivo:** ${conclusionDescription}`;
-      } else if (statusToUpdate === 'enviado_para_area') {
-         if (!ticket.areaDeOrigem) {
-           // fallback: assume área atual como origem se não existir registro legado
-           updateData.areaDeOrigem = ticket.area;
-        }
-        updateData.motivoRejeicao = conclusionDescription;
-        updateData.rejeitadoEm = new Date();
-        updateData.rejeitadoPor = user.uid;
-        updateData.areaQueRejeitou = ticket.area;
-        updateData.area = ticket.areaDeOrigem;
-        systemMessageContent = `🔄 **Chamado devolvido para:** ${updateData.area.replace(/_/g, ' ')}\n\n**Motivo:** ${conclusionDescription}`;
-      } else if (statusToUpdate === 'aprovado') {
-          if (ticket.status === 'aguardando_aprovacao' && userProfile.funcao === 'gerente') {
-              updateData.status = 'em_tratativa';
-              updateData.area = ticket.areaDeOrigem || ticket.area;
-              updateData.aprovadoEm = new Date();
-              updateData.aprovadoPor = user.uid;
-              systemMessageContent = `✅ **Chamado aprovado pelo gerente** e retornado para a área responsável.`;
-          }
-      } else if (statusToUpdate === 'executado_pelo_consultor') {
-          updateData.area = ticket.areaDeOrigem;
-          updateData.consultorResponsavelId = null; 
-          systemMessageContent = `👨‍🎯 **Chamado executado pelo consultor e devolvido para:** ${ticket.areaDeOrigem?.replace('_', ' ').toUpperCase()}`;
-            } else if (statusToUpdate === 'cancelado') {
-updateData.canceladoEm = new Date();
-          updateData.canceladoPor = user.uid;
-          systemMessageContent = `🚫 **Chamado cancelado pelo criador**`;
-      } else if (statusToUpdate === 'aberto' && ticket.status === 'transferido_para_produtor') {
-          updateData.area = ticket.areaInicial || ticket.areaDeOrigem || ticket.area;
-          systemMessageContent = `🔄 **Transferido para área selecionada:** ${ (updateData.area || '').replace(/_/g, ' ').toUpperCase() }`;
-      } else {
-          systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(statusToUpdate)}`;
-      }
+  
+const proceedWithStatusUpdate = async (statusToUpdate) => {
+  // para rejeitar/devolver exigimos justificativa
+  if ((statusToUpdate === 'enviado_para_area') && !conclusionDescription.trim()) {
+    alert('Por favor, forneça um motivo para a rejeição/devolução');
+    return;
+  }
+  setUpdating(true);
+  try {
+    let updateData = {};
+    let systemMessageContent = '';
 
-      await ticketService.updateTicket(ticketId, updateData);
-      const statusMessage = { userId: user.uid, remetenteNome: userProfile.nome || user.email, conteudo: systemMessageContent, criadoEm: new Date(), type: 'status_update' };
-      await messageService.sendMessage(ticketId, statusMessage);
-      await notificationService.notifyStatusChange(ticketId, ticket, updateData.status, ticket.status, user.uid);
-      await loadTicketData();
-      setNewStatus('');
-      setConclusionDescription('');
-      setConclusionImages([]);
-      alert('Status atualizado com sucesso!');
-    } catch (error) {
-      alert('Erro ao atualizar status: ' + error.message);
-    } finally {
-      setUpdating(false);
+    // Base
+    updateData = {
+      status: statusToUpdate,
+      atualizadoPor: user?.uid || null,
+      updatedAt: new Date()
+    };
+
+    const current = ticket.status;
+
+    // Status handlers
+    switch (statusToUpdate) {
+      case 'em_tratativa':
+        // permanece na mesma área/atribuição
+        systemMessageContent = '🛠️ **Início de tratativa**';
+        break;
+
+      case 'em_execucao':
+        systemMessageContent = '⚙️ **Em execução**';
+        break;
+
+      case 'executado_aguardando_validacao':
+      case 'executado_aguardando_validacao_operador':
+        // volta para origem para validação
+        updateData.area = ticket.areaDeOrigem || ticket.areaInicial || ticket.area;
+        systemMessageContent = '✅ **Execução finalizada, aguardando validação**';
+        break;
+
+      case 'enviado_para_area':
+        // rejeição/devolução: volta para área anterior
+        updateData.area = ticket.areaDeOrigem || ticket.areaInicial || ticket.area;
+        updateData.rejeicaoMotivo = conclusionDescription.trim();
+        systemMessageContent = `↩️ **Chamado devolvido**\n\n**Motivo:** ${conclusionDescription.trim()}`;
+        break;
+
+      case 'aprovado':
+        // gerente aprovou -> volta para área que escalou, com "aberto"
+        updateData.status = 'aberto';
+        updateData.area = ticket.areaDeOrigem || ticket.areaInicial || ticket.area;
+        systemMessageContent = '✅ **Aprovado pela gerência** — chamado reaberto para tratativas';
+        break;
+
+      case 'cancelado':
+        systemMessageContent = '🛑 **Chamado cancelado**';
+        break;
+
+      case 'arquivado':
+        updateData.arquivadoEm = new Date();
+        updateData.arquivadoPor = user?.uid || null;
+        systemMessageContent = '📦 **Chamado arquivado**';
+        break;
+
+      default:
+        systemMessageContent = `🔄 **Status atualizado para:** ${statusToUpdate}`;
     }
-  };
+
+    // Persiste atualização e mensagem do sistema
+    await ticketService.updateTicket(ticketId, updateData);
+    await messageService.sendMessage(ticketId, {
+      userId: user.uid,
+      remetenteNome: userProfile.nome || user.email,
+      conteudo: systemMessageContent,
+      criadoEm: new Date(),
+      type: 'system'
+    });
+
+    // Limpa UI
+    setConclusionDescription('');
+    await loadTicketData();
+  } catch (e) {
+    console.error(e);
+    alert('Erro ao atualizar status');
+  } finally {
+    setUpdating(false);
+  }
+};
+;
   
   const handleSendMessage = async () => {
     if (!newMessage.trim() && chatImages.length === 0) return;
