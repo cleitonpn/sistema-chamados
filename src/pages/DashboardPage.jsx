@@ -753,7 +753,7 @@ const DashboardPage = () => {
                                   )}
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
-                                      {ticket.isConfidential && (
+                                      {(ticket.isConfidential || ticket.confidencial) && (
                                         <Lock className="h-4 w-4 text-orange-500 flex-shrink-0" title="Chamado Confidencial" />
                                       )}
                                       <h3 className="font-medium text-sm md:text-base truncate">{ticket.titulo}</h3>
@@ -763,7 +763,7 @@ const DashboardPage = () => {
                                         </Badge>
                                       )}
                                     </div>
-                                    <p className="text-xs md:text-sm text-gray-600 mt-1 line-clamp-2">{ticket.descricao}</p>
+                                    <p className="text-xs md:text-sm text-gray-600 mt-1 line-clamp-2">{(ticket.isConfidential || ticket.confidencial) ? 'Descrição confidencial' : ticket.descricao}</p>
                                   </div>
                                   
                                   <div className="flex items-center space-x-2 ml-2 flex-shrink-0">
