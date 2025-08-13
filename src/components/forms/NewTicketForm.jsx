@@ -519,6 +519,28 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         baseTicketData.evento = mainProject.feira;
       }
 
+      // Regra: Consultor abre para Produção com tipo manutenção (tapeçaria/eléctrica/marcenaria) -> vai ao PRODUTOR iniciar tratativa
+      const isConsultor = (userProfile?.funcao === 'consultor');
+      const isProducao = (formData.area === AREAS.PRODUCTION);
+      const tipoLower = (formData.tipo || '').toLowerCase();
+      const isMaintenanceType = isProducao && (
+        (tipoLower.includes('manuten') || tipoLower.includes('manutenc')) &&
+        (tipoLower.includes('tape') || tipoLower.includes('elétr') || tipoLower.includes('eletr') || tipoLower.includes('marcen'))
+      );
+
+      // Guarda área inicialmente escolhida para referência
+      baseTicketData.areaInicial = formData.area;
+
+      if (isConsultor && isMaintenanceType) {
+        baseTicketData.status = 'transferido_para_produtor';
+        baseTicketData.area = AREAS.PRODUCTION;
+        baseTicketData.transferidoPor = user.uid;
+        baseTicketData.transferidoEm = new Date();
+        if (mainProject?.produtorId) baseTicketData.produtorResponsavelId = mainProject.produtorId;
+      }
+
+      }
+
       // ✅ MUDANÇA: Remover lógica específica do produtor - aplicar para todas as áreas
       if (selectedOperator) {
         Object.assign(baseTicketData, { 
