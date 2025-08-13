@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { projectService } from '../../services/projectService';
-import { ticketService, TICKET_TYPES, PRIORITIES } from '../../services/ticketService';
-import { userService, AREAS } from '../../services/userService';
-import { imageService } from '../../services/imageService';
-import { TICKET_CATEGORIES, getCategoriesByArea } from '../../constants/ticketCategories';
-import notificationService from '../../services/notificationService';
+import { projectService } from '../services/projectService';
+import { ticketService, TICKET_TYPES, PRIORITIES } from '../services/ticketService';
+import { userService, AREAS } from '../services/userService';
+import { imageService } from '../services/imageService';
+import { TICKET_CATEGORIES, getCategoriesByArea } from '../constants/ticketCategories';
+import notificationService from '../services/notificationService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
