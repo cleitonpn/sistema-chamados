@@ -519,15 +519,13 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
       }
 
       // Regra: Consultor abre para Produção com tipo manutenção (tapeçaria/eléctrica/marcenaria) -> vai ao PRODUTOR iniciar tratativa
-            const isConsultor = (userProfile?.funcao === 'consultor');
+                  const isConsultor = (userProfile?.funcao === 'consultor');
       const isProducao = (formData.area === AREAS.PRODUCTION);
       const tipoRaw = (formData.tipo || '').toString();
-      const tipoLower = tipoRaw.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
-      const isMaintenanceType = isProducao && (
-        tipoLower.includes('manutenc') && (
-          tipoLower.includes('tapec') || tipoLower.includes('eletric') || tipoLower.includes('marcen')
-        )
-      );
+      const tipoNorm = tipoRaw.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
+      const targets = ['manutencao_tapecaria','manutencao_eletrica','manutencao_marcenaria'];
+      const tipoComp = tipoNorm.replace(/[^a-z0-9_]/g,'_');
+      const isMaintenanceType = isProducao && targets.some(k => tipoComp.includes(k));
       baseTicketData.areaInicial = formData.area;
       if (isConsultor && isMaintenanceType) {
         baseTicketData.status = 'transferido_para_produtor';
@@ -536,9 +534,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         baseTicketData.transferidoEm = new Date();
         if (mainProject?.produtorId) baseTicketData.produtorResponsavelId = mainProject.produtorId;
       }
-      if (selectedOperator) {
-        Object.assign(baseTicketData, { 
-          atribuidoA: selectedOperator,
+dOperator,
           atribuidoEm: new Date(), 
           atribuidoPor: user.uid 
         });
