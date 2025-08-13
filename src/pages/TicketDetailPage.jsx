@@ -162,16 +162,6 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
     setProject(p);
   };
 
-  const markNotificationsAsRead = async () => {
-    if (!user?.uid || !ticketId) return;
-    try {
-      await notificationService.markTicketNotificationsAsRead(user.uid, ticketId);
-    } catch (error) {
-      console.error('❌ Erro ao marcar notificações como lidas:', error);
-    }
-  };
-
-
   useEffect(() => {
     if (ticketId && user) {
       loadTicketData();
@@ -181,22 +171,32 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
 
   useEffect(() => {
     if (ticket && userProfile && user) {
-      if (ticket.confidencial || ticket.isConfidential) {
-        const isCreator   = ticket.criadoPor === user.uid;
-        const isAdmin     = userProfile.funcao === 'administrador';
-        const isGerente   = userProfile.funcao === 'gerente';
-        const isOperator  = userProfile.funcao === 'operador';
-        const areaOp      = userProfile.area;
-        const operatorInvolved = isOperator && (
-          [ticket.area, ticket.areaDeOrigem, ticket.areaDestino, ticket.areaQueRejeitou].includes(areaOp) ||
-          (Array.isArray(ticket.areasEnvolvidas) && ticket.areasEnvolvidas.includes(areaOp))
-        );
-        if (!isCreator && !isAdmin && !isGerente && !operatorInvolved) {
+      if (ticket.isConfidential) {
+        const isCreator = ticket.criadoPor === user.uid;
+
+    // Criador pode cancelar quando o chamado foi devolvido
+    if (isCreator && currentStatus === 'enviado_para_area') {
+        return [{ value: 'cancelado', label: 'Cancelar Chamado' }];
+    }
+        const isAdmin = userProfile.funcao === 'administrador';
+        const isInvolvedOperator = userProfile.funcao === 'operador' &&
+                                   (userProfile.area === ticket.area || userProfile.area === ticket.areaDeOrigem);
+
+        if (!isCreator && !isAdmin && !isInvolvedOperator) {
           setAccessDenied(true);
         }
       }
     }
   }, [ticket, userProfile, user]);
+
+  const markNotificationsAsRead = async () => {
+    if (!user?.uid || !ticketId) return;
+    try {
+      await notificationService.markTicketNotificationsAsRead(user.uid, ticketId);
+    } catch (error) {
+      console.error('❌ Erro ao marcar notificações como lidas:', error);
+    }
+  };
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -1303,7 +1303,7 @@ updateData.canceladoEm = new Date();
                 <CardContent>
                   <div className="space-y-4">
                     <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-sm text-blue-800 mb-2"><strong>Produtor do Projeto:</strong> {resolveUserNameByProjectField(project, 'produtor') || 'Não identificado'}</p>
+                      <p className="text-sm text-blue-800 mb-2"><strong>Produtor do Projeto:</strong> {users.find(u => u.uid === project.produtorId)?.nome || 'Não identificado'}</p>
                       <p className="text-xs text-blue-600">O chamado será transferido para o produtor responsável por este projeto.</p>
                     </div>
                     <Button
@@ -1384,7 +1384,7 @@ updateData.canceladoEm = new Date();
                   <div>
                     <Label className="text-xs sm:text-sm font-medium text-gray-700">Produtor</Label>
                     <p className="text-sm sm:text-base text-gray-900 break-words">
-                      {resolveUserNameByProjectField(project, 'produtor') || 'Não identificado'}
+                      {users.find(u => u.uid === project.produtorId)?.nome || 'Não identificado'}
                     </p>
                   </div>
                 )}
@@ -1392,7 +1392,7 @@ updateData.canceladoEm = new Date();
                   <div>
                     <Label className="text-xs sm:text-sm font-medium text-gray-700">Consultor</Label>
                     <p className="text-sm sm:text-base text-gray-900 break-words">
-                      {resolveUserNameByProjectField(project, 'consultor') || 'Não identificado'}
+                      {users.find(u => u.uid === project.consultorId)?.nome || 'Não identificado'}
                     </p>
                   </div>
                 )}
