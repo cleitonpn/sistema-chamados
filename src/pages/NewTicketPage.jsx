@@ -1,52 +1,1025 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation, useSearchParams } from 'react-router-dom';
-import Header from '../components/Header';
-import NewTicketForm from '../components/forms/NewTicketForm';
+import { useAuth } from '../../contexts/AuthContext';
+import { projectService } from '../../services/projectService';
+import { ticketService, TICKET_TYPES, PRIORITIES } from '../../services/ticketService';
+import { userService, AREAS } from '../../services/userService';
+import { imageService } from '../../services/imageService';
+import { TICKET_CATEGORIES, getCategoriesByArea } from '../../constants/ticketCategories';
+import notificationService from '../../services/notificationService';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Loader2, Upload, X, AlertCircle, Bot, Sparkles, RefreshCw, TrendingUp, Lock, Link as LinkIcon, Plus, Minus } from 'lucide-react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { collection, getDocs, doc, setDoc, getDoc, query, orderBy, limit, where } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 
-const NewTicketPage = () => {
-  const location = useLocation();
-  const [searchParams] = useSearchParams();
-  const [linkedTicketData, setLinkedTicketData] = useState(null);
+// A classe DynamicAITemplateService permanece inalterada
+class DynamicAITemplateService {
+  constructor() {
+    this.templatesCollection = 'ai_templates';
+    this.analyticsCollection = 'ai_analytics';
+  }
 
-  // ✅ NOVO: Verificar se há chamado vinculado nos parâmetros da URL
-  useEffect(() => {
-    const linkedParam = searchParams.get('linked');
-    
-    if (linkedParam) {
-      try {
-        const linkedData = JSON.parse(decodeURIComponent(linkedParam));
-        setLinkedTicketData(linkedData);
-        console.log('Chamado vinculado detectado:', linkedData);
-      } catch (error) {
-        console.error('Erro ao processar parâmetro de chamado vinculado:', error);
-      }
+  async loadAITemplates() {
+    try {
+      const templatesRef = collection(db, this.templatesCollection);
+      const q = query(templatesRef, orderBy('confidence', 'desc'), limit(10));
+      const snapshot = await getDocs(q);
+      
+      const templates = [];
+      snapshot.forEach((doc) => {
+        templates.push({ id: doc.id, ...doc.data() });
+      });
+      
+      console.log('🤖 Templates IA carregados:', templates.length);
+      return templates;
+    } catch (error) {
+      console.error('❌ Erro ao carregar templates IA:', error);
+      return [];
     }
-  }, [searchParams]);
+  }
+
+  async analyzeAndUpdateTemplates() {
+    try {
+      console.log('🔍 Iniciando análise automática de chamados...');
+      
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const ticketsRef = collection(db, 'tickets');
+      const q = query(
+        ticketsRef, 
+        where('createdAt', '>=', thirtyDaysAgo),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      
+      const tickets = [];
+      snapshot.forEach((doc) => {
+        tickets.push({ id: doc.id, ...doc.data() });
+      });
+      
+      console.log('📊 Chamados analisados:', tickets.length);
+      
+      const patterns = {};
+      tickets.forEach(ticket => {
+        const key = `${ticket.area}_${ticket.tipo}`;
+        if (!patterns[key]) {
+          patterns[key] = {
+            area: ticket.area,
+            tipo: ticket.tipo,
+            titles: [],
+            descriptions: [],
+            priorities: [],
+            count: 0
+          };
+        }
+        
+        patterns[key].titles.push(ticket.titulo);
+        patterns[key].descriptions.push(ticket.descricao);
+        patterns[key].priorities.push(ticket.prioridade);
+        patterns[key].count++;
+      });
+      
+      const newTemplates = [];
+      Object.entries(patterns).forEach(([key, pattern]) => {
+        if (pattern.count >= 3) {
+          const template = this.generateTemplateFromPattern(key, pattern);
+          if (template) {
+            newTemplates.push(template);
+          }
+        }
+      });
+      
+      for (const template of newTemplates) {
+        await this.saveTemplate(template);
+      }
+      
+      console.log('✅ Templates atualizados:', newTemplates.length);
+      return newTemplates;
+    } catch (error) {
+      console.error('❌ Erro na análise automática:', error);
+      return [];
+    }
+  }
+
+  generateTemplateFromPattern(key, pattern) {
+    try {
+      const mostCommonTitle = this.getMostCommonPhrase(pattern.titles);
+      const mostCommonPriority = this.getMostCommon(pattern.priorities);
+      const commonPhrases = this.extractCommonPhrases(pattern.descriptions);
+      
+      const template = {
+        id: `auto_${key}_${Date.now()}`,
+        area: pattern.area,
+        tipo: pattern.tipo,
+        titulo: mostCommonTitle || `Solicitação ${pattern.area}`,
+        descricao: this.generateDescriptionTemplate(pattern.area, pattern.tipo, commonPhrases),
+        prioridade: mostCommonPriority || 'media',
+        confidence: Math.min(pattern.count / 10, 1),
+        isAutoGenerated: true,
+        createdAt: new Date(),
+        usageCount: 0,
+        icon: this.getIconForArea(pattern.area),
+        tags: [pattern.area, pattern.tipo, 'auto-generated']
+      };
+      
+      return template;
+    } catch (error) {
+      console.error('❌ Erro ao gerar template:', error);
+      return null;
+    }
+  }
+
+  getMostCommon(array) {
+    const counts = {};
+    array.forEach(item => {
+      counts[item] = (counts[item] || 0) + 1;
+    });
+    
+    return Object.entries(counts)
+      .sort(([,a], [,b]) => b - a)[0]?.[0];
+  }
+
+  getMostCommonPhrase(titles) {
+    const words = titles.join(' ').toLowerCase().split(/\s+/);
+    const phrases = [];
+    
+    for (let i = 0; i < words.length - 2; i++) {
+      phrases.push(`${words[i]} ${words[i+1]} ${words[i+2]}`);
+    }
+    
+    return this.getMostCommon(phrases);
+  }
+
+  generateDescriptionTemplate(area, tipo, commonPhrases) {
+    const templates = {
+      'comunicacao_visual': {
+        'arte_grafica': `Solicitação de arte gráfica.\n\nTipo: [ESPECIFICAR_TIPO]\nFormato: [DIMENSÕES]\nPrazo: [DATA_ENTREGA]\n\nDescrição detalhada:\n[DETALHES_DA_ARTE]`,
+        'impressao': `Solicitação de impressão.\n\nMaterial: [TIPO_MATERIAL]\nQuantidade: [QTD]\nFormato: [TAMANHO]\nAcabamento: [ESPECIFICAR]`,
+        'sinalizacao': `Solicitação de sinalização.\n\nTipo: [PLACA/BANNER/ADESIVO]\nLocal: [ONDE_INSTALAR]\nTexto: [CONTEÚDO]\nDimensões: [TAMANHO]`
+      },
+      'almoxarifado': {
+        'pedido_material': `Solicitação de material do almoxarifado.\n\nMaterial: [TIPO_MATERIAL]\nQuantidade: [QTD]\nLocal de entrega: [LOCAL]\nPrazo: [DATA_NECESSÁRIA]\n\nJustificativa:\n[MOTIVO_DA_SOLICITAÇÃO]`,
+        'pedido_mobiliario': `Pedido de mobiliário.\n\nItem: [ESPECIFICAR_MOBILIÁRIO]\nQuantidade: [QTD]\nLocal: [DESTINO]`
+      }
+    };
+    
+    return templates[area]?.[tipo] || `Solicitação relacionada a ${area} - ${tipo}.\n\nDescrição: [ESPECIFICAR]\nPrazo: [DATA]\nObservações: [INFORMAÇÕES_ADICIONAIS]`;
+  }
+
+  extractCommonPhrases(descriptions) {
+    const allText = descriptions.join(' ').toLowerCase();
+    const phrases = allText.match(/\b\w+\s+\w+\s+\w+\b/g) || [];
+    
+    const phraseCount = {};
+    phrases.forEach(phrase => {
+      phraseCount[phrase] = (phraseCount[phrase] || 0) + 1;
+    });
+    
+    return Object.entries(phraseCount)
+      .filter(([phrase, count]) => count > 1)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 5)
+      .map(([phrase]) => phrase);
+  }
+
+  getIconForArea(area) {
+    const icons = {
+      'comunicacao_visual': '🎨',
+      'producao': '🔧',
+      'almoxarifado': '📦',
+      'operacional': '⚙️',
+      'logistica': '🚚',
+      'locacao': '🏢',
+      'compras': '🛒',
+      'financeiro': '💰'
+    };
+    return icons[area] || '📋';
+  }
+
+  async saveTemplate(template) {
+    try {
+      const templateRef = doc(db, this.templatesCollection, template.id);
+      await setDoc(templateRef, template);
+      console.log('✅ Template salvo:', template.id);
+    } catch (error) {
+      console.error('❌ Erro ao salvar template:', error);
+    }
+  }
+
+  async recordTemplateUsage(templateId, success = true) {
+    try {
+      const usageRef = doc(db, 'ai_template_usage', `${templateId}_${Date.now()}`);
+      await setDoc(usageRef, {
+        templateId,
+        success,
+        usedAt: new Date(),
+        userId: 'current_user'
+      });
+    } catch (error) {
+      console.error('❌ Erro ao registrar uso:', error);
+    }
+  }
+}
+
+const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
+  const { user, userProfile } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  const [formData, setFormData] = useState({
+    titulo: '',
+    descricao: '',
+    area: '',
+    tipo: '',
+    prioridade: 'media',
+    isExtra: false,
+    motivoExtra: '',
+    isConfidential: false,
+    observacoes: ''
+  });
+  
+  const [projects, setProjects] = useState([]);
+  const [selectedProjects, setSelectedProjects] = useState([]); // ✅ MUDANÇA: Array para múltiplos projetos
+  const [selectedEvent, setSelectedEvent] = useState('');
+  const [operators, setOperators] = useState([]);
+  const [selectedOperator, setSelectedOperator] = useState('');
+  const [availableTypes, setAvailableTypes] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [images, setImages] = useState([]);
+  
+  const [aiTemplates, setAiTemplates] = useState([]);
+  const [loadingAI, setLoadingAI] = useState(false);
+  const [aiService] = useState(new DynamicAITemplateService());
+  const [selectedAITemplate, setSelectedAITemplate] = useState('');
+  
+  const [linkedTicket, setLinkedTicket] = useState(null);
+  const [loadingLinkedTicket, setLoadingLinkedTicket] = useState(true);
+
+  useEffect(() => {
+    const linkedTicketId = location.state?.linkedTicketId;
+    if (linkedTicketId) {
+      const fetchLinkedTicket = async () => {
+        try {
+          const ticketData = await ticketService.getTicketById(linkedTicketId);
+          if (ticketData) {
+            const projectData = await projectService.getProjectById(ticketData.projetoId);
+            setLinkedTicket({ 
+              ...ticketData, 
+              projectName: projectData?.nome || 'N/A', 
+              eventName: projectData?.feira || 'N/A' 
+            });
+            if (projectData) {
+              setSelectedEvent(projectData.feira);
+              setSelectedProjects([projectData.id]); // ✅ MUDANÇA: Array
+            }
+          }
+        } catch (err) {
+          console.error("Erro ao buscar chamado vinculado:", err);
+        } finally {
+          setLoadingLinkedTicket(false);
+        }
+      };
+      fetchLinkedTicket();
+    } else {
+      setLoadingLinkedTicket(false);
+    }
+  }, [location.state]);
+
+  useEffect(() => {
+    loadProjects();
+    loadAITemplates();
+  }, []);
+
+  const loadAITemplates = async () => {
+    setLoadingAI(true);
+    try {
+      const templates = await aiService.loadAITemplates();
+      setAiTemplates(templates);
+    } catch (error) {
+      console.error('❌ Erro ao carregar templates IA:', error);
+    } finally {
+      setLoadingAI(false);
+    }
+  };
+
+  const updateAITemplates = async () => {
+    setLoadingAI(true);
+    try {
+      await aiService.analyzeAndUpdateTemplates();
+      await loadAITemplates();
+    } catch (error) {
+      console.error('❌ Erro ao atualizar templates IA:', error);
+    } finally {
+      setLoadingAI(false);
+    }
+  };
+
+  useEffect(() => {
+    if (formData.area) {
+      loadTypesByArea(formData.area);
+      // ✅ MUDANÇA: Remover filtro do produtor - carregar operadores para to      loadOperatorsByArea(formData.area);
+    } else {
+      setAvailableTypes([]);
+      setOperators([]);
+      setSelectedOperator('');
+    }
+  }, [formData.area]);
+
+  const loadProjects = async () => {
+    try {
+      const projectsData = await projectService.getAllProjects();
+      let filteredProjects = [];
+      
+      if (userProfile?.funcao === 'administrador' || userProfile?.funcao === 'gerente' || userProfile?.funcao === 'operador') {
+        filteredProjects = projectsData.filter(project => project.status !== 'encerrado');
+      } else if (userProfile?.funcao === 'consultor') {
+        const userId = userProfile.id || user.uid;
+        filteredProjects = projectsData.filter(project => {
+          const isAssigned = project.consultorId === userId ||
+                            project.consultorUid === userId ||
+                            project.consultorEmail === (userProfile.email || user.email) ||
+                            project.consultorNome === userProfile.nome;
+          return isAssigned && project.status !== 'encerrado';
+        });
+      } else if (userProfile?.funcao === 'produtor') {
+        const userId = userProfile.id || user.uid;
+        filteredProjects = projectsData.filter(project => {
+          const isAssigned = project.produtorId === userId || 
+                            project.produtorUid === userId ||
+                            project.produtorEmail === userProfile.email ||
+                            project.produtorNome === userProfile.nome;
+          return isAssigned && project.status !== 'encerrado';
+        });
+      }
+      
+      setProjects(filteredProjects);
+      
+      if (projectId) {
+        const project = filteredProjects.find(p => p.id === projectId);
+        if (project) {
+          setSelectedEvent(project.feira);
+          setSelectedProjects([projectId]); // ✅ MUDANÇA: Array
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao carregar projetos:', error);
+      setError('Erro ao carregar projetos');
+    }
+  };
+
+  const loadTypesByArea = async (area) => {
+    try {
+      const categories = getCategoriesByArea(area);
+      setAvailableTypes(categories);
+    } catch (error) {
+      console.error('Erro ao carregar tipos:', error);
+    }
+  };
+
+  const loadOperatorsByArea = async (area) => {
+    try {
+      const users = await userService.getAllUsers();
+      const areaOperators = users.filter(user => 
+        user.funcao === 'operador' && 
+        user.area === area && 
+        user.ativo !== false
+      );
+      setOperators(areaOperators);
+    } catch (error) {
+      console.error('Erro ao carregar operadores:', error);
+    }
+  };
+
+  const getUniqueEvents = () => {
+    const events = [...new Set(projects.map(project => project.feira))];
+    return events.filter(event => event);
+  };
+
+  const getProjectsByEvent = (event) => {
+    return projects.filter(project => project.feira === event);
+  };
+
+  const handleEventChange = (event) => {
+    setSelectedEvent(event);
+    setSelectedProjects([]); // ✅ MUDANÇA: Limpar array de projetos
+  };
+
+  // ✅ NOVA FUNÇÃO: Gerenciar seleção múltipla de projetos
+  const handleProjectToggle = (projectId) => {
+    setSelectedProjects(prev => {
+      if (prev.includes(projectId)) {
+        return prev.filter(id => id !== projectId);
+      } else {
+        return [...prev, projectId];
+      }
+    });
+  };
+
+  const handleInputChange = (field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleImageUpload = (event) => {
+    const files = Array.from(event.target.files);
+    const newImages = files.map(file => ({
+      file,
+      preview: URL.createObjectURL(file),
+      name: file.name
+    }));
+    setImages(prev => [...prev, ...newImages]);
+  };
+
+  const removeImage = (index) => {
+    setImages(prev => {
+      const newImages = [...prev];
+      URL.revokeObjectURL(newImages[index].preview);
+      newImages.splice(index, 1);
+      return newImages;
+    });
+  };
+
+  const applyAITemplate = (template) => {
+    setFormData(prev => ({
+      ...prev,
+      titulo: template.titulo,
+      descricao: template.descricao,
+      area: template.area,
+      tipo: template.tipo,
+      prioridade: template.prioridade
+    }));
+    setSelectedAITemplate(template.id);
+    aiService.recordTemplateUsage(template.id, true);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!formData.titulo.trim() || !formData.descricao.trim() || !formData.area || !formData.tipo) {
+      setError('Preencha todos os campos obrigatórios');
+      return;
+    }
+
+    if (selectedProjects.length === 0) { // ✅ MUDANÇA: Verificar array
+      setError('Selecione pelo menos um projeto');
+      return;
+    }
+
+    if (formData.isExtra && !formData.motivoExtra.trim()) {
+      setError('Informe o motivo do item extra');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      let ticketId;
+      
+      // ✅ MUDANÇA: Criar chamado para múltiplos projetos
+      const baseTicketData = {
+        titulo: formData.titulo.trim(),
+        descricao: formData.descricao.trim(),
+        area: formData.area,
+        tipo: formData.tipo,
+        prioridade: formData.prioridade,
+        status: 'aberto',
+        criadoPor: user.uid,
+        criadoPorNome: userProfile?.nome || user.email,
+        criadoPorFuncao: userProfile?.funcao || 'usuario',
+        criadoEm: new Date(),
+        itemExtra: formData.isExtra,
+        motivoItemExtra: formData.isExtra ? formData.motivoExtra.trim() : null,
+        confidencial: formData.isConfidential,
+        observacoes: formData.observacoes.trim() || null,
+        projetos: selectedProjects.map(pid => ({ id: pid, titulo: formData.titulo.trim(), tipo: formData.tipo, status: 'aberto', responsavelAtual: formData.area })), // ✅ MUDANÇA: array de objetos
+        linkedTicketId: linkedTicket?.id || null,
+        areaDeOrigem: formData.area
+      };
+
+      // Para compatibilidade, usar o primeiro projeto como principal
+      const mainProject = projects.find(p => p.id === selectedProjects[0]);
+      if (mainProject) {
+        baseTicketData.projetoId = mainProject.id;
+        baseTicketData.projetoNome = mainProject.nome;
+        baseTicketData.evento = mainProject.feira;
+      }
+
+      // Regra: Consultor abre para Produção com tipo manutenção (tapeçaria/eléctrica/marcenaria) -> vai ao PRODUTOR iniciar tratativa
+                  const isConsultor = (userProfile?.funcao === 'consultor');
+      const isProducao = (formData.area === AREAS.PRODUCTION);
+      const tipoRaw = (formData.tipo || '').toString();
+      const tipoNorm = tipoRaw.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
+      const targets = ['manutencao_tapecaria','manutencao_eletrica','manutencao_marcenaria'];
+      const tipoComp = tipoNorm.replace(/[^a-z0-9_]/g,'_');
+      const isMaintenanceType = isProducao && targets.some(k => tipoComp.includes(k));
+      baseTicketData.areaInicial = formData.area;
+      if (isConsultor && isMaintenanceType) {
+        baseTicketData.status = 'transferido_para_produtor';
+        baseTicketData.area = AREAS.PRODUCTION;
+        baseTicketData.transferidoPor = user.uid;
+        baseTicketData.transferidoEm = new Date();
+        if (mainProject?.produtorId) baseTicketData.produtorResponsavelId = mainProject.produtorId;
+        // Ajusta a lista de projetos para refletir o responsável correto
+        baseTicketData.projetos = baseTicketData.projetos.map(p => ({ ...p, status: 'transferido_para_produtor', responsavelAtual: 'produtor' }));
+      }
+
+
+      // Atribuição manual: se um operador foi escolhido pelo criador
+      if (selectedOperator) {
+        Object.assign(baseTicketData, {
+          atribuidoA: selectedOperator,
+          atribuidoEm: new Date(),
+          atribuidoPor: user.uid
+        });
+      }
+
+      // Histórico inicial respeitando o status definido
+      baseTicketData.historicoStatus = [{
+        comentario: 'Chamado criado',
+        data: new Date(),
+        novoStatus: baseTicketData.status,
+        responsavel: user.uid,
+        statusAnterior: null
+      }];
+      
+      ticketId = await ticketService.createTicket(baseTicketData);
+
+      try {
+        await notificationService.notifyNewTicket(ticketId, baseTicketData, user.uid);
+      } catch (notificationError) {
+        console.error('Falha não-crítica ao enviar notificação:', notificationError);
+      }
+      
+      setTimeout(() => updateAITemplates(), 2000);
+
+      if (images.length > 0) {
+        try {
+          const uploadedImages = await imageService.uploadMultipleImages(images.map(img => img.file), ticketId);
+          await ticketService.updateTicket(ticketId, {
+            imagens: uploadedImages.map(img => ({ url: img.url, name: img.name, path: img.path }))
+          });
+        } catch (uploadError) {
+          alert('Chamado criado com sucesso, mas houve erro no upload das imagens.');
+        }
+      }
+      
+      if (onSuccess) {
+        onSuccess(ticketId);
+      } else {
+        navigate('/dashboard');
+      }
+    } catch (error) {
+      console.error('Erro ao criar chamado:', error);
+      setError('Erro ao criar chamado. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const areaOptions = [
+    { value: AREAS.LOGISTICS, label: 'Logística' },
+    { value: AREAS.WAREHOUSE, label: 'Almoxarifado' },
+    { value: AREAS.VISUAL_COMMUNICATION, label: 'Comunicação Visual' },
+    { value: AREAS.RENTAL, label: 'Locação' },
+    { value: AREAS.PURCHASES, label: 'Compras' },
+    { value: AREAS.PRODUCTION, label: 'Produção' },
+    { value: AREAS.OPERATIONS, label: 'Operacional' },
+    { value: AREAS.FINANCIAL, label: 'Financeiro' },
+    { value: AREAS.PROJECTS, label: 'Projetos' },
+    { value: AREAS.LOGOTIPIA, label: 'Logotipia' },
+    { value: 'detalhamento_tecnico', label: 'Detalhamento Técnico' },
+    { value: 'sub_locacao', label: 'Sub-locação' }
+  ];
+
+  const priorityOptions = [
+    { value: PRIORITIES.LOW, label: 'Baixa', color: 'bg-gray-100 text-gray-800' },
+    { value: PRIORITIES.MEDIUM, label: 'Média', color: 'bg-yellow-100 text-yellow-800' },
+    { value: PRIORITIES.HIGH, label: 'Alta', color: 'bg-orange-100 text-orange-800' },
+    { value: PRIORITIES.URGENT, label: 'Urgente', color: 'bg-red-100 text-red-800' }
+  ];
+
+  if (loadingLinkedTicket) {
+    return (
+      <Card className="w-full max-w-2xl mx-auto">
+        <CardContent className="p-8 flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
-      <main className="px-4 py-6 md:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="mb-6">
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-              {linkedTicketData ? 'Novo Chamado Vinculado' : 'Novo Chamado'}
-            </h1>
-            <p className="text-gray-600 mt-1">
-              {linkedTicketData 
-                ? `Criando chamado de pagamento vinculado ao chamado #${linkedTicketData.numero}`
-                : 'Preencha as informações abaixo para criar um novo chamado'
-              }
-            </p>
+    <Card className="w-full max-w-2xl mx-auto">
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          Novo Chamado
+          {onClose && (
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </CardTitle>
+        <CardDescription>
+          Preencha os dados para criar um novo chamado
+        </CardDescription>
+      </CardHeader>
+      
+      <CardContent>
+        {linkedTicket && (
+          <Card className="mb-6 bg-amber-50 border-amber-200">
+            <CardHeader>
+              <CardTitle className="flex items-center text-base text-amber-900">
+                <LinkIcon className="h-4 w-4 mr-2" />
+                Chamado Vinculado
+              </CardTitle>
+              <CardDescription>
+                Este novo chamado será vinculado ao chamado abaixo.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-sm space-y-1">
+              <p><strong>Título Original:</strong> {linkedTicket.titulo}</p>
+              <p><strong>Projeto:</strong> {linkedTicket.projectName}</p>
+              <p><strong>Evento:</strong> {linkedTicket.eventName}</p>
+              <p><strong>ID do Chamado Original:</strong> 
+                <Link to={`/chamado/${linkedTicket.id}`} className="text-blue-600 hover:underline ml-1">
+                  {linkedTicket.id}
+                </Link>
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="event">Selecione o Evento *</Label>
+            <Select value={selectedEvent} onValueChange={handleEventChange} disabled={!!linkedTicket}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o evento" />
+              </SelectTrigger>
+              <SelectContent>
+                {getUniqueEvents().map((event) => (
+                  <SelectItem key={event} value={event}>
+                    🎯 {event}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          
-          {/* ✅ NOVO: Passar linkedTicketData como prop */}
-          <NewTicketForm linkedTicket={linkedTicketData} />
-        </div>
-      </main>
-    </div>
+
+          {/* ✅ NOVA SEÇÃO: Seleção múltipla de projetos */}
+          <div className="space-y-2">
+            <Label htmlFor="projects">Selecione os Projetos * (múltipla seleção)</Label>
+            <div className="text-sm text-gray-600 mb-2">
+              Selecione um ou mais projetos para este chamado. Útil para compras em quantidade e divisão de centro de custo.
+            </div>
+            
+            {selectedEvent ? (
+              <div className="border rounded-lg p-4 max-h-64 overflow-y-auto">
+                {getProjectsByEvent(selectedEvent).map((project) => (
+                  <div key={project.id} className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded">
+                    <Checkbox
+                      id={`project-${project.id}`}
+                      checked={selectedProjects.includes(project.id)}
+                      onCheckedChange={() => handleProjectToggle(project.id)}
+                      disabled={!!linkedTicket}
+                    />
+                    <label 
+                      htmlFor={`project-${project.id}`} 
+                      className="flex-1 cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{project.nome}</span>
+                        <span className="text-xs text-gray-500">• {project.local}</span>
+                      </div>
+                      {project.produtorNome && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          Produtor: {project.produtorNome}
+                        </div>
+                      )}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="border rounded-lg p-4 text-center text-gray-500">
+                Primeiro selecione um evento
+              </div>
+            )}
+            
+            {/* Projetos selecionados */}
+            {selectedProjects.length > 0 && (
+              <div className="mt-3 p-4 bg-blue-50 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium text-blue-800">📋 Projetos Selecionados ({selectedProjects.length})</h4>
+                  <Badge variant="secondary">{selectedEvent}</Badge>
+                </div>
+                <div className="space-y-2">
+                  {selectedProjects.map(projectId => {
+                    const project = projects.find(p => p.id === projectId);
+                    return project ? (
+                      <div key={projectId} className="flex items-center justify-between bg-white p-2 rounded border">
+                        <div className="flex-1">
+                          <div className="font-medium text-sm">{project.nome}</div>
+                          <div className="text-xs text-gray-500">{project.local} • {project.metragem}</div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleProjectToggle(projectId)}
+                          disabled={!!linkedTicket}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ) : null;
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2 border-t pt-4">
+            <Label htmlFor="area">Área de Destino *</Label>
+            <Select value={formData.area} onValueChange={(value) => handleInputChange('area', value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione a área" />
+              </SelectTrigger>
+              <SelectContent>
+                {areaOptions.map((area) => (
+                  <SelectItem key={area.value} value={area.value}>
+                    {area.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {formData.area && availableTypes.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="tipo">Tipo de Solicitação *</Label>
+              <Select value={formData.tipo} onValueChange={(value) => handleInputChange('tipo', value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableTypes.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* ✅ MUDANÇA: Mostrar operadores para todas as áreas */}
+          {operators.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="operator">Operador Responsável (opcional)</Label>
+              <Select value={selectedOperator} onValueChange={setSelectedOperator}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um operador" />
+                </SelectTrigger>
+                <SelectContent>
+                  {operators.map((operator) => (
+                    <SelectItem key={operator.id} value={operator.id}>
+                      {operator.nome} - {operator.area}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="titulo">Título *</Label>
+            <Input
+              id="titulo"
+              value={formData.titulo}
+              onChange={(e) => handleInputChange('titulo', e.target.value)}
+              placeholder="Título do chamado"
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="descricao">Descrição *</Label>
+            <Textarea
+              id="descricao"
+              value={formData.descricao}
+              onChange={(e) => handleInputChange('descricao', e.target.value)}
+              placeholder="Descreva detalhadamente a solicitação"
+              rows={4}
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="prioridade">Prioridade</Label>
+            <Select value={formData.prioridade} onValueChange={(value) => handleInputChange('prioridade', value)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {priorityOptions.map((priority) => (
+                  <SelectItem key={priority.value} value={priority.value}>
+                    <div className="flex items-center space-x-2">
+                      <Badge className={priority.color}>{priority.label}</Badge>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="isExtra"
+              checked={formData.isExtra}
+              onCheckedChange={(checked) => handleInputChange('isExtra', checked)}
+            />
+            <Label htmlFor="isExtra">Item Extra</Label>
+          </div>
+
+          {formData.isExtra && (
+            <div className="space-y-2">
+              <Label htmlFor="motivoExtra">Motivo do Item Extra *</Label>
+              <Textarea
+                id="motivoExtra"
+                value={formData.motivoExtra}
+                onChange={(e) => handleInputChange('motivoExtra', e.target.value)}
+                placeholder="Explique o motivo deste item ser considerado extra"
+                rows={2}
+                required
+              />
+            </div>
+          )}
+
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="isConfidential"
+              checked={formData.isConfidential}
+              onCheckedChange={(checked) => handleInputChange('isConfidential', checked)}
+            />
+            <Label htmlFor="isConfidential" className="flex items-center">
+              <Lock className="h-4 w-4 mr-1" />
+              Chamado Confidencial
+            </Label>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="observacoes">Observações Adicionais</Label>
+            <Textarea
+              id="observacoes"
+              value={formData.observacoes}
+              onChange={(e) => handleInputChange('observacoes', e.target.value)}
+              placeholder="Informações adicionais (opcional)"
+              rows={2}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="images">Anexar Imagens</Label>
+            <div className="flex items-center space-x-2">
+              <Input
+                id="images"
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="hidden"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => document.getElementById('images').click()}
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Selecionar Imagens
+              </Button>
+            </div>
+            
+            {images.length > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
+                {images.map((image, index) => (
+                  <div key={index} className="relative">
+                    <img
+                      src={image.preview}
+                      alt={image.name}
+                      className="w-full h-24 object-cover rounded border"
+                    />
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="absolute top-1 right-1 h-6 w-6 p-0"
+                      onClick={() => removeImage(index)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Templates IA */}
+          {aiTemplates.length > 0 && (
+            <div className="space-y-2 border-t pt-4">
+              <div className="flex items-center justify-between">
+                <Label>🤖 Templates Inteligentes</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={updateAITemplates}
+                  disabled={loadingAI}
+                >
+                  {loadingAI ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3 w-3" />
+                  )}
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {aiTemplates.slice(0, 4).map((template) => (
+                  <Button
+                    key={template.id}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => applyAITemplate(template)}
+                    className="text-left justify-start h-auto p-3"
+                  >
+                    <div className="flex items-start space-x-2">
+                      <span className="text-lg">{template.icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-xs truncate">{template.titulo}</div>
+                        <div className="text-xs text-gray-500 truncate">{template.area} • {template.tipo}</div>
+                        <div className="flex items-center mt-1">
+                          <TrendingUp className="h-3 w-3 text-green-500 mr-1" />
+                          <span className="text-xs text-green-600">{Math.round(template.confidence * 100)}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex space-x-4 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose || (() => navigate('/dashboard'))}
+              className="flex-1"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="flex-1"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Criando...
+                </>
+              ) : (
+                'Criar Chamado'
+              )}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 };
 
-export default NewTicketPage;
+export default NewTicketForm;
 
