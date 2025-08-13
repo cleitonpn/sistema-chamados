@@ -1022,4 +1022,3 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
 };
 
 export default NewTicketForm;
-
