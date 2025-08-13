@@ -539,8 +539,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         if (mainProject?.produtorId) baseTicketData.produtorResponsavelId = mainProject.produtorId;
       }
 
-      }
-
       // ✅ MUDANÇA: Remover lógica específica do produtor - aplicar para todas as áreas
       if (selectedOperator) {
         Object.assign(baseTicketData, { 
