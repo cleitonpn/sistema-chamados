@@ -162,6 +162,16 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
     setProject(p);
   };
 
+  const markNotificationsAsRead = async () => {
+    if (!user?.uid || !ticketId) return;
+    try {
+      await notificationService.markTicketNotificationsAsRead(user.uid, ticketId);
+    } catch (error) {
+      console.error('❌ Erro ao marcar notificações como lidas:', error);
+    }
+  };
+
+
   useEffect(() => {
     if (ticketId && user) {
       loadTicketData();
