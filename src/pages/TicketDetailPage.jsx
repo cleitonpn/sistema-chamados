@@ -174,22 +174,7 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
       if (ticket.confidencial || ticket.isConfidential) {
         const isCreator = ticket.criadoPor === user.uid;
 
-    // Criador pode cancelar quando o chamado foi devolvido
-    if (isCreator && currentStatus === 'enviado_para_area') {
-        return [{ value: 'cancelado', label: 'Cancelar Chamado' }];
-    }
-        const isAdmin = userProfile.funcao === 'administrador';
-        const isInvolvedOperator = userProfile.funcao === 'operador' &&
-                                   (userProfile.area === ticket.area || userProfile.area === ticket.areaDeOrigem);
-
-        if (!isCreator && !isAdmin && !isInvolvedOperator) {
-          setAccessDenied(true);
-        }
-      }
-    }
-  }, [ticket, userProfile, user]);
-
-  const markNotificationsAsRead = async () => {
+    const markNotificationsAsRead = async () => {
     if (!user?.uid || !ticketId) return;
     try {
       await notificationService.markTicketNotificationsAsRead(user.uid, ticketId);
