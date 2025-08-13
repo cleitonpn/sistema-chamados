@@ -1551,6 +1551,6 @@ updateData.canceladoEm = new Date();
       </div>
     </div>
   );
-};
+}
 
 export default TicketDetailPage;
