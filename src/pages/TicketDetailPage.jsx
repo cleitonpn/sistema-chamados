@@ -64,6 +64,25 @@ const [activeProjectId, setActiveProjectId] = useState(null);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
   const [accessDenied, setAccessDenied] = useState(false);
+  // Resolve nome do responsável do projeto a partir de possíveis formatos (Id/Uid/Nome/Email/responsaveis{})
+  const resolveUserNameByProjectField = (proj, base) => {
+    if (!proj) return null;
+    const id = proj?.[base + 'Id'] || proj?.[base + 'Uid'] || proj?.responsaveis?.[base]?.id;
+    if (id && Array.isArray(users)) {
+      const u = users.find(u => u.uid === id || u.id === id);
+      if (u?.nome) return u.nome;
+    }
+    const nome = proj?.[base + 'Nome'] || proj?.responsaveis?.[base]?.nome;
+    if (nome) return nome;
+    const email = proj?.[base + 'Email'] || proj?.responsaveis?.[base]?.email;
+    if (email && Array.isArray(users)) {
+      const u = users.find(u => u.email === email);
+      if (u?.nome) return u.nome;
+      return email;
+    }
+    return null;
+  };
+
 
   // Estados do chat
   const [newMessage, setNewMessage] = useState('');
@@ -171,18 +190,17 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
 
   useEffect(() => {
     if (ticket && userProfile && user) {
-      if (ticket.isConfidential) {
-        const isCreator = ticket.criadoPor === user.uid;
-
-    // Criador pode cancelar quando o chamado foi devolvido
-    if (isCreator && currentStatus === 'enviado_para_area') {
-        return [{ value: 'cancelado', label: 'Cancelar Chamado' }];
-    }
-        const isAdmin = userProfile.funcao === 'administrador';
-        const isInvolvedOperator = userProfile.funcao === 'operador' &&
-                                   (userProfile.area === ticket.area || userProfile.area === ticket.areaDeOrigem);
-
-        if (!isCreator && !isAdmin && !isInvolvedOperator) {
+      if (ticket.confidencial || ticket.isConfidential) {
+        const isCreator   = ticket.criadoPor === user.uid;
+        const isAdmin     = userProfile.funcao === 'administrador';
+        const isGerente   = userProfile.funcao === 'gerente';
+        const isOperator  = userProfile.funcao === 'operador';
+        const areaOp      = userProfile.area;
+        const operatorInvolved = isOperator && (
+          [ticket.area, ticket.areaDeOrigem, ticket.areaDestino, ticket.areaQueRejeitou].includes(areaOp) ||
+          (Array.isArray(ticket.areasEnvolvidas) && ticket.areasEnvolvidas.includes(areaOp))
+        );
+        if (!isCreator && !isAdmin && !isGerente && !operatorInvolved) {
           setAccessDenied(true);
         }
       }
@@ -835,7 +853,7 @@ updateData.canceladoEm = new Date();
               </p>
             </div>
             <div className="flex items-center">
-              {ticket.isConfidential && (
+              {(ticket.isConfidential || ticket.confidencial) && (
                 <Badge variant="outline" className="mr-2 border-orange-400 bg-orange-50 text-orange-700">
                   <Lock className="h-3 w-3 mr-1.5" />
                   Confidencial
@@ -1380,22 +1398,18 @@ updateData.canceladoEm = new Date();
                     </p>
                   </div>
                 )}
-                {project?.produtorId && (
-                  <div>
-                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Produtor</Label>
-                    <p className="text-sm sm:text-base text-gray-900 break-words">
-                      {users.find(u => u.uid === project.produtorId)?.nome || 'Não identificado'}
-                    </p>
-                  </div>
-                )}
-                {project?.consultorId && (
-                  <div>
-                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Consultor</Label>
-                    <p className="text-sm sm:text-base text-gray-900 break-words">
-                      {users.find(u => u.uid === project.consultorId)?.nome || 'Não identificado'}
-                    </p>
-                  </div>
-                )}
+                <div>
+                  <Label className="text-xs sm:text-sm font-medium text-gray-700">Produtor</Label>
+                  <p className="text-sm sm:text-base text-gray-900 break-words">
+                    {resolveUserNameByProjectField(project, 'produtor') || 'Não identificado'}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-xs sm:text-sm font-medium text-gray-700">Consultor</Label>
+                  <p className="text-sm sm:text-base text-gray-900 break-words">
+                    {resolveUserNameByProjectField(project, 'consultor') || 'Não identificado'}
+                  </p>
+                </div>
 {project && (
                   <div className="pt-3 mt-3 border-t">
                     <Button
