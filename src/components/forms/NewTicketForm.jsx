@@ -328,8 +328,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
   useEffect(() => {
     if (formData.area) {
       loadTypesByArea(formData.area);
-      // ✅ MUDANÇA: Remover filtro do produtor - carregar operadores para todas as áreas
-      loadOperatorsByArea(formData.area);
+      // ✅ MUDANÇA: Remover filtro do produtor - carregar operadores para to      loadOperatorsByArea(formData.area);
     } else {
       setAvailableTypes([]);
       setOperators([]);
@@ -537,7 +536,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         baseTicketData.transferidoEm = new Date();
         if (mainProject?.produtorId) baseTicketData.produtorResponsavelId = mainProject.produtorId;
       }
-das as áreas
       if (selectedOperator) {
         Object.assign(baseTicketData, { 
           atribuidoA: selectedOperator,
@@ -1012,3 +1010,4 @@ das as áreas
 };
 
 export default NewTicketForm;
+
