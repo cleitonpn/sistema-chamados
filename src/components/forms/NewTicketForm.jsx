@@ -345,8 +345,14 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
       if (userProfile?.funcao === 'administrador' || userProfile?.funcao === 'gerente' || userProfile?.funcao === 'operador') {
         filteredProjects = projectsData.filter(project => project.status !== 'encerrado');
       } else if (userProfile?.funcao === 'consultor') {
-        // ✅ MUDANÇA: Consultores podem ver todos os projetos ativos
-        filteredProjects = projectsData.filter(project => project.status !== 'encerrado');
+        const userId = userProfile.id || user.uid;
+        filteredProjects = projectsData.filter(project => {
+          const isAssigned = project.consultorId === userId ||
+                            project.consultorUid === userId ||
+                            project.consultorEmail === (userProfile.email || user.email) ||
+                            project.consultorNome === userProfile.nome;
+          return isAssigned && project.status !== 'encerrado';
+        });
       } else if (userProfile?.funcao === 'produtor') {
         const userId = userProfile.id || user.uid;
         filteredProjects = projectsData.filter(project => {
