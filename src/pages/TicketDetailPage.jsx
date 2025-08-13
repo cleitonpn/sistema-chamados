@@ -172,16 +172,21 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
   useEffect(() => {
     if (ticket && userProfile && user) {
       if (ticket.confidencial || ticket.isConfidential) {
-        const isCreator = ticket.criadoPor === user.uid;
-
-    const markNotificationsAsRead = async () => {
-    if (!user?.uid || !ticketId) return;
-    try {
-      await notificationService.markTicketNotificationsAsRead(user.uid, ticketId);
-    } catch (error) {
-      console.error('❌ Erro ao marcar notificações como lidas:', error);
+        const isCreator   = ticket.criadoPor === user.uid;
+        const isAdmin     = userProfile.funcao === 'administrador';
+        const isGerente   = userProfile.funcao === 'gerente';
+        const isOperator  = userProfile.funcao === 'operador';
+        const areaOp      = userProfile.area;
+        const operatorInvolved = isOperator && (
+          [ticket.area, ticket.areaDeOrigem, ticket.areaDestino, ticket.areaQueRejeitou].includes(areaOp) ||
+          (Array.isArray(ticket.areasEnvolvidas) && ticket.areasEnvolvidas.includes(areaOp))
+        );
+        if (!isCreator && !isAdmin && !isGerente && !operatorInvolved) {
+          setAccessDenied(true);
+        }
+      }
     }
-  };
+  }, [ticket, userProfile, user]);
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -1551,6 +1556,6 @@ updateData.canceladoEm = new Date();
       </div>
     </div>
   );
-}
+};
 
 export default TicketDetailPage;
