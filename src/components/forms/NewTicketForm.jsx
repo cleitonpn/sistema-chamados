@@ -465,7 +465,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
     aiService.recordTemplateUsage(template.id, true);
   };
 
-  const handleSubmit = async (e) => {
+    const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!formData.titulo.trim() || !formData.descricao.trim() || !formData.area || !formData.tipo) {
@@ -473,7 +473,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
       return;
     }
 
-    if (selectedProjects.length === 0) { // ✅ MUDANÇA: Verificar array
+    if (selectedProjects.length === 0) {
       setError('Selecione pelo menos um projeto');
       return;
     }
@@ -489,14 +489,13 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
     try {
       let ticketId;
       
-      // ✅ MUDANÇA: Criar chamado para múltiplos projetos
       const baseTicketData = {
         titulo: formData.titulo.trim(),
         descricao: formData.descricao.trim(),
         area: formData.area,
         tipo: formData.tipo,
         prioridade: formData.prioridade,
-        status: 'aberto',
+        status: 'aberto', // <<-- MUDANÇA 1: O padrão agora é SEMPRE 'aberto'
         criadoPor: user.uid,
         criadoPorNome: userProfile?.nome || user.email,
         criadoPorFuncao: userProfile?.funcao || 'usuario',
@@ -505,12 +504,12 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         motivoItemExtra: formData.isExtra ? formData.motivoExtra.trim() : null,
         confidencial: formData.isConfidential,
         observacoes: formData.observacoes.trim() || null,
-        projetos: selectedProjects, // ✅ MUDANÇA: Array de projetos
+        projetos: selectedProjects,
         linkedTicketId: linkedTicket?.id || null,
-        areaDeOrigem: formData.area
+        areaDeOrigem: formData.area,
+        areaInicial: formData.area, // Salva a área inicial para referência
       };
 
-      // Para compatibilidade, usar o primeiro projeto como principal
       const mainProject = projects.find(p => p.id === selectedProjects[0]);
       if (mainProject) {
         baseTicketData.projetoId = mainProject.id;
@@ -518,24 +517,23 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         baseTicketData.evento = mainProject.feira;
       }
 
-      // Regra: Consultor abre para Produção com tipo manutenção (tapeçaria/eléctrica/marcenaria) -> vai ao PRODUTOR iniciar tratativa
-                  const isConsultor = (userProfile?.funcao === 'consultor');
-      const isProducao = (formData.area === AREAS.PRODUCTION);
-      const tipoRaw = (formData.tipo || '').toString();
-      const tipoNorm = tipoRaw.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
-      const targets = ['manutencao_tapecaria','manutencao_eletrica','manutencao_marcenaria'];
-      const tipoComp = tipoNorm.replace(/[^a-z0-9_]/g,'_');
-      const isMaintenanceType = isProducao && targets.some(k => tipoComp.includes(k));
-      baseTicketData.areaInicial = formData.area;
-      if (isConsultor && isMaintenanceType) {
+      // <<-- MUDANÇA 2: Lógica de exceção para o consultor foi movida e isolada aqui
+      const isConsultor = (userProfile?.funcao === 'consultor');
+      const isProducao = (formData.area === 'producao'); // Usando o valor direto
+      const tipoNormalizado = (formData.tipo || '').toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      const tiposManutencao = ['manutencao_tapecaria', 'manutencao_eletrica', 'manutencao_marcenaria'];
+      const isMaintenanceType = tiposManutencao.some(tipo => tipoNormalizado.includes(tipo));
+
+      if (isConsultor && isProducao && isMaintenanceType) {
+        // APLICA A EXCEÇÃO: Somente neste caso, o status é alterado
         baseTicketData.status = 'transferido_para_produtor';
-        baseTicketData.area = AREAS.PRODUCTION;
         baseTicketData.transferidoPor = user.uid;
         baseTicketData.transferidoEm = new Date();
-        if (mainProject?.produtorId) baseTicketData.produtorResponsavelId = mainProject.produtorId;
+        if (mainProject?.produtorId) {
+          baseTicketData.produtorResponsavelId = mainProject.produtorId;
+        }
       }
 
-      // Atribuição manual: se um operador foi escolhido pelo criador
       if (selectedOperator) {
         Object.assign(baseTicketData, {
           atribuidoA: selectedOperator,
@@ -546,6 +544,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
 
       ticketId = await ticketService.createTicket(baseTicketData);
 
+      // O resto da função continua igual...
       try {
         await notificationService.notifyNewTicket(ticketId, baseTicketData, user.uid);
       } catch (notificationError) {
