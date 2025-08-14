@@ -856,7 +856,7 @@ updateData.canceladoEm = new Date();
               </p>
             </div>
             <div className="flex items-center">
-              {(ticket.isConfidential || ticket.confidencial) && (
+              {(ticket.isConfidential || ticket.confidencial) &&
                 <Badge variant="outline" className="mr-2 border-orange-400 bg-orange-50 text-orange-700">
                   <Lock className="h-3 w-3 mr-1.5" />
                   Confidencial
