@@ -65,7 +65,25 @@ const TicketDetailPage = () => {
 
   // Estados principais
   const [ticket, setTicket] = useState(null);
-  const [project, setProject] = useState(null);
+  
+  // ==== Helpers adicionados para evitar tela branca e compatibilizar dados ====
+  const isConfidentialFlag = !!(ticket?.isConfidential || ticket?.confidencial);
+
+  // Normaliza itens que podem vir como string ou objeto
+  const normalizeItem = (obj, fallbackLabel='Item') => {
+    if (!obj) return null;
+    if (typeof obj === 'string') return { id: obj, nome: obj };
+    const id = obj.id || obj.sigla || obj.nome || obj.codigo || obj.value;
+    const nome = obj.nome || obj.label || obj.descricao || id || fallbackLabel;
+    if (!id) return null;
+    return { id: String(id), nome: String(nome) };
+  };
+
+  // Opções normalizadas de áreas e gerências
+  const areasOptions = Array.isArray(areas) ? areasOptions.map(a => normalizeItem(a, 'Área')).filter(Boolean) : [];
+  const managementOptions = Array.isArray(managements) ? managementOptions.map(g => normalizeItem(g, 'Gerência')).filter(Boolean) : [];
+
+const [project, setProject] = useState(null);
   const [projects, setProjects] = useState([]); // Array para múltiplos projetos
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -229,7 +247,7 @@ const TicketDetailPage = () => {
 
   useEffect(() => {
     if (ticket && userProfile && user) {
-      if (ticket.isConfidential) {
+      if (isConfidentialFlag) {
         const isCreator = ticket.criadoPor === user.uid;
         const isAdmin = userProfile.funcao === 'administrador';
         const isInvolvedOperator = userProfile.funcao === 'operador' &&
@@ -585,7 +603,7 @@ const TicketDetailPage = () => {
     }
     
     // Regra 4: Gerente (NOVA REGRA: Aprovar/Rejeitar)
-    if (userRole === 'gerente' && currentStatus === 'aguardando_aprovacao' && ticket.gerenciaDestino === userProfile.area) {
+    if (userRole === 'gerente' && currentStatus === 'aguardando_aprovacao' && (ticket.gerenciaDestino === userProfile.area || ticket.areaGerencialDestino === userProfile.area)) {
       return [ { value: 'aprovado', label: 'Aprovar' }, { value: 'reprovado', label: 'Reprovar' } ];
     }
 
@@ -1056,7 +1074,7 @@ const TicketDetailPage = () => {
             <Badge className={getStatusColor(ticket.status)}>
               {getStatusText(ticket.status)}
             </Badge>
-            {ticket.isConfidential && (
+            {isConfidentialFlag && (
               <Badge variant="secondary" className="bg-red-100 text-red-800">
                 <Lock className="h-3 w-3 mr-1" />
                 Confidencial
@@ -1410,7 +1428,7 @@ const TicketDetailPage = () => {
                         <SelectValue placeholder="Selecione uma área" />
                       </SelectTrigger>
                       <SelectContent>
-                        {areas.map(area => (
+                        {areasOptions.map(area => (
                           <SelectItem key={area.id} value={area.id}>{area.nome}</SelectItem>
                         ))}
                       </SelectContent>
@@ -1475,7 +1493,7 @@ const TicketDetailPage = () => {
                           <SelectValue placeholder="Selecione uma área" />
                         </SelectTrigger>
                         <SelectContent>
-                          {areas.map(area => (
+                          {areasOptions.map(area => (
                             <SelectItem key={area.id} value={area.id}>{area.nome}</SelectItem>
                           ))}
                         </SelectContent>
@@ -1510,7 +1528,7 @@ const TicketDetailPage = () => {
                           <SelectValue placeholder="Selecione uma gerência" />
                         </SelectTrigger>
                         <SelectContent>
-                          {managements.map(mgmt => (
+                          {managementOptions.map(mgmt => (
                             <SelectItem key={mgmt.id} value={mgmt.id}>{mgmt.nome}</SelectItem>
                           ))}
                         </SelectContent>
