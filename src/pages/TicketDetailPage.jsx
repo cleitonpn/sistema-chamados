@@ -56,14 +56,15 @@ const TicketDetailPage = () => {
   // Estados principais
   const [ticket, setTicket] = useState(null);
   const [project, setProject] = useState(null);
-const [projectsMap, setProjectsMap] = useState({});
-const [linkedProjectIds, setLinkedProjectIds] = useState([]);
-const [activeProjectId, setActiveProjectId] = useState(null);
+  const [projectsMap, setProjectsMap] = useState({});
+  const [linkedProjectIds, setLinkedProjectIds] = useState([]);
+  const [activeProjectId, setActiveProjectId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
   const [accessDenied, setAccessDenied] = useState(false);
+  
   // Resolve nome do responsável do projeto a partir de possíveis formatos (Id/Uid/Nome/Email/responsaveis{})
   const resolveUserNameByProjectField = (proj, base) => {
     if (!proj) return null;
@@ -82,7 +83,6 @@ const [activeProjectId, setActiveProjectId] = useState(null);
     }
     return null;
   };
-
 
   // Estados do chat
   const [newMessage, setNewMessage] = useState('');
@@ -126,6 +126,10 @@ const [activeProjectId, setActiveProjectId] = useState(null);
   // Estado para exibir link do chamado pai
   const [parentTicketForLink, setParentTicketForLink] = useState(null);
 
+  // NOVOS ESTADOS para funcionalidades adicionais
+  const [rejectReason, setRejectReason] = useState('');
+  const [showRejectModal, setShowRejectModal] = useState(false);
+
   const loadTicketData = async () => {
     try {
       setLoading(true);
@@ -164,7 +168,8 @@ const [activeProjectId, setActiveProjectId] = useState(null);
         setActiveProjectId(null);
         setProject(null);
       }
-const messagesData = await messageService.getMessagesByTicket(ticketId);
+      
+      const messagesData = await messageService.getMessagesByTicket(ticketId);
       setMessages(messagesData || []);
 
     } catch (err) {
@@ -227,6 +232,62 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
     };
     loadUsers();
   }, []);
+
+  // NOVA FUNÇÃO: Criar chamado vinculado
+  const handleCreateLinkedTicket = () => {
+    if (!ticket) return;
+    
+    const linkedTicketData = {
+      linkedTicketId: ticketId,
+      linkedTicketTitle: ticket.titulo,
+      linkedTicketDescription: ticket.descricao,
+      linkedTicketCreator: ticket.criadoPorNome,
+      linkedTicketArea: ticket.area,
+      linkedTicketProject: project?.nome || '',
+      linkedTicketEvent: project?.evento || ''
+    };
+
+    navigate('/novo-chamado', { state: linkedTicketData });
+  };
+
+  // NOVA FUNÇÃO: Rejeitar/devolver chamado
+  const handleRejectTicket = async () => {
+    if (!rejectReason.trim()) {
+      alert('Por favor, informe o motivo da rejeição/devolução.');
+      return;
+    }
+
+    try {
+      const updateData = {
+        status: 'enviado_para_area',
+        rejectReason: rejectReason,
+        rejectedAt: new Date(),
+        rejectedBy: user.uid,
+        updatedAt: new Date(),
+        updatedBy: user.uid
+      };
+
+      await ticketService.updateTicket(ticketId, updateData);
+      
+      // Notificar o criador
+      if (ticket.criadoPor !== user.uid) {
+        await notificationService.createNotification({
+          userId: ticket.criadoPor,
+          type: 'ticket_rejected',
+          title: 'Chamado Rejeitado/Devolvido',
+          message: `Seu chamado "${ticket.titulo}" foi rejeitado/devolvido. Motivo: ${rejectReason}`,
+          ticketId: ticketId
+        });
+      }
+
+      setShowRejectModal(false);
+      setRejectReason('');
+      await loadTicketData();
+    } catch (error) {
+      console.error('Erro ao rejeitar chamado:', error);
+      alert('Erro ao rejeitar chamado');
+    }
+  };
     
   const handleArchiveTicket = async () => {
     if (!window.confirm('Tem certeza que deseja arquivar este chamado? Ele sairá da visualização principal e só poderá ser consultado.')) return;
@@ -359,7 +420,8 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
         'arquivado': 'bg-gray-100 text-gray-700', 
         'executado_pelo_consultor': 'bg-yellow-100 text-yellow-800', 
         'escalado_para_consultor': 'bg-cyan-100 text-cyan-800',
-        'executado_aguardando_validacao_operador': 'bg-indigo-100 text-indigo-800'
+        'executado_aguardando_validacao_operador': 'bg-indigo-100 text-indigo-800',
+        'transferido_para_produtor': 'bg-yellow-100 text-yellow-800' // Adicionado
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
@@ -382,7 +444,8 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
         'arquivado': 'Arquivado', 
         'executado_pelo_consultor': 'Executado pelo Consultor', 
         'escalado_para_consultor': 'Escalado para Consultor',
-        'executado_aguardando_validacao_operador': 'Aguardando Validação do Operador'
+        'executado_aguardando_validacao_operador': 'Aguardando Validação do Operador',
+        'transferido_para_produtor': 'Transferido para Produtor' // Adicionado
     };
     return statusTexts[status] || status;
   };
@@ -393,28 +456,35 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
     const userRole = userProfile.funcao;
     const isCreator = ticket.criadoPor === user.uid;
 
+    // CORREÇÃO 1: Criador pode validar/concluir ou rejeitar/devolver
     if (isCreator && (currentStatus === 'executado_aguardando_validacao' || currentStatus === 'executado_aguardando_validacao_operador')) {
         return [ { value: 'concluido', label: 'Validar e Concluir' }, { value: 'enviado_para_area', label: 'Rejeitar / Devolver' } ];
     }
 
-    if (isCreator && currentStatus === 'enviado_para_area') {
+    // CORREÇÃO 2: Criador pode cancelar quando rejeitado/devolvido
+    if (isCreator && currentStatus === 'enviado_para_area' && ticket.rejectedAt) {
         return [{ value: 'cancelado', label: 'Cancelar Chamado' }];
     }
 
-
+    // CORREÇÃO 3: Administrador
     if (userRole === 'administrador') {
       if (currentStatus === 'aberto' || currentStatus === 'escalado_para_outra_area' || currentStatus === 'enviado_para_area') return [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
       if (currentStatus === 'em_tratativa') return [ { value: 'executado_aguardando_validacao', label: 'Executado' } ];
       if (currentStatus === 'executado_aguardando_validacao' && !isCreator) return [ { value: 'concluido', label: 'Forçar Conclusão (Admin)' } ];
-      if (currentStatus === 'aguardando_aprovacao') return [ { value: 'aprovado', label: 'Aprovar' }, { value: 'rejeitado', label: 'Reprovar' } ];
+      if (currentStatus === 'aguardando_aprovacao') return [ { value: 'aprovado', label: 'Aprovar' }, { value: 'reprovado', label: 'Reprovar' } ];
+      if (currentStatus === 'transferido_para_produtor') return [{ value: 'executado_aguardando_validacao', label: 'Executar (Admin)' }]; // Adicionado para admin
     }
     
+    // CORREÇÃO 4: Gerente (NOVA REGRA: Aprovar/Rejeitar)
+    if (userRole === 'gerente' && currentStatus === 'aguardando_aprovacao' && ticket.gerenciaDestino === userProfile.area) {
+      return [ { value: 'aprovado', label: 'Aprovar' }, { value: 'reprovado', label: 'Reprovar' } ];
+    }
+
+    // CORREÇÃO 5: Operador
     if (userRole === 'operador') {
       if ((ticket.area === userProfile.area || ticket.atribuidoA === user.uid)) {
         if (currentStatus === 'aberto' || currentStatus === 'escalado_para_outra_area' || currentStatus === 'enviado_para_area') {
-            const actions = currentStatus === 'transferido_para_produtor'
-              ? [ { value: 'em_tratativa', label: 'Iniciar Tratativa (Produção)' }, { value: 'aberto', label: 'Transferir para Área Selecionada' } ]
-              : [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
+            const actions = [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
             if (ticket.areaDeOrigem) {
                 actions.push({ value: 'enviado_para_area', label: 'Rejeitar / Devolver' });
             }
@@ -432,6 +502,12 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
       }
     }
 
+    // CORREÇÃO 6: Produtor (NOVA REGRA: Executar)
+    if (userRole === 'produtor' && currentStatus === 'transferido_para_produtor' && ticket.produtorResponsavelId === user.uid) {
+      return [{ value: 'executado_aguardando_validacao', label: 'Executar' }];
+    }
+
+    // CORREÇÃO 7: Consultor
     if (userRole === 'consultor' && ticket.consultorResponsavelId === user.uid) {
         if (ticket.status === 'escalado_para_consultor') {
             return [{ value: 'executado_pelo_consultor', label: 'Executar e Devolver para a Área' }];
@@ -463,319 +539,284 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
         updatedAt: new Date()
       };
       await ticketService.escalateTicketToArea(ticketId, escalationArea, updateData);
-      const escalationMessage = {
-        userId: user.uid,
-        remetenteNome: userProfile.nome || user.email,
-        conteudo: `🔄 **Chamado escalado para ${escalationArea.replace('_', ' ').toUpperCase()}**\n\n**Motivo:** ${escalationReason}`,
-        criadoEm: new Date(),
-        type: 'escalation'
-      };
-      await messageService.sendMessage(ticketId, escalationMessage);
-      await loadTicketData();
+      console.log('✅ Escalação realizada com sucesso');
       setEscalationArea('');
       setEscalationReason('');
-      alert('Chamado escalado com sucesso!');
+      await loadTicketData();
     } catch (error) {
-      console.error('Erro ao escalar chamado:', error);
-      alert('Erro ao escalar chamado: ' + error.message);
+      console.error('❌ Erro na escalação:', error);
+      alert('Erro ao escalar chamado');
     } finally {
       setIsEscalating(false);
     }
   };
 
-  const handleManagementEscalation = async () => {
+  const handleEscalationToManagement = async () => {
     if (!managementArea) {
-      alert('Por favor, selecione uma gerência de destino');
+      alert('Por favor, selecione uma gerência');
       return;
     }
     if (!managementReason.trim()) {
-      alert('Por favor, descreva o motivo da escalação para gerência');
+      alert('Por favor, descreva o motivo da escalação');
       return;
     }
-
-    const targetArea = managementArea.replace('gerente_', '');
-    const targetManager = users.find(u => u.funcao === 'gerente' && u.area === targetArea);
-
-    if (!targetManager) {
-      alert(`Erro: Nenhum gerente encontrado para a área "${targetArea}". Verifique o cadastro de usuários.`);
-      return;
-    }
-
     setIsEscalatingToManagement(true);
     try {
       const updateData = {
         status: 'aguardando_aprovacao',
-        areaDeOrigem: ticket.area,
-        gerenteResponsavelId: targetManager.uid,
+        gerenciaDestino: managementArea,
         motivoEscalonamentoGerencial: managementReason,
-        escaladoPor: user.uid,
         escaladoEm: new Date(),
-        atualizadoPor: user.uid,
+        escaladoPor: user.uid,
         updatedAt: new Date()
       };
-
-      const managementNames = {
-        'gerente_operacional': 'Gerência Operacional',
-        'gerente_comercial': 'Gerência Comercial',
-        'gerente_producao': 'Gerência Produção',
-        'gerente_financeiro': 'Gerência Financeira'
-      };
-
       await ticketService.updateTicket(ticketId, updateData);
-
-      const escalationMessage = {
-        userId: user.uid,
-        remetenteNome: userProfile.nome || user.email,
-        conteudo: `👨‍💼 **Chamado escalado para ${managementNames[managementArea]}**\n\n**Motivo:** ${managementReason}\n\n**Gerente Responsável:** ${targetManager.nome}`,
-        criadoEm: new Date(),
-        type: 'management_escalation'
-      };
-      await messageService.sendMessage(ticketId, escalationMessage);
-
-      try {
-        await notificationService.notifyManagementEscalation(
-          ticketId,
-          ticket,
-          targetManager.uid,
-          user.uid,
-          managementReason
-        );
-        console.log('✅ Notificação de escalação gerencial enviada');
-      } catch (notificationError) {
-        console.error('❌ Erro ao enviar notificação de escalação gerencial:', notificationError);
-      }
-
-      await loadTicketData();
       setManagementArea('');
       setManagementReason('');
-      alert('Chamado escalado para gerência com sucesso!');
+      await loadTicketData();
     } catch (error) {
       console.error('Erro ao escalar para gerência:', error);
-      alert('Erro ao escalar para gerência: ' + error.message);
+      alert('Erro ao escalar para gerência');
     } finally {
       setIsEscalatingToManagement(false);
     }
   };
 
-  const handleConsultorEscalation = async () => {
+  const handleEscalationToConsultor = async () => {
     if (!consultorReason.trim()) {
-      alert('Por favor, descreva o motivo da escalação para o consultor');
-      return;
-    }
-    if (!project?.consultorId) {
-      alert('Erro: Consultor do projeto não encontrado');
+      alert('Por favor, descreva o motivo da escalação');
       return;
     }
     setIsEscalatingToConsultor(true);
     try {
       const updateData = {
         status: 'escalado_para_consultor',
-        areaDeOrigem: ticket.area,
-        consultorResponsavelId: project.consultorId,
         motivoEscalonamentoConsultor: consultorReason,
-        escaladoPor: user.uid,
-        escaladoEm: new Date(),
-        atualizadoPor: user.uid,
+        escaladoParaConsultorEm: new Date(),
+        escaladoParaConsultorPor: user.uid,
+        consultorResponsavelId: project?.consultorId || null,
         updatedAt: new Date()
       };
       await ticketService.updateTicket(ticketId, updateData);
-      const escalationMessage = {
-        userId: user.uid,
-        remetenteNome: userProfile.nome || user.email,
-        conteudo: `👨‍🎯 **Chamado escalado para CONSULTOR DO PROJETO**\n\n**Motivo:** ${consultorReason}\n\n**Área de Origem:** ${ticket.area?.replace('_', ' ').toUpperCase()}`,
-        criadoEm: new Date(),
-        type: 'consultor_escalation'
-      };
-      await messageService.sendMessage(ticketId, escalationMessage);
-      await loadTicketData();
       setConsultorReason('');
-      alert('Chamado escalado para consultor com sucesso!');
+      await loadTicketData();
     } catch (error) {
       console.error('Erro ao escalar para consultor:', error);
-      alert('Erro ao escalar para consultor: ' + error.message);
+      alert('Erro ao escalar para consultor');
     } finally {
       setIsEscalatingToConsultor(false);
     }
   };
 
-  const handleTransferToProducer = async () => {
-    if (!project?.produtorId) {
-      alert('Erro: Produtor do projeto não encontrado');
+  const handleStatusUpdate = async (status) => {
+    if (status === 'enviado_para_area' && !showAreaSelector) {
+      setShowAreaSelector(true);
+      return;
+    }
+    if (status === 'enviado_para_area' && !selectedArea) {
+      alert('Por favor, selecione uma área de destino');
       return;
     }
     setUpdating(true);
     try {
       const updateData = {
-        status: 'transferido_para_produtor',
-        produtorResponsavelId: project.produtorId,
-        transferidoPor: user.uid,
-        transferidoEm: new Date(),
-        atualizadoPor: user.uid,
-        updatedAt: new Date()
+        status: status,
+        updatedAt: new Date(),
+        updatedBy: user.uid
       };
-      await ticketService.updateTicket(ticketId, updateData);
-      const transferMessage = {
-        userId: user.uid,
-        remetenteNome: userProfile.nome || user.email,
-        conteudo: `🏭 **Chamado transferido para PRODUTOR DO PROJETO**\n\nO chamado foi transferido para o produtor responsável para continuidade e finalização.`,
-        criadoEm: new Date(),
-        type: 'producer_transfer'
-      };
-      await messageService.sendMessage(ticketId, transferMessage);
-      await loadTicketData();
-      alert('Chamado transferido para produtor com sucesso!');
-    } catch (error) {
-      console.error('Erro ao transferir para produtor:', error);
-      alert('Erro ao transferir para produtor: ' + error.message);
-    } finally {
-      setUpdating(false);
-    }
-  };
-
-  const handleStatusUpdate = async () => {
-    if (!newStatus) return;
-    await proceedWithStatusUpdate(newStatus);
-  };
-    
-  const proceedWithStatusUpdate = async (statusToUpdate) => {
-    if ((statusToUpdate === 'rejeitado' || statusToUpdate === 'enviado_para_area') && !conclusionDescription.trim()) {
-      alert('Por favor, forneça um motivo para a rejeição/devolução');
-      return;
-    }
-    setUpdating(true);
-    try {
-      let updateData = {};
-      let systemMessageContent = '';
-      
-      updateData = { status: statusToUpdate, atualizadoPor: user.uid, updatedAt: new Date() };
-      if (statusToUpdate === 'concluido') {
-        updateData.conclusaoDescricao = conclusionDescription;
-        updateData.conclusaoImagens = conclusionImages;
+      if (status === 'concluido') {
         updateData.concluidoEm = new Date();
         updateData.concluidoPor = user.uid;
-        systemMessageContent = `✅ **Chamado concluído**\n\n**Descrição:** ${conclusionDescription}`;
-      } else if (statusToUpdate === 'rejeitado') {
-        updateData.motivoRejeicao = conclusionDescription;
-        updateData.rejeitadoEm = new Date();
-        updateData.rejeitadoPor = user.uid;
-        systemMessageContent = `❌ **Chamado reprovado pelo gerente**\n\n**Motivo:** ${conclusionDescription}`;
-      } else if (statusToUpdate === 'enviado_para_area') {
-         if (!ticket.areaDeOrigem) {
-           // fallback: assume área atual como origem se não existir registro legado
-           updateData.areaDeOrigem = ticket.area;
+        if (conclusionDescription) {
+          updateData.observacoesConclusao = conclusionDescription;
         }
-        updateData.motivoRejeicao = conclusionDescription;
-        updateData.rejeitadoEm = new Date();
-        updateData.rejeitadoPor = user.uid;
-        updateData.areaQueRejeitou = ticket.area;
-        updateData.area = ticket.areaDeOrigem;
-        systemMessageContent = `🔄 **Chamado devolvido para:** ${updateData.area.replace(/_/g, ' ')}\n\n**Motivo:** ${conclusionDescription}`;
-      } else if (statusToUpdate === 'aprovado') {
-          if (ticket.status === 'aguardando_aprovacao' && userProfile.funcao === 'gerente') {
-              updateData.status = 'em_tratativa';
-              updateData.area = ticket.areaDeOrigem || ticket.area;
-              updateData.aprovadoEm = new Date();
-              updateData.aprovadoPor = user.uid;
-              systemMessageContent = `✅ **Chamado aprovado pelo gerente** e retornado para a área responsável.`;
-          }
-      } else if (statusToUpdate === 'executado_pelo_consultor') {
-          updateData.area = ticket.areaDeOrigem;
-          updateData.consultorResponsavelId = null; 
-          systemMessageContent = `👨‍🎯 **Chamado executado pelo consultor e devolvido para:** ${ticket.areaDeOrigem?.replace('_', ' ').toUpperCase()}`;
-            } else if (statusToUpdate === 'cancelado') {
-updateData.canceladoEm = new Date();
-          updateData.canceladoPor = user.uid;
-          systemMessageContent = `🚫 **Chamado cancelado pelo criador**`;
-      } else if (statusToUpdate === 'aberto' && ticket.status === 'transferido_para_produtor') {
-          updateData.area = ticket.areaInicial || ticket.areaDeOrigem || ticket.area;
-          systemMessageContent = `🔄 **Transferido para área selecionada:** ${ (updateData.area || '').replace(/_/g, ' ').toUpperCase() }`;
-      } else {
-          systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(statusToUpdate)}`;
+        if (conclusionImages.length > 0) {
+          updateData.imagensConclusao = conclusionImages;
+        }
+      }
+      if (status === 'enviado_para_area' && selectedArea) {
+        updateData.area = selectedArea;
+        updateData.areaDeOrigem = ticket.area;
+      }
+      // NOVO: Se o status for 'aprovado', enviar mensagem de sistema e voltar para 'aberto'
+      if (status === 'aprovado') {
+        updateData.aprovadoEm = new Date();
+        updateData.aprovadoPor = user.uid;
+        updateData.status = 'aberto'; // Volta para aberto para iniciar tratativa
+        const systemMessage = {
+          content: `✅ **Chamado aprovado pela gerência**\n\nO chamado foi aprovado e está novamente **aberto** para tratamento.`,
+          senderId: user.uid,
+          senderName: userProfile.nome || user.email,
+          isSystemMessage: true
+        };
+        await messageService.sendMessage(ticketId, systemMessage);
+      }
+      // NOVO: Se o status for 'reprovado', enviar mensagem de sistema e voltar para 'devolvido'
+      if (status === 'reprovado') {
+        updateData.reprovadoEm = new Date();
+        updateData.reprovadoPor = user.uid;
+        updateData.status = 'devolvido'; // Volta para devolvido para o criador corrigir
+        const systemMessage = {
+          content: `❌ **Chamado reprovado pela gerência**\n\nO chamado foi reprovado e está **devolvido** para correção.`,
+          senderId: user.uid,
+          senderName: userProfile.nome || user.email,
+          isSystemMessage: true
+        };
+        await messageService.sendMessage(ticketId, systemMessage);
+      }
+      // NOVO: Se o status for 'executado_aguardando_validacao' (produtor), enviar mensagem de sistema
+      if (status === 'executado_aguardando_validacao' && ticket.status === 'transferido_para_produtor') {
+        updateData.executadoPorProdutorEm = new Date();
+        updateData.executadoPorProdutor = user.uid;
+        const systemMessage = {
+          content: `🛠️ **Chamado executado pelo produtor**\n\nO chamado foi executado pelo produtor e está **aguardando validação**.`,
+          senderId: user.uid,
+          senderName: userProfile.nome || user.email,
+          isSystemMessage: true
+        };
+        await messageService.sendMessage(ticketId, systemMessage);
       }
 
       await ticketService.updateTicket(ticketId, updateData);
-      const statusMessage = { userId: user.uid, remetenteNome: userProfile.nome || user.email, conteudo: systemMessageContent, criadoEm: new Date(), type: 'status_update' };
-      await messageService.sendMessage(ticketId, statusMessage);
-      await notificationService.notifyStatusChange(ticketId, ticket, updateData.status, ticket.status, user.uid);
-      await loadTicketData();
-      setNewStatus('');
       setConclusionDescription('');
       setConclusionImages([]);
-      alert('Status atualizado com sucesso!');
+      setSelectedArea('');
+      setShowAreaSelector(false);
+      await loadTicketData();
     } catch (error) {
-      alert('Erro ao atualizar status: ' + error.message);
+      console.error('Erro ao atualizar status:', error);
+      alert('Erro ao atualizar status do chamado');
     } finally {
       setUpdating(false);
     }
   };
-  
+
   const handleSendMessage = async () => {
     if (!newMessage.trim() && chatImages.length === 0) return;
     setSendingMessage(true);
     try {
-      const messageData = { userId: user.uid, remetenteNome: userProfile.nome || user.email, conteudo: newMessage.trim(), imagens: chatImages, criadoEm: new Date(), type: 'user_message' };
-      await messageService.sendMessage(ticketId, messageData);
-      await notificationService.notifyNewMessage(ticketId, ticket, messageData, user.uid);
-      await loadTicketData();
+      await messageService.sendMessage(ticketId, {
+        content: newMessage,
+        images: chatImages,
+        senderId: user.uid,
+        senderName: userProfile?.nome || user.email
+      });
       setNewMessage('');
       setChatImages([]);
+      await loadTicketData();
     } catch (error) {
-      alert('Erro ao enviar mensagem: ' + error.message);
+      console.error('Erro ao enviar mensagem:', error);
+      alert('Erro ao enviar mensagem');
     } finally {
       setSendingMessage(false);
     }
   };
-  
-  const handleResubmitTicket = async () => {
-    if (!additionalInfo.trim()) {
-      alert('Por favor, preencha as informações solicitadas antes de reenviar.');
-      return;
-    }
-    if (!ticket.areaQueRejeitou) {
-      alert('Erro: Não foi possível identificar a área de destino para o reenvio.');
-      return;
-    }
 
+  const handleResubmit = async () => {
+    if (!additionalInfo.trim()) {
+      alert('Por favor, forneça informações adicionais para o reenvio');
+      return;
+    }
     setIsResubmitting(true);
     try {
       const updateData = {
-        status: 'aberto', 
-        area: ticket.areaQueRejeitou,
-        areaDeOrigem: ticket.area,
-        areaQueRejeitou: null,
-        descricao: `${ticket.descricao}\n\n--- INFORMAÇÕES ADICIONAIS (em ${new Date().toLocaleString('pt-BR')}) ---\n${additionalInfo}`,
-        atualizadoPor: user.uid,
+        status: 'aberto',
+        informacoesAdicionais: additionalInfo,
+        reenviado: true,
+        reenviadoEm: new Date(),
+        reenviadoPor: user.uid,
         updatedAt: new Date()
       };
-
       await ticketService.updateTicket(ticketId, updateData);
-
-      const resubmitMessage = {
-        userId: user.uid,
-        remetenteNome: userProfile.nome || user.email,
-        conteudo: `📬 **Chamado reenviado com informações adicionais para a área: ${ticket.areaQueRejeitou.replace('_', ' ').toUpperCase()}**\n\n**Informações adicionadas:**\n${additionalInfo}`,
-        criadoEm: new Date(),
-        type: 'status_update'
-      };
-      await messageService.sendMessage(ticketId, resubmitMessage);
-      
-      await loadTicketData();
+      await messageService.sendMessage(ticketId, {
+        content: `Chamado reenviado com informações adicionais: ${additionalInfo}`,
+        senderId: user.uid,
+        senderName: userProfile?.nome || user.email,
+        isSystemMessage: true
+      });
       setAdditionalInfo('');
-      alert('Chamado reenviado com sucesso!');
-
+      await loadTicketData();
     } catch (error) {
-      alert('Ocorreu um erro ao reenviar o chamado: ' + error.message);
+      console.error('Erro ao reenviar chamado:', error);
+      alert('Erro ao reenviar chamado');
     } finally {
       setIsResubmitting(false);
     }
   };
 
+  // Funções para controlar a visibilidade dos cards de escalação
+  const showEscalationToAreaCard = () => {
+    if (!ticket || !userProfile) return false;
+    const userRole = userProfile.funcao;
+    const currentStatus = ticket.status;
+
+    // Administradores sempre podem escalar
+    if (userRole === 'administrador') return true;
+
+    // Operadores podem escalar se o chamado estiver em tratamento ou aberto
+    if (userRole === 'operador' && (currentStatus === 'aberto' || currentStatus === 'em_tratativa')) {
+      return true;
+    }
+
+    // CORREÇÃO: Produtores podem escalar se o chamado estiver transferido para eles
+    if (userRole === 'produtor' && currentStatus === 'transferido_para_produtor') {
+      return true;
+    }
+
+    return false;
+  };
+
+  const showEscalationToManagementCard = () => {
+    if (!ticket || !userProfile) return false;
+    const userRole = userProfile.funcao;
+    const currentStatus = ticket.status;
+
+    // Administradores sempre podem escalar para gerência
+    if (userRole === 'administrador') return true;
+
+    // Operadores podem escalar para gerência se o chamado estiver em tratamento ou aberto
+    if (userRole === 'operador' && (currentStatus === 'aberto' || currentStatus === 'em_tratativa')) {
+      return true;
+    }
+
+    // CORREÇÃO: Produtores podem escalar para gerência se o chamado estiver transferido para eles
+    if (userRole === 'produtor' && currentStatus === 'transferido_para_produtor') {
+      return true;
+    }
+
+    return false;
+  };
+
+  const showEscalationToConsultorCard = () => {
+    if (!ticket || !userProfile) return false;
+    const userRole = userProfile.funcao;
+    const currentStatus = ticket.status;
+
+    // Administradores sempre podem escalar para consultor
+    if (userRole === 'administrador') return true;
+
+    // Operadores podem escalar para consultor se o chamado estiver em tratamento ou aberto
+    if (userRole === 'operador' && (currentStatus === 'aberto' || currentStatus === 'em_tratativa')) {
+      return true;
+    }
+
+    // CORREÇÃO: Produtores podem escalar para consultor se o chamado estiver transferido para eles
+    if (userRole === 'produtor' && currentStatus === 'transferido_para_produtor') {
+      return true;
+    }
+
+    return false;
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Carregando chamado...</p>
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />
+            <p className="mt-2 text-gray-600">Carregando dados do chamado...</p>
+          </div>
         </div>
       </div>
     );
@@ -783,15 +824,21 @@ updateData.canceladoEm = new Date();
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center p-8">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Erro ao Carregar</h2>
-          <p className="text-gray-600 mb-6">{error}</p>
-          <Button onClick={() => navigate('/dashboard')} variant="outline">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Voltar ao Dashboard
-          </Button>
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <div className="max-w-4xl mx-auto p-6">
+          <Alert className="border-red-200 bg-red-50">
+            <AlertCircle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-800">
+              {error}
+            </AlertDescription>
+          </Alert>
+          <div className="mt-4">
+            <Button onClick={() => navigate('/dashboard')} variant="outline">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Voltar ao Dashboard
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -799,17 +846,21 @@ updateData.canceladoEm = new Date();
 
   if (accessDenied) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center p-8">
-          <Lock className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Acesso Restrito</h2>
-          <p className="text-gray-600 mb-6">
-            Este é um chamado confidencial e você não tem permissão para visualizá-lo.
-          </p>
-          <Button onClick={() => navigate('/dashboard')} variant="outline">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Voltar ao Dashboard
-          </Button>
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <div className="max-w-4xl mx-auto p-6">
+          <Alert className="border-red-200 bg-red-50">
+            <Lock className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-800">
+              Você não tem permissão para visualizar este chamado confidencial.
+            </AlertDescription>
+          </Alert>
+          <div className="mt-4">
+            <Button onClick={() => navigate('/dashboard')} variant="outline">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Voltar ao Dashboard
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -817,247 +868,167 @@ updateData.canceladoEm = new Date();
 
   if (!ticket) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Chamado não encontrado</h2>
-          <p className="text-gray-600 mb-4">O chamado solicitado não existe ou você não tem permissão para visualizá-lo.</p>
-          <Button onClick={() => navigate('/dashboard')} variant="outline">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Voltar ao Dashboard
-          </Button>
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <div className="max-w-4xl mx-auto p-6">
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Chamado não encontrado.
+            </AlertDescription>
+          </Alert>
+          <div className="mt-4">
+            <Button onClick={() => navigate('/dashboard')} variant="outline">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Voltar ao Dashboard
+            </Button>
+          </div>
         </div>
       </div>
     );
   }
 
-  const availableStatuses = getAvailableStatuses();
-  const isArchived = ticket.status === 'arquivado';
-
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header title={`Chamado #${ticket.numero || ticketId.slice(-8)}`} />
-      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-8">
-        <div className="mb-4 sm:mb-6">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate('/dashboard')}
-            className="mb-3 sm:mb-4 p-2 sm:p-3"
-          >
-            <ArrowLeft className="h-4 w-4 mr-1 sm:mr-2" />
-            <span className="text-sm sm:text-base">Voltar ao Dashboard</span>
-          </Button>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
-            <div className="min-w-0 flex-1">
-              <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 break-words">
-                {ticket.titulo || 'Título não disponível'}
-              </h2>
-              <p className="text-gray-600 mt-1">
-                Criado em {formatDate(ticket.criadoEm)} por {ticket.criadoPorNome || 'Usuário desconhecido'}
-              </p>
+      <Header />
+      <div className="max-w-7xl mx-auto p-6">
+        {/* Header do Chamado */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/dashboard')}
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Voltar ao Dashboard
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Chamado #{ticket.numero}
+              </h1>
+              <p className="text-gray-600">{ticket.titulo}</p>
             </div>
-            <div className="flex items-center">
-              {(ticket.isConfidential || ticket.confidencial) && (
-                <Badge variant="outline" className="mr-2 border-orange-400 bg-orange-50 text-orange-700">
-                  <Lock className="h-3 w-3 mr-1.5" />
-                  Confidencial
-                </Badge>
-              )}
-              <Badge className={getStatusColor(ticket.status)}>
-                {getStatusText(ticket.status)}
+          </div>
+          <div className="flex items-center space-x-3">
+            <Badge className={getStatusColor(ticket.status)}>
+              {getStatusText(ticket.status)}
+            </Badge>
+            {(ticket.confidencial || ticket.isConfidential) && (
+              <Badge variant="secondary" className="bg-red-100 text-red-800">
+                <Lock className="h-3 w-3 mr-1" />
+                Confidencial
               </Badge>
-            </div>
+            )}
           </div>
         </div>
 
-        {parentTicketForLink && (
-            <Card className="mb-6 bg-amber-50 border-amber-200">
-                <CardHeader>
-                    <CardTitle className="flex items-center text-base text-amber-900">
-                        <LinkIcon className="h-4 w-4 mr-2" />
-                        Este chamado é vinculado ao Chamado Pai
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <Link to={`/chamado/${parentTicketForLink.id}`} className="text-blue-600 hover:underline">
-                        Ver Chamado Original: {parentTicketForLink.titulo}
-                    </Link>
-                </CardContent>
-            </Card>
-        )}
-
-        {isArchived && (
-          <Alert variant="default" className="mb-6 bg-gray-100 border-gray-300">
-              <Archive className="h-4 w-4" />
-              <AlertDescription>
-                  Este chamado está arquivado e é somente para consulta. Para fazer alterações, é preciso desarquivá-lo.
-              </AlertDescription>
-          </Alert>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
-          <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Coluna Principal */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Detalhes do Chamado */}
             <Card>
-              <CardHeader className="pb-3 sm:pb-4">
-                <CardTitle className="flex items-center text-base sm:text-lg">
-                  <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                  Detalhes do Chamado
-                </CardTitle>
+              <CardHeader>
+                <CardTitle>Detalhes do Chamado</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 sm:space-y-4">
+              <CardContent className="space-y-4">
                 <div>
-                  <Label className="text-xs sm:text-sm font-medium text-gray-700">Título</Label>
-                  <p className="text-sm sm:text-base text-gray-900 break-words">{ticket.titulo || 'Título não disponível'}</p>
+                  <h3 className="font-semibold text-gray-900">Descrição</h3>
+                  <p className="text-gray-700 mt-1">{ticket.descricao}</p>
                 </div>
-                <div>
-                  <Label className="text-xs sm:text-sm font-medium text-gray-700">Descrição</Label>
-                  <p className="text-sm sm:text-base text-gray-900 whitespace-pre-wrap break-words">{ticket.descricao || 'Descrição não disponível'}</p>
-                </div>
-                {ticket.imagens && ticket.imagens.length > 0 && (
-                  <div>
-                    <Label className="text-xs sm:text-sm font-medium text-gray-700 mb-2 block">📷 Imagens Anexadas</Label>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                      {ticket.imagens.map((imagem, index) => (
-                        <div key={index} className="relative group">
-                          <img
-                            src={imagem.url}
-                            alt={imagem.name || `Imagem do chamado ${index + 1}`}
-                            className="w-full h-32 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-75 transition-opacity shadow-sm hover:shadow-md"
-                            onClick={() => window.open(imagem.url, '_blank')}
-                            onError={(e) => {
-                              e.target.style.display = 'none';
-                              e.target.nextSibling.style.display = 'flex';
-                            }}
-                          />
-                          <div className="hidden w-full h-32 bg-gray-100 rounded-lg border border-gray-200 items-center justify-center">
-                            <div className="text-center">
-                              <ImageIcon className="h-6 w-6 text-gray-400 mx-auto mb-1" />
-                              <p className="text-xs text-gray-500">Erro ao carregar</p>
-                            </div>
-                          </div>
-                          {imagem.name && (
-                            <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                              <p className="truncate">{imagem.name}</p>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {ticket.isExtra && (
-                  <div className="p-3 sm:p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-orange-600 font-semibold text-sm sm:text-base">🔥 ITEM EXTRA</span>
-                    </div>
-                    {ticket.motivoExtra && (
-                      <div>
-                        <Label className="text-xs sm:text-sm font-medium text-orange-700">Motivo do Item Extra</Label>
-                        <p className="text-sm sm:text-base text-orange-900 whitespace-pre-wrap break-words">{ticket.motivoExtra}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                  <div>
-                    <Label className="text-sm font-medium text-gray-700">Área</Label>
-                    <p className="text-gray-900">{ticket.area || 'Não especificada'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-700">Tipo</Label>
-                    <p className="text-gray-900">{ticket.tipo || 'Não especificado'}</p>
-                  </div>
-                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-sm font-medium text-gray-700">Criado em</Label>
-                    <p className="text-gray-900">{formatDate(ticket.createdAt || ticket.criadoEm)}</p>
+                    <h4 className="font-medium text-gray-900">Área</h4>
+                    <p className="text-gray-700">{ticket.area}</p>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-gray-700">Criado por</Label>
-                    <p className="text-gray-900">{ticket.criadoPorNome || 'Não disponível'}</p>
+                    <h4 className="font-medium text-gray-900">Categoria</h4>
+                    <p className="text-gray-700">{ticket.categoria}</p>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">Criado por</h4>
+                    <p className="text-gray-700">{ticket.criadoPorNome}</p>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">Data de criação</h4>
+                    <p className="text-gray-700">{formatDate(ticket.criadoEm)}</p>
                   </div>
                 </div>
-                {ticket.imagensIniciais && ticket.imagensIniciais.length > 0 && (
-                  <div>
-                    <Label className="text-sm font-medium text-gray-700 mb-2 block">Imagens Iniciais</Label>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                      {ticket.imagensIniciais.map((imageUrl, index) => (
-                        <div key={index} className="relative group">
-                          <img
-                            src={imageUrl}
-                            alt={`Imagem ${index + 1}`}
-                            className="w-full h-24 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-75 transition-opacity"
-                            onClick={() => window.open(imageUrl, '_blank')}
-                            onError={(e) => {
-                              e.target.style.display = 'none';
-                              e.target.nextSibling.style.display = 'flex';
-                            }}
-                          />
-                          <div className="hidden w-full h-24 bg-gray-100 rounded-lg border border-gray-200 items-center justify-center">
-                            <ImageIcon className="h-6 w-6 text-gray-400" />
-                          </div>
-                        </div>
-                      ))}
+
+                {/* Flag de Item Extra */}
+                {ticket.itemExtra && (
+                  <div className="flex items-center space-x-2 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                    <AlertCircle className="h-5 w-5 text-orange-600" />
+                    <div>
+                      <p className="font-semibold text-orange-800">ITEM EXTRA</p>
+                      {ticket.motivoItemExtra && (
+                        <p className="text-sm text-orange-700">{ticket.motivoItemExtra}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Link para chamado pai */}
+                {parentTicketForLink && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <LinkIcon className="h-4 w-4 text-blue-600" />
+                      <span className="text-sm font-medium text-blue-900">Chamado Vinculado:</span>
+                      <Link 
+                        to={`/chamado/${parentTicketForLink.id}`}
+                        className="text-blue-600 hover:text-blue-800 underline"
+                      >
+                        #{parentTicketForLink.numero} - {parentTicketForLink.titulo}
+                      </Link>
                     </div>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {user && ticket.criadoPor === user.uid && ticket.status === 'enviado_para_area' && ticket.areaQueRejeitou && (
-              <Card className="bg-yellow-50 border-yellow-300">
+            {/* Múltiplos Projetos */}
+            {linkedProjectIds.length > 0 && (
+              <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center text-yellow-900">
-                    <ClipboardEdit className="h-5 w-5 mr-2" />
-                    Ação Necessária: Corrigir e Reenviar Chamado
+                  <CardTitle className="flex items-center">
+                    <Calendar className="h-5 w-5 mr-2" />
+                    {linkedProjectIds.length > 1 ? `Projetos (${linkedProjectIds.length})` : 'Projeto'}
                   </CardTitle>
-                  <CardDescription className="text-yellow-800">
-                    Este chamado foi devolvido pela área de{' '}
-                    <strong className="font-semibold">{ticket.areaQueRejeitou.replace('_', ' ').toUpperCase()}</strong>. 
-                    Por favor, adicione as informações solicitadas e reenvie.
-                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {ticket.motivoRejeicao && (
-                       <div className="p-3 bg-white border border-gray-200 rounded-md">
-                         <Label className="text-xs font-medium text-gray-700">Motivo da Devolução</Label>
-                         <p className="text-sm text-gray-800 whitespace-pre-wrap">{ticket.motivoRejeicao}</p>
-                       </div>
-                    )}
-                    <div>
-                      <Label htmlFor="additional-info" className="font-semibold text-gray-800">
-                        Novas Informações / Correções *
-                      </Label>
-                      <Textarea
-                        id="additional-info"
-                        placeholder="Forneça aqui os detalhes ou correções solicitadas pela outra área..."
-                        value={additionalInfo}
-                        onChange={(e) => setAdditionalInfo(e.target.value)}
-                        rows={4}
-                        className="mt-2"
-                        disabled={isResubmitting}
-                      />
-                    </div>
-                    <Button 
-                      onClick={handleResubmitTicket} 
-                      disabled={!additionalInfo.trim() || isResubmitting} 
-                      className="w-full bg-yellow-600 hover:bg-yellow-700 text-white"
-                    >
-                      {isResubmitting ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      ) : (
-                        <Send className="h-4 w-4 mr-2" />
-                      )}
-                      Reenviar para {ticket.areaQueRejeitou.replace('_', ' ')}
-                    </Button>
+                    {linkedProjectIds.map((projectId, index) => {
+                      const proj = projectsMap[projectId];
+                      if (!proj) return null;
+                      
+                      return (
+                        <div key={index} className="p-4 border border-gray-200 rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h3 className="font-semibold text-gray-900">{proj.nome}</h3>
+                              <p className="text-sm text-gray-600">{proj.evento}</p>
+                              <p className="text-sm text-gray-500">
+                                {proj.cidade} - {formatDate(proj.dataInicio)} a {formatDate(proj.dataFim)}
+                              </p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => window.open(`/projeto/${proj.id}`, '_blank')}
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>
             )}
 
+            {/* Conversas */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
@@ -1066,41 +1037,32 @@ updateData.canceladoEm = new Date();
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4 mb-6 max-h-96 overflow-y-auto">
+                <div className="space-y-4 max-h-96 overflow-y-auto">
                   {messages.length === 0 ? (
                     <p className="text-gray-500 text-center py-4">Nenhuma mensagem ainda</p>
                   ) : (
                     messages.map((message, index) => (
                       <div key={index} className="flex space-x-3">
                         <div className="flex-shrink-0">
-                          <div className="h-8 w-8 bg-blue-500 rounded-full flex items-center justify-center">
+                          <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
                             <User className="h-4 w-4 text-white" />
                           </div>
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center space-x-2">
-                            <span className="text-sm font-medium text-gray-900">
-                              {message.remetenteNome || 'Usuário'}
-                            </span>
-                            <span className="text-xs text-gray-500">
-                              {formatDate(message.criadoEm)}
-                            </span>
+                            <p className="font-semibold text-sm">{message.senderName}</p>
+                            <p className="text-xs text-gray-500">{formatDate(message.timestamp)}</p>
                           </div>
-                          {message.conteudo && (
-                            <p className="text-sm text-gray-700 mt-1">{message.conteudo}</p>
-                          )}
-                          {message.imagens && message.imagens.length > 0 && (
-                            <div className="grid grid-cols-2 gap-2 mt-2">
-                              {message.imagens.map((imageUrl, imgIndex) => (
+                          <p className="mt-1">{message.content}</p>
+                          {message.images && message.images.length > 0 && (
+                            <div className="mt-2 flex space-x-2">
+                              {message.images.map((image, imgIndex) => (
                                 <img
                                   key={imgIndex}
-                                  src={imageUrl}
+                                  src={image}
                                   alt={`Anexo ${imgIndex + 1}`}
-                                  className="w-full h-20 object-cover rounded border cursor-pointer hover:opacity-75"
-                                  onClick={() => window.open(imageUrl, '_blank')}
-                                  onError={(e) => {
-                                    e.target.style.display = 'none';
-                                  }}
+                                  className="w-20 h-20 object-cover rounded cursor-pointer"
+                                  onClick={() => window.open(image, '_blank')}
                                 />
                               ))}
                             </div>
@@ -1110,481 +1072,445 @@ updateData.canceladoEm = new Date();
                     ))
                   )}
                 </div>
-                <div className="border-t pt-4">
-                  <div className="space-y-3">
-                    <div className="relative">
-                      <Textarea
-                        ref={textareaRef}
-                        placeholder={isArchived ? "Este chamado está arquivado e não permite novas mensagens." : "Digite sua mensagem..."}
-                        value={newMessage}
-                        onChange={handleTextareaChange}
-                        onKeyDown={handleTextareaKeyDown}
-                        rows={3}
-                        disabled={isArchived || sendingMessage}
-                      />
-                      {showMentionSuggestions && mentionSuggestions.length > 0 && (
-                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-40 overflow-y-auto">
-                          {mentionSuggestions.map((user, index) => (
-                            <button
-                              key={index}
-                              className="w-full px-3 py-2 text-left hover:bg-gray-100 flex items-center space-x-2"
-                              onClick={() => insertMention(user)}
-                            >
-                              <AtSign className="h-4 w-4 text-gray-400" />
-                              <span className="font-medium">{user.nome}</span>
-                              <span className="text-sm text-gray-500">({user.email})</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {!isArchived && (
-                        <ImageUpload
-                          onImagesUploaded={setChatImages}
-                          existingImages={chatImages}
-                          maxImages={3}
-                          buttonText="Anexar ao Chat"
-                          className="border-t pt-3"
-                        />
+
+                {/* Nova mensagem */}
+                <div className="mt-4 border-t pt-4">
+                  <div className="relative">
+                    <Textarea
+                      ref={textareaRef}
+                      value={newMessage}
+                      onChange={handleTextareaChange}
+                      onKeyDown={handleTextareaKeyDown}
+                      placeholder="Digite sua mensagem... (use @ para mencionar usuários)"
+                      className="min-h-[80px] pr-20"
+                    />
+                    
+                    {/* Sugestões de menção */}
+                    {showMentionSuggestions && mentionSuggestions.length > 0 && (
+                      <div className="absolute bottom-full left-0 w-full bg-white border border-gray-300 rounded-md shadow-lg z-10 max-h-40 overflow-y-auto">
+                        {mentionSuggestions.map((user, index) => (
+                          <div
+                            key={index}
+                            className="p-2 hover:bg-gray-100 cursor-pointer"
+                            onClick={() => insertMention(user)}
+                          >
+                            <p className="font-medium">{user.nome}</p>
+                            <p className="text-sm text-gray-500">{user.email}</p>
+                          </div>
+                        ))}
+                      </div>
                     )}
-                    <div className="flex items-center justify-end">
+
+                    <div className="absolute bottom-2 right-2">
                       <Button
+                        size="sm"
                         onClick={handleSendMessage}
-                        disabled={isArchived || sendingMessage || (!newMessage.trim() && chatImages.length === 0)}
+                        disabled={sendingMessage || (!newMessage.trim() && chatImages.length === 0)}
                       >
-                        {sendingMessage ? (
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        ) : (
-                          <Send className="h-4 w-4 mr-2" />
-                        )}
-                        Enviar
+                        <Send className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
-
-            {!isArchived && userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador') && (
-              <Card className="mt-6">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><span className="text-2xl">🔄</span>Escalar Chamado</CardTitle>
-                  <CardDescription>Transfira este chamado para outra área quando necessário</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="escalation-area" className="text-base font-semibold">🎯 Área de Destino *</Label>
-                      <Select value={escalationArea} onValueChange={setEscalationArea}>
-                        <SelectTrigger className="mt-2 h-12 border-2 border-blue-300 focus:border-blue-500">
-                          <SelectValue placeholder="👆 Selecione a área que deve receber o chamado" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="logistica">🚚 Logística</SelectItem>
-                          <SelectItem value="almoxarifado">📦 Almoxarifado</SelectItem>
-                          <SelectItem value="comunicacao_visual">🎨 Comunicação Visual</SelectItem>
-                          <SelectItem value="locacao">🏢 Locação</SelectItem>
-                          <SelectItem value="compras">🛒 Compras</SelectItem>
-                          <SelectItem value="producao">🏭 Produção</SelectItem>
-                          <SelectItem value="comercial">💼 Comercial</SelectItem>
-                          <SelectItem value="operacional">⚙️ Operacional</SelectItem>
-                          <SelectItem value="financeiro">💰 Financeiro</SelectItem>
-                          <SelectItem value="logotipia">🎨 Logotipia</SelectItem>
-                          <SelectItem value="detalhamento_tecnico">🔧 Detalhamento Técnico</SelectItem>
-                          <SelectItem value="sub_locacao">🏗️ Sub-locação</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="escalation-reason" className="text-base font-semibold">📝 Motivo *</Label>
-                      <Textarea
-                        id="escalation-reason"
-                        value={escalationReason}
-                        onChange={(e) => setEscalationReason(e.target.value)}
-                        placeholder="Descreva o motivo pelo qual está enviando este chamado para outra área..."
-                        className="mt-2 min-h-[100px] border-2 border-blue-300 focus:border-blue-500"
-                      />
-                    </div>
-                    {escalationArea && escalationReason.trim() && (
-                      <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <p className="text-sm text-green-800 font-semibold">✅ Pronto para enviar para: <span className="font-bold">{escalationArea}</span></p>
-                      </div>
-                    )}
-                    <Button
-                      onClick={handleEscalation}
-                      disabled={!escalationArea || !escalationReason.trim() || isEscalating}
-                      className="w-full h-12 text-lg font-semibold bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400"
-                    >
-                      {isEscalating ? <><span className="animate-spin mr-2">⏳</span>Enviando...</> : <><span className="mr-2">🚀</span>Enviar para Área</>}
-                    </Button>
-                    <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                      <p className="text-sm text-yellow-800">⚠️ <strong>Atenção:</strong> Ao enviar, o chamado será transferido para a área selecionada e sairá da sua lista de responsabilidades.</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-
-            {!isArchived && userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador') && project?.consultorId && (userProfile.funcao === 'administrador' || ticket.area === userProfile.area) && (
-              <Card className="mt-6">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><span className="text-2xl">👨‍🎯</span>Escalar para Consultor</CardTitle>
-                  <CardDescription>Escale este chamado para o consultor do projeto para tratativa específica</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="consultor-reason" className="text-base font-semibold">📝 Motivo da Escalação para Consultor *</Label>
-                      <Textarea
-                        id="consultor-reason"
-                        value={consultorReason}
-                        onChange={(e) => setConsultorReason(e.target.value)}
-                        placeholder="Descreva o motivo pelo qual está escalando este chamado para o consultor do projeto..."
-                        className="mt-2 min-h-[100px] border-2 border-green-300 focus:border-green-500"
-                      />
-                    </div>
-                    {consultorReason.trim() && (
-                      <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <p className="text-sm text-green-800 font-semibold">✅ Pronto para escalar para: <span className="font-bold">CONSULTOR DO PROJETO</span></p>
-                        <p className="text-xs text-green-700 mt-1">Área de origem será salva para retorno: <span className="font-bold">{ticket.area?.replace('_', ' ').toUpperCase()}</span></p>
-                      </div>
-                    )}
-                    <Button
-                      onClick={handleConsultorEscalation}
-                      disabled={!consultorReason.trim() || isEscalatingToConsultor}
-                      className="w-full h-12 text-lg font-semibold bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
-                    >
-                      {isEscalatingToConsultor ? <><span className="animate-spin mr-2">⏳</span>Escalando para Consultor...</> : <><span className="mr-2">👨‍🎯</span>Enviar para Consultor</>}
-                    </Button>
-                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                      <p className="text-sm text-green-800">⚠️ <strong>Fluxo:</strong> O chamado irá para o consultor do projeto. Após a ação do consultor, retornará automaticamente para sua área ({ticket.area?.replace('_', ' ').toUpperCase()}) para continuidade.</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {!isArchived && userProfile && (userProfile.funcao === 'operador' || userProfile.funcao === 'administrador') && (userProfile.funcao === 'administrador' || ticket.area === userProfile.area) && (
-              <Card className="mt-6">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><span className="text-2xl">👨‍💼</span>Escalar para Gerência</CardTitle>
-                  <CardDescription>Escale este chamado para qualquer gerência quando necessário</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="management-area" className="text-base font-semibold">👔 Gerência de Destino *</Label>
-                      <Select value={managementArea} onValueChange={setManagementArea}>
-                        <SelectTrigger className="mt-2 h-12 border-2 border-purple-300 focus:border-purple-500">
-                          <SelectValue placeholder="👆 Selecione a gerência que deve receber o chamado" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="gerente_operacional">👨‍💼 Gerência Operacional</SelectItem>
-                          <SelectItem value="gerente_comercial">💼 Gerência Comercial</SelectItem>
-                          <SelectItem value="gerente_producao">🏭 Gerência Produção</SelectItem>
-                          <SelectItem value="gerente_financeiro">💰 Gerência Financeira</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="management-reason" className="text-base font-semibold">📝 Motivo da Escalação para Gerência *</Label>
-                      <Textarea
-                        id="management-reason"
-                        value={managementReason}
-                        onChange={(e) => setManagementReason(e.target.value)}
-                        placeholder="Descreva o motivo pelo qual está escalando este chamado para a gerência..."
-                        className="mt-2 min-h-[100px] border-2 border-purple-300 focus:border-purple-500"
-                      />
-                    </div>
-                    {managementArea && managementReason.trim() && (
-                      <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                        <p className="text-sm text-purple-800 font-semibold">✅ Pronto para escalar para: <span className="font-bold">{managementArea.replace('gerente_', '').replace('_', ' ').toUpperCase()}</span></p>
-                      </div>
-                    )}
-                    <Button
-                      onClick={handleManagementEscalation}
-                      disabled={!managementArea || !managementReason.trim() || isEscalatingToManagement}
-                      className="w-full h-12 text-lg font-semibold bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400"
-                    >
-                      {isEscalatingToManagement ? <><span className="animate-spin mr-2">⏳</span>Escalando para Gerência...</> : <><span className="mr-2">👨‍💼</span>Enviar para Gerência</>}
-                    </Button>
-                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                      <p className="text-sm text-purple-800">⚠️ <strong>Atenção:</strong> Ao escalar para gerência, o chamado aguardará aprovação gerencial antes de retornar para execução.</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {!isArchived && userProfile && userProfile.funcao === 'operador' && project?.produtorId && (
-              <Card className="mt-6">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><span className="text-2xl">🏭</span>Transferir para Produtor</CardTitle>
-                  <CardDescription>Transfira este chamado para o produtor do projeto para continuidade e finalização</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-sm text-blue-800 mb-2"><strong>Produtor do Projeto:</strong> {users.find(u => u.uid === project.produtorId)?.nome || 'Não identificado'}</p>
-                      <p className="text-xs text-blue-600">O chamado será transferido para o produtor responsável por este projeto.</p>
-                    </div>
-                    <Button
-                      onClick={handleTransferToProducer}
-                      disabled={updating}
-                      className="w-full h-12 text-lg font-semibold bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400"
-                    >
-                      {updating ? <><span className="animate-spin mr-2">⏳</span>Transferindo...</> : <><span className="mr-2">🏭</span>Enviar para Produtor</>}
-                    </Button>
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-sm text-blue-800">ℹ️ <strong>Informação:</strong> O chamado será transferido para o produtor do projeto para dar continuidade e finalização.</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
           </div>
 
-          <div className="lg:col-span-1 space-y-4 sm:space-y-6">
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Ações */}
             <Card>
-              <CardHeader className="pb-3 sm:pb-4">
-                <CardTitle className="flex items-center text-base sm:text-lg">
-                  <MapPin className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                  Projeto
-                </CardTitle>
+              <CardHeader>
+                <CardTitle>Ações</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 sm:space-y-4">
-                {/* Projetos vinculados (multi) */}
-                {linkedProjectIds && linkedProjectIds.length > 1 && (
-                  <div className="mb-3">
-                    <div className="text-xs text-gray-500 mb-2">Projetos vinculados</div>
-                    <div className="flex flex-wrap gap-2">
-                      {linkedProjectIds.map((pid) => {
-                        const p = projectsMap[pid];
-                        const label = p?.nome || (ticket?.projetoNome && pid === (ticket?.projetoId || "" ) ? ticket.projetoNome : `Projeto ${pid.slice(-6)}`);
-                        const isActive = activeProjectId === pid;
-                        return (
-                          <button
-                            key={pid}
-                            onClick={() => handleSelectProject(pid)}
-                            className={`px-3 py-1 rounded-full border text-xs transition-colors ${isActive ? "bg-blue-600 text-white border-blue-600" : "bg-white hover:bg-gray-50"}`}
-                            title={p?.nome || pid}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <Label className="text-xs sm:text-sm font-medium text-gray-700">Nome</Label>
-                  <p className="text-sm sm:text-base text-gray-900 break-words">{project?.nome || 'Projeto não encontrado'}</p>
-                </div>
-                {project?.cliente && (
-                  <div>
-                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Cliente</Label>
-                    <p className="text-sm sm:text-base text-gray-900 break-words">{project.cliente}</p>
-                  </div>
-                )}
-                {project?.local && (
-                  <div>
-                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Local</Label>
-                    <p className="text-sm sm:text-base text-gray-900 break-words">{project.local}</p>
-                  </div>
-                )}
-                
-                {project && (project.tipoMontagem || project.tipo_de_montagem || project.tipoMontagemPrincipal || project.montagem) && (
-                  <div>
-                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Tipo de Montagem</Label>
-                    <p className="text-sm sm:text-base text-gray-900 break-words">
-                      {project.tipoMontagem || project.tipo_de_montagem || project.tipoMontagemPrincipal || project.montagem}
-                    </p>
-                  </div>
-                )}
-                <div>
-                  <Label className="text-xs sm:text-sm font-medium text-gray-700">Produtor</Label>
-                  <p className="text-sm sm:text-base text-gray-900 break-words">
-                    {resolveUserNameByProjectField(project, 'produtor') || 'Não identificado'}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-xs sm:text-sm font-medium text-gray-700">Consultor</Label>
-                  <p className="text-sm sm:text-base text-gray-900 break-words">
-                    {resolveUserNameByProjectField(project, 'consultor') || 'Não identificado'}
-                  </p>
-                </div>
-{project && (
-                  <div className="pt-3 mt-3 border-t">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => navigate(`/projeto/${project.id}`)}
-                    >
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Acessar Detalhes do Projeto
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {!isArchived && (
-              <Card>
-                <CardHeader className="pb-3 sm:pb-4">
-                  <CardTitle className="flex items-center text-base sm:text-lg">
-                    <LinkIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                    Vincular Chamado
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Crie um novo chamado para outra área que ficará vinculado a este.
-                  </p>
+              <CardContent className="space-y-3">
+                {/* CORREÇÃO: Botão Criar Chamado Vinculado - Funcional para operadores */}
+                {(userProfile?.funcao === 'operador' || userProfile?.funcao === 'administrador') && (
                   <Button
+                    onClick={handleCreateLinkedTicket}
                     className="w-full"
                     variant="outline"
-                    onClick={() => navigate('/novo-chamado', { state: { linkedTicketId: ticket.id } })}
                   >
-                    <PlusCircle className="h-4 w-4 mr-2" />
+                    <LinkIcon className="h-4 w-4 mr-2" />
                     Criar Chamado Vinculado
                   </Button>
-                </CardContent>
-              </Card>
-            )}
+                )}
 
-            {!isArchived && availableStatuses.length > 0 && (
-              <Card>
-                <CardHeader className="pb-3 sm:pb-4">
-                  <CardTitle className="flex items-center text-base sm:text-lg">
-                    <Settings className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                    Ações
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 sm:space-y-4">
-                  <div>
-                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Alterar Status</Label>
+                {/* Botão Rejeitar/Devolver */}
+                {ticket.status !== 'concluido' && ticket.status !== 'cancelado' && (
+                  <Button
+                    onClick={() => setShowRejectModal(true)}
+                    className="w-full"
+                    variant="destructive"
+                  >
+                    <XCircle className="h-4 w-4 mr-2" />
+                    Rejeitar / Devolver
+                  </Button>
+                )}
+
+                {/* Atualizar Status */}
+                {getAvailableStatuses().length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Atualizar Status</Label>
                     <Select value={newStatus} onValueChange={setNewStatus}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Selecione uma ação" />
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione um status" />
                       </SelectTrigger>
                       <SelectContent>
-                        {availableStatuses.map((status) => (
+                        {getAvailableStatuses().map((status) => (
                           <SelectItem key={status.value} value={status.value}>
                             {status.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
-                  {(newStatus === 'concluido' || newStatus === 'rejeitado' || newStatus === 'enviado_para_area') && (
-                    <div className="space-y-3">
-                      <div>
-                        <Label htmlFor="conclusion-description">
-                          {newStatus === 'concluido' ? 'Descrição da Conclusão' : 'Motivo da Rejeição/Devolução'}
-                        </Label>
-                        <Textarea
-                          id="conclusion-description"
-                          placeholder={newStatus === 'concluido' ? "Descreva como o problema foi resolvido..." : "Explique o motivo..."}
-                          value={conclusionDescription}
-                          onChange={(e) => setConclusionDescription(e.target.value)}
-                          rows={3}
-                          className={(newStatus === 'rejeitado' || newStatus === 'enviado_para_area') ? "border-red-300 focus:border-red-500" : ""}
-                        />
-                        {(newStatus === 'rejeitado' || newStatus === 'enviado_para_area') && (
-                          <p className="text-xs text-red-600 mt-1">* Campo obrigatório</p>
+                    {newStatus && (
+                      <Button
+                        onClick={() => handleStatusUpdate(newStatus)}
+                        disabled={updating}
+                        className="w-full"
+                      >
+                        {updating ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <CheckCircle className="h-4 w-4 mr-2" />
                         )}
-                      </div>
-                      {newStatus === 'concluido' && (
-                        <div>
-                          <Label>Evidências (Imagens)</Label>
-                          <ImageUpload
-                            onImagesUploaded={setConclusionImages}
-                            existingImages={conclusionImages}
-                            maxImages={5}
-                            buttonText="Anexar Evidências"
-                            className="mt-2"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <Button
-                    onClick={handleStatusUpdate}
-                    disabled={!newStatus || updating}
-                    className={`w-full ${newStatus === 'rejeitado' || newStatus === 'enviado_para_area' ? 'bg-red-600 hover:bg-red-700' : ''}`}
-                    variant={newStatus === 'rejeitado' || newStatus === 'enviado_para_area' ? 'destructive' : 'default'}
-                  >
-                    {updating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
-                    {updating ? 'Atualizando...' : 'Confirmar Ação'}
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
+                        Atualizar
+                      </Button>
+                    )}
+                  </div>
+                )}
 
-            {!isArchived && userProfile?.funcao === 'administrador' && (ticket.status === 'concluido' || ticket.status === 'cancelado') && (
+                {/* Seletor de Área */}
+                {showAreaSelector && (
+                  <div className="space-y-2">
+                    <Label>Área de Destino</Label>
+                    <Select value={selectedArea} onValueChange={setSelectedArea}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione uma área" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="area1">Área 1</SelectItem>
+                        <SelectItem value="area2">Área 2</SelectItem>
+                        <SelectItem value="area3">Área 3</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* Conclusão com observações */}
+                {newStatus === 'concluido' && (
+                  <div className="space-y-2">
+                    <Label>Observações da Conclusão</Label>
+                    <Textarea
+                      value={conclusionDescription}
+                      onChange={(e) => setConclusionDescription(e.target.value)}
+                      placeholder="Descreva como o chamado foi resolvido..."
+                    />
+                  </div>
+                )}
+
+                {/* Arquivar/Desarquivar */}
+                {userProfile?.funcao === 'administrador' && (
+                  <>
+                    {ticket.status === 'arquivado' ? (
+                      <Button
+                        onClick={handleUnarchiveTicket}
+                        disabled={updating}
+                        variant="outline"
+                        className="w-full"
+                      >
+                        <ArchiveRestore className="h-4 w-4 mr-2" />
+                        Desarquivar
+                      </Button>
+                    ) : ticket.status === 'concluido' && (
+                      <Button
+                        onClick={handleArchiveTicket}
+                        disabled={updating}
+                        variant="outline"
+                        className="w-full"
+                      >
+                        <Archive className="h-4 w-4 mr-2" />
+                        Arquivar
+                      </Button>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* CORREÇÃO: Escalações - Cards visíveis para produtor */}
+            {(showEscalationToAreaCard() || showEscalationToManagementCard() || showEscalationToConsultorCard()) && (
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center text-base sm:text-lg">
-                    <Archive className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                    Ações de Arquivo
-                  </CardTitle>
+                  <CardTitle>Escalações</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <Button onClick={handleArchiveTicket} disabled={updating} variant="outline" className="w-full">
-                    {updating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Archive className="h-4 w-4 mr-2" />}
-                    Arquivar Chamado
-                  </Button>
+                <CardContent className="space-y-4">
+                  {/* Escalar para Área */}
+                  {showEscalationToAreaCard() && (
+                    <div className="space-y-2">
+                      <Label>Escalar para Área</Label>
+                      <Select value={escalationArea} onValueChange={setEscalationArea}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione uma área" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="area1">Área 1</SelectItem>
+                          <SelectItem value="area2">Área 2</SelectItem>
+                          <SelectItem value="area3">Área 3</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Textarea
+                        value={escalationReason}
+                        onChange={(e) => setEscalationReason(e.target.value)}
+                        placeholder="Motivo da escalação..."
+                      />
+                      <Button
+                        onClick={handleEscalation}
+                        disabled={isEscalating || !escalationArea || !escalationReason.trim()}
+                        className="w-full"
+                        variant="outline"
+                      >
+                        {isEscalating ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <ArrowLeft className="h-4 w-4 mr-2" />
+                        )}
+                        Escalar para Área
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Escalar para Gerência */}
+                  {showEscalationToManagementCard() && (
+                    <div className="space-y-2">
+                      <Label>Escalar para Gerência</Label>
+                      <Select value={managementArea} onValueChange={setManagementArea}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione uma gerência" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gerencia1">Gerência 1</SelectItem>
+                          <SelectItem value="gerencia2">Gerência 2</SelectItem>
+                          <SelectItem value="gerencia3">Gerência 3</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Textarea
+                        value={managementReason}
+                        onChange={(e) => setManagementReason(e.target.value)}
+                        placeholder="Motivo da escalação..."
+                      />
+                      <Button
+                        onClick={handleEscalationToManagement}
+                        disabled={isEscalatingToManagement || !managementArea || !managementReason.trim()}
+                        className="w-full"
+                        variant="outline"
+                      >
+                        {isEscalatingToManagement ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Shield className="h-4 w-4 mr-2" />
+                        )}
+                        Escalar para Gerência
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Escalar para Consultor */}
+                  {showEscalationToConsultorCard() && project?.consultorId && (
+                    <div className="space-y-2">
+                      <Label>Escalar para Consultor</Label>
+                      <Textarea
+                        value={consultorReason}
+                        onChange={(e) => setConsultorReason(e.target.value)}
+                        placeholder="Motivo da escalação..."
+                      />
+                      <Button
+                        onClick={handleEscalationToConsultor}
+                        disabled={isEscalatingToConsultor || !consultorReason.trim()}
+                        className="w-full"
+                        variant="outline"
+                      >
+                        {isEscalatingToConsultor ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <UserCheck className="h-4 w-4 mr-2" />
+                        )}
+                        Escalar para Consultor
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
 
+            {/* Pessoas Envolvidas */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
-                  <Clock className="h-5 w-5 mr-2" />
-                  Histórico do Chamado
+                  <User className="h-5 w-5 mr-2" />
+                  Pessoas Envolvidas
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {historyEvents.length > 0 ? (
-                    historyEvents.map((event, index) => (
-                      <div key={index} className="flex items-start space-x-3">
-                        <div className="flex flex-col items-center">
-                          <span className={`flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 ${event.color}`}>
-                            <event.Icon className="h-5 w-5" />
-                          </span>
-                          {index < historyEvents.length - 1 && (
-                            <div className="h-6 w-px bg-gray-200" />
-                          )}
-                        </div>
-                        <div className="flex-1 pt-1.5">
-                          <p className="text-sm text-gray-800">
-                            {event.description}{' '}
-                            <span className="font-semibold text-gray-900">{event.userName}</span>
-                          </p>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {formatDate(event.date)}
-                          </p>
+                <div className="space-y-3">
+                  {/* Criador */}
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <User className="h-4 w-4 text-blue-600" />
+                      <div>
+                        <p className="font-semibold text-blue-900">Criador</p>
+                        <p className="text-sm text-blue-700">{ticket.criadoPorNome}</p>
+                        <p className="text-xs text-blue-600">{ticket.area}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Responsável atual */}
+                  {ticket.responsavelAtual && (
+                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="flex items-center space-x-2">
+                        <User className="h-4 w-4 text-green-600" />
+                        <div>
+                          <p className="font-semibold text-green-900">Responsável Atual</p>
+                          <p className="text-sm text-green-700">{ticket.responsavelAtual}</p>
                         </div>
                       </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-gray-500 text-center py-4">
-                      Nenhum evento de histórico registrado.
-                    </p>
+                    </div>
+                  )}
+
+                  {/* Consultor responsável */}
+                  {ticket.consultorResponsavelId && (
+                    <div className="p-3 bg-cyan-50 border border-cyan-200 rounded-lg">
+                      <div className="flex items-center space-x-2">
+                        <UserCheck className="h-4 w-4 text-cyan-600" />
+                        <div>
+                          <p className="font-semibold text-cyan-900">Consultor</p>
+                          <p className="text-sm text-cyan-700">{getUserNameById(ticket.consultorResponsavelId)}</p>
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
               </CardContent>
             </Card>
+
+            {/* Histórico Detalhado */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Clock className="h-5 w-5 mr-2" />
+                  Histórico
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {/* Abertura */}
+                  <div className="flex items-start space-x-3">
+                    <div className="w-3 h-3 bg-blue-500 rounded-full mt-2"></div>
+                    <div>
+                      <p className="font-semibold text-blue-800">Chamado Aberto</p>
+                      <p className="text-xs text-gray-500">{formatDate(ticket.criadoEm)}</p>
+                      <p className="text-sm text-gray-700">Por: {ticket.criadoPorNome}</p>
+                    </div>
+                  </div>
+
+                  {/* Eventos do histórico */}
+                  {historyEvents.map((event, index) => {
+                    const Icon = event.Icon;
+                    return (
+                      <div key={index} className="flex items-start space-x-3">
+                        <div className="w-3 h-3 bg-gray-400 rounded-full mt-2"></div>
+                        <div>
+                          <p className={`font-semibold ${event.color}`}>
+                            {event.description} {event.userName}
+                          </p>
+                          <p className="text-xs text-gray-500">{formatDate(event.date)}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Outras movimentações */}
+                  {ticket.updatedAt && (
+                    <div className="flex items-start space-x-3">
+                      <div className="w-3 h-3 bg-yellow-500 rounded-full mt-2"></div>
+                      <div>
+                        <p className="font-semibold text-yellow-800">Última Atualização</p>
+                        <p className="text-xs text-gray-500">{formatDate(ticket.updatedAt)}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Reenvio para correção */}
+            {ticket.status === 'devolvido' && ticket.criadoPor === user.uid && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Reenviar com Correções</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Textarea
+                    value={additionalInfo}
+                    onChange={(e) => setAdditionalInfo(e.target.value)}
+                    placeholder="Forneça informações adicionais ou correções..."
+                  />
+                  <Button
+                    onClick={handleResubmit}
+                    disabled={isResubmitting || !additionalInfo.trim()}
+                    className="w-full"
+                  >
+                    {isResubmitting ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <ClipboardEdit className="h-4 w-4 mr-2" />
+                    )}
+                    Reenviar Chamado
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Modal de Rejeição */}
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Rejeitar / Devolver Chamado</h3>
+            <Textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Informe o motivo da rejeição/devolução..."
+              className="mb-4"
+            />
+            <div className="flex space-x-3">
+              <Button
+                onClick={handleRejectTicket}
+                variant="destructive"
+                disabled={!rejectReason.trim()}
+              >
+                Confirmar
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowRejectModal(false);
+                  setRejectReason('');
+                }}
+                variant="outline"
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default TicketDetailPage;
+
