@@ -102,9 +102,11 @@ const [activeProjectId, setActiveProjectId] = useState(null);
   const [isEscalating, setIsEscalating] = useState(false);
 
   // Estados para escalação para gerência
+  const [allUsers, setAllUsers] = useState([]);
   const [managementArea, setManagementArea] = useState('');
   const [managementReason, setManagementReason] = useState('');
   const [isEscalatingToManagement, setIsEscalatingToManagement] = useState(false);
+  
 
   // Estados para escalação para consultor
   const [consultorReason, setConsultorReason] = useState('');
@@ -125,6 +127,22 @@ const [activeProjectId, setActiveProjectId] = useState(null);
 
   // Estado para exibir link do chamado pai
   const [parentTicketForLink, setParentTicketForLink] = useState(null);
+
+useEffect(() => {
+  const fetchUsers = async () => {
+    try {
+      const usersCollection = collection(db, 'users');
+      const usersSnapshot = await getDocs(usersCollection);
+      const usersList = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAllUsers(usersList);
+    } catch (error) {
+      console.error("Erro ao buscar usuários: ", error);
+    }
+  };
+
+  fetchUsers();
+}, []);
+
 
   const loadTicketData = async () => {
     try {
@@ -487,52 +505,53 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
   };
 
   const handleManagementEscalation = async () => {
-    if (!managementArea) {
-      alert('Por favor, selecione uma gerência de destino');
-      return;
-    }
-    if (!managementReason.trim()) {
-      alert('Por favor, descreva o motivo da escalação para gerência');
+    if (!managementArea || !managementReason) {
+      alert('Por favor, selecione a gerência e forneça um motivo.');
       return;
     }
 
-    const targetArea = managementArea.replace('gerente_', '');
-    const targetManager = users.find(u => u.funcao === 'gerente' && u.area === targetArea);
-
-    if (!targetManager) {
-      alert(`Erro: Nenhum gerente encontrado para a área "${targetArea}". Verifique o cadastro de usuários.`);
-      return;
-    }
-
-    setIsEscalatingToManagement(true);
     try {
+      // Encontra o gerente correspondente na lista de todos os usuários
+      const targetManager = allUsers.find(user => user.area === managementArea && user.funcao === 'gerente');
+
+      if (!targetManager) {
+        alert(`Erro: Nenhum gerente encontrado para a área "${managementArea}". Verifique o cadastro de usuários.`);
+        console.error('Nenhum gerente encontrado para a área:', managementArea);
+        return;
+      }
+
+      const managerUid = targetManager.id; // O ID do documento do usuário é o UID
+
       const updateData = {
-        status: 'aguardando_aprovacao',
-        areaDeOrigem: ticket.area,
-        gerenteResponsavelId: targetManager.uid,
-        motivoEscalonamentoGerencial: managementReason,
-        escaladoPor: user.uid,
-        escaladoEm: new Date(),
-        atualizadoPor: user.uid,
-        updatedAt: new Date()
-      };
-
-      const managementNames = {
-        'gerente_operacional': 'Gerência Operacional',
-        'gerente_comercial': 'Gerência Comercial',
-        'gerente_producao': 'Gerência Produção',
-        'gerente_financeiro': 'Gerência Financeira'
-      };
-
-      await ticketService.updateTicket(ticketId, {
         status: 'aguardando_aprovacao',
         gerenciaDestino: managementArea,
         escaladoEm: new Date(),
         escaladoPor: user.uid,
         motivoEscalonamentoGerencial: managementReason,
-        responsavelAtual: user.uid, // <--- COLOQUE AQUI
+        responsavelAtual: managerUid, // <-- CORREÇÃO PRINCIPAL AQUI
         dataUltimaAtualizacao: new Date()
-      });
+      };
+
+      await ticketService.updateTicket(ticketId, updateData);
+
+      const historyData = {
+        ticketId,
+        userId: user.uid,
+        userName: userProfile.nome,
+        action: `escalado para a gerência ${managementArea}`,
+        details: `Motivo: ${managementReason}`,
+      };
+      await historyService.addHistory(historyData);
+
+      setManagementArea('');
+      setManagementReason('');
+      setShowManagementModal(false);
+      loadTicketData();
+    } catch (error) {
+      console.error('Erro ao escalar para a gerência:', error);
+      alert('Ocorreu um erro ao escalar o chamado. Tente novamente.');
+    }
+  };
 
 
       const escalationMessage = {
