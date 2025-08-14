@@ -489,13 +489,15 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
     try {
       let ticketId;
       
+      // 1. Prepara os dados base com o que o usuário selecionou.
+      // O status padrão é SEMPRE 'aberto'.
       const baseTicketData = {
         titulo: formData.titulo.trim(),
         descricao: formData.descricao.trim(),
-        area: formData.area,
+        area: formData.area, // << Usa a área que o usuário selecionou (ex: "locacao")
         tipo: formData.tipo,
         prioridade: formData.prioridade,
-        status: 'aberto', // <<-- MUDANÇA 1: O padrão agora é SEMPRE 'aberto'
+        status: 'aberto',
         criadoPor: user.uid,
         criadoPorNome: userProfile?.nome || user.email,
         criadoPorFuncao: userProfile?.funcao || 'usuario',
@@ -507,7 +509,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         projetos: selectedProjects,
         linkedTicketId: linkedTicket?.id || null,
         areaDeOrigem: formData.area,
-        areaInicial: formData.area, // Salva a área inicial para referência
+        areaInicial: formData.area,
       };
 
       const mainProject = projects.find(p => p.id === selectedProjects[0]);
@@ -517,22 +519,25 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         baseTicketData.evento = mainProject.feira;
       }
 
-      // <<-- MUDANÇA 2: Lógica de exceção para o consultor foi movida e isolada aqui
-      const isConsultor = (userProfile?.funcao === 'consultor');
-      const isProducao = (formData.area === 'producao'); // Usando o valor direto
+      // 2. Lógica de exceção ISOLADA e SEGURA
+      const isConsultor = userProfile?.funcao === 'consultor';
+      const isAreaProducao = formData.area === 'producao';
       const tipoNormalizado = (formData.tipo || '').toLowerCase().replace(/[^a-z0-9_]/g, '_');
       const tiposManutencao = ['manutencao_tapecaria', 'manutencao_eletrica', 'manutencao_marcenaria'];
-      const isMaintenanceType = tiposManutencao.some(tipo => tipoNormalizado.includes(tipo));
+      const isTipoManutencao = tiposManutencao.some(tipo => tipoNormalizado.includes(tipo));
 
-      if (isConsultor && isProducao && isMaintenanceType) {
-        // APLICA A EXCEÇÃO: Somente neste caso, o status é alterado
+      // A exceção SÓ é aplicada se TODAS as 3 condições forem verdadeiras
+      if (isConsultor && isAreaProducao && isTipoManutencao) {
+        // Altera APENAS os campos necessários para a transferência
         baseTicketData.status = 'transferido_para_produtor';
         baseTicketData.transferidoPor = user.uid;
         baseTicketData.transferidoEm = new Date();
         if (mainProject?.produtorId) {
           baseTicketData.produtorResponsavelId = mainProject.produtorId;
+          baseTicketData.responsavelAtual = mainProject.produtorId; // << Atribui o ID do produtor
         }
       }
+      // Se a condição acima for falsa, NADA é alterado. O chamado segue como "aberto" para a área selecionada.
 
       if (selectedOperator) {
         Object.assign(baseTicketData, {
