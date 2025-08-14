@@ -402,9 +402,9 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
         return [{ value: 'cancelado', label: 'Cancelar Chamado' }];
     }
 
-    if (userRole === 'gerente' && currentStatus === 'aguardando_aprovacao' && ticket.gerenciaDestino === userProfile.area) {
-      return [ { value: 'aprovado', label: 'Aprovar' }, { value: 'reprovado', label: 'Reprovar' } ];
-    }
+    if (userRole === 'gerente' && currentStatus === 'aguardando_aprovacao' && ticket.responsavelAtual === user.uid) {
+  return [ { value: 'aprovado', label: 'Aprovar' }, { value: 'reprovado', label: 'Reprovar' } ];
+}
 
     if (userRole === 'administrador') {
       if (currentStatus === 'aberto' || currentStatus === 'escalado_para_outra_area' || currentStatus === 'enviado_para_area') return [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
