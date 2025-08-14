@@ -856,12 +856,14 @@ updateData.canceladoEm = new Date();
               </p>
             </div>
             <div className="flex items-center">
-              {(ticket.isConfidential || ticket.confidencial) &&
+              {
+                (ticket.isConfidential || ticket.confidencial) && (
                 <Badge variant="outline" className="mr-2 border-orange-400 bg-orange-50 text-orange-700">
                   <Lock className="h-3 w-3 mr-1.5" />
                   Confidencial
                 </Badge>
-              )}
+              )
+            }
               <Badge className={getStatusColor(ticket.status)}>
                 {getStatusText(ticket.status)}
               </Badge>
@@ -944,7 +946,8 @@ updateData.canceladoEm = new Date();
                     </div>
                   </div>
                 )}
-                {(ticket.isExtra || ticket.itemExtra) && (
+                {
+                  (ticket.isExtra || ticket.itemExtra) && (
                   <div className="p-3 sm:p-4 bg-orange-50 border border-orange-200 rounded-lg">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-orange-600 font-semibold text-sm sm:text-base">🔥 ITEM EXTRA</span>
@@ -956,7 +959,8 @@ updateData.canceladoEm = new Date();
                       </div>
                     )}
                   </div>
-                )}
+                )
+              }
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
                     <Label className="text-sm font-medium text-gray-700">Área</Label>
