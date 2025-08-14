@@ -102,7 +102,6 @@ const [activeProjectId, setActiveProjectId] = useState(null);
   const [isEscalating, setIsEscalating] = useState(false);
 
   // Estados para escalação para gerência
-  const [allUsers, setAllUsers] = useState([]);
   const [managementArea, setManagementArea] = useState('');
   const [managementReason, setManagementReason] = useState('');
   const [isEscalatingToManagement, setIsEscalatingToManagement] = useState(false);
@@ -127,22 +126,6 @@ const [activeProjectId, setActiveProjectId] = useState(null);
 
   // Estado para exibir link do chamado pai
   const [parentTicketForLink, setParentTicketForLink] = useState(null);
-
-useEffect(() => {
-  const fetchUsers = async () => {
-    try {
-      const usersCollection = collection(db, 'users');
-      const usersSnapshot = await getDocs(usersCollection);
-      const usersList = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAllUsers(usersList);
-    } catch (error) {
-      console.error("Erro ao buscar usuários: ", error);
-    }
-  };
-
-  fetchUsers();
-}, []);
-
 
   const loadTicketData = async () => {
     try {
@@ -513,7 +496,7 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
     setIsEscalatingToManagement(true);
     try {
       // Encontra o gerente correspondente na lista de todos os usuários
-      const targetManager = allUsers.find(user => user.area === managementArea.replace('gerente_', '') && user.funcao === 'gerente');
+      const targetManager = users.find(user => user.area === managementArea.replace('gerente_', '') && user.funcao === 'gerente');
 
       if (!targetManager) {
         alert(`Erro: Nenhum gerente encontrado para a área "${managementArea}". Verifique o cadastro de usuários.`);
