@@ -510,6 +510,7 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
       return;
     }
 
+    setIsEscalatingToManagement(true);
     try {
       // Encontra o gerente correspondente na lista de todos os usuários
       const targetManager = allUsers.find(user => user.area === managementArea && user.funcao === 'gerente');
@@ -517,6 +518,7 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
       if (!targetManager) {
         alert(`Erro: Nenhum gerente encontrado para a área "${managementArea}". Verifique o cadastro de usuários.`);
         console.error('Nenhum gerente encontrado para a área:', managementArea);
+        setIsEscalatingToManagement(false);
         return;
       }
 
@@ -534,52 +536,31 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
 
       await ticketService.updateTicket(ticketId, updateData);
 
-      const historyData = {
-        ticketId,
-        userId: user.uid,
-        userName: userProfile.nome,
-        action: `escalado para a gerência ${managementArea}`,
-        details: `Motivo: ${managementReason}`,
-      };
-      await historyService.addHistory(historyData);
-
-      setManagementArea('');
-      setManagementReason('');
-      setShowManagementModal(false);
-      loadTicketData();
-    } catch (error) {
-      console.error('Erro ao escalar para a gerência:', error);
-      alert('Ocorreu um erro ao escalar o chamado. Tente novamente.');
-    }
-  };
-
-
+      // Mensagem para o chat
       const escalationMessage = {
         userId: user.uid,
         remetenteNome: userProfile.nome || user.email,
-        conteudo: `👨‍💼 **Chamado escalado para ${managementNames[managementArea]}**\n\n**Motivo:** ${managementReason}\n\n**Gerente Responsável:** ${targetManager.nome}`,
+        conteudo: `👨‍💼 **Chamado escalado para ${managementArea.replace('gerente_', '').replace('_', ' ').toUpperCase()}**\n\n**Motivo:** ${managementReason}\n\n**Gerente Responsável:** ${targetManager.nome}`,
         criadoEm: new Date(),
         type: 'management_escalation'
       };
       await messageService.sendMessage(ticketId, escalationMessage);
 
-      try {
-        await notificationService.notifyManagementEscalation(
-          ticketId,
-          ticket,
-          targetManager.uid,
-          user.uid,
-          managementReason
-        );
-        console.log('✅ Notificação de escalação gerencial enviada');
-      } catch (notificationError) {
-        console.error('❌ Erro ao enviar notificação de escalação gerencial:', notificationError);
-      }
-
+      // Notificação para o gerente
+      await notificationService.notifyManagementEscalation(
+        ticketId,
+        ticket,
+        managerUid, // Usando o UID do gerente encontrado
+        user.uid,
+        managementReason
+      );
+      console.log('✅ Notificação de escalação gerencial enviada');
+      
       await loadTicketData();
       setManagementArea('');
       setManagementReason('');
       alert('Chamado escalado para gerência com sucesso!');
+
     } catch (error) {
       console.error('Erro ao escalar para gerência:', error);
       alert('Erro ao escalar para gerência: ' + error.message);
