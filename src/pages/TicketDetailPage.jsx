@@ -944,7 +944,7 @@ updateData.canceladoEm = new Date();
                     </div>
                   </div>
                 )}
-                {ticket.isExtra && (
+                {(ticket.isExtra || ticket.itemExtra) && (
                   <div className="p-3 sm:p-4 bg-orange-50 border border-orange-200 rounded-lg">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-orange-600 font-semibold text-sm sm:text-base">🔥 ITEM EXTRA</span>
