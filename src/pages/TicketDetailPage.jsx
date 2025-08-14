@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { ticketService } from '@/services/ticketService';
+import { ticketService, TICKET_STATUS } from '@/services/ticketService';
 import { projectService } from '@/services/projectService';
-import { userService } from '@/services/userService';
+import { userService, AREAS } from '@/services/userService';
 import { messageService } from '@/services/messageService';
 import notificationService from '@/services/notificationService';
 import ImageUpload from '@/components/ImageUpload';
@@ -42,10 +42,8 @@ import {
   Shield,
   ThumbsUp,
   ThumbsDown,
-  Archive,
-  ArchiveRestore,
-  Link as LinkIcon,
-  ClipboardEdit, // Ícone adicionado
+  Archive, // ✅ ÍCONE ADICIONADO
+  ArchiveRestore // ✅ ÍCONE ADICIONADO
 } from 'lucide-react';
 
 const TicketDetailPage = () => {
@@ -56,33 +54,11 @@ const TicketDetailPage = () => {
   // Estados principais
   const [ticket, setTicket] = useState(null);
   const [project, setProject] = useState(null);
-const [projectsMap, setProjectsMap] = useState({});
-const [linkedProjectIds, setLinkedProjectIds] = useState([]);
-const [activeProjectId, setActiveProjectId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
   const [accessDenied, setAccessDenied] = useState(false);
-  // Resolve nome do responsável do projeto a partir de possíveis formatos (Id/Uid/Nome/Email/responsaveis{})
-  const resolveUserNameByProjectField = (proj, base) => {
-    if (!proj) return null;
-    const id = proj?.[base + 'Id'] || proj?.[base + 'Uid'] || proj?.responsaveis?.[base]?.id;
-    if (id && Array.isArray(users)) {
-      const u = users.find(u => u.uid === id || u.id === id);
-      if (u?.nome) return u.nome;
-    }
-    const nome = proj?.[base + 'Nome'] || proj?.responsaveis?.[base]?.nome;
-    if (nome) return nome;
-    const email = proj?.[base + 'Email'] || proj?.responsaveis?.[base]?.email;
-    if (email && Array.isArray(users)) {
-      const u = users.find(u => u.email === email);
-      if (u?.nome) return u.nome;
-      return email;
-    }
-    return null;
-  };
-
 
   // Estados do chat
   const [newMessage, setNewMessage] = useState('');
@@ -118,13 +94,6 @@ const [activeProjectId, setActiveProjectId] = useState(null);
   const [mentionQuery, setMentionQuery] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
   const textareaRef = useRef(null);
-  
-  // Estados para o fluxo de correção e reenvio
-  const [isResubmitting, setIsResubmitting] = useState(false);
-  const [additionalInfo, setAdditionalInfo] = useState('');
-
-  // Estado para exibir link do chamado pai
-  const [parentTicketForLink, setParentTicketForLink] = useState(null);
 
   const loadTicketData = async () => {
     try {
@@ -132,53 +101,39 @@ const [activeProjectId, setActiveProjectId] = useState(null);
       setError(null);
       setAccessDenied(false);
 
+      console.log('Carregando dados do chamado:', ticketId);
+
       const ticketData = await ticketService.getTicketById(ticketId);
       if (!ticketData) {
         throw new Error('Chamado não encontrado');
       }
 
       setTicket(ticketData);
+      console.log('Dados do chamado carregados:', ticketData);
 
-      if (ticketData.chamadoPaiId) {
-          const parentTicketData = await ticketService.getTicketById(ticketData.chamadoPaiId);
-          setParentTicketForLink(parentTicketData);
+      if (ticketData.projetoId) {
+        try {
+          const projectData = await projectService.getProjectById(ticketData.projetoId);
+          setProject(projectData);
+        } catch (err) {
+          console.warn('Erro ao carregar projeto:', err);
+        }
       }
 
-      const _linkedIds = Array.isArray(ticketData.projetos) && ticketData.projetos.length > 0
-        ? ticketData.projetos
-        : (ticketData.projetoId ? [ticketData.projetoId] : []);
-      setLinkedProjectIds(_linkedIds);
-      if (_linkedIds.length > 0) {
-        const entries = await Promise.all(
-          _linkedIds.map(async (pid) => {
-            try { const pdata = await projectService.getProjectById(pid); return [pid, pdata]; }
-            catch(e) { console.error('Erro ao carregar projeto', pid, e); return [pid, null]; }
-          })
-        );
-        const map = Object.fromEntries(entries);
-        setProjectsMap(map);
-        setActiveProjectId(_linkedIds[0]);
-        setProject(map[_linkedIds[0]] || null);
-      } else {
-        setProjectsMap({});
-        setActiveProjectId(null);
-        setProject(null);
+      try {
+        const messagesData = await messageService.getMessagesByTicket(ticketId);
+        setMessages(messagesData || []);
+      } catch (err) {
+        console.warn('Erro ao carregar mensagens:', err);
+        setMessages([]);
       }
-const messagesData = await messageService.getMessagesByTicket(ticketId);
-      setMessages(messagesData || []);
 
     } catch (err) {
+      console.error('Erro ao carregar dados do chamado:', err);
       setError(err.message || 'Erro ao carregar chamado');
     } finally {
       setLoading(false);
     }
-  };
-
-  // Selecionar um projeto vinculado
-  const handleSelectProject = (pid) => {
-    setActiveProjectId(pid);
-    const p = projectsMap[pid] || null;
-    setProject(p);
   };
 
   useEffect(() => {
@@ -190,17 +145,14 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
 
   useEffect(() => {
     if (ticket && userProfile && user) {
-      if (ticket.confidencial || ticket.isConfidential) {
-        const isCreator   = ticket.criadoPor === user.uid;
-        const isAdmin     = userProfile.funcao === 'administrador';
-        const isGerente   = userProfile.funcao === 'gerente';
-        const isOperator  = userProfile.funcao === 'operador';
-        const areaOp      = userProfile.area;
-        const operatorInvolved = isOperator && (
-          [ticket.area, ticket.areaDeOrigem, ticket.areaDestino, ticket.areaQueRejeitou].includes(areaOp) ||
-          (Array.isArray(ticket.areasEnvolvidas) && ticket.areasEnvolvidas.includes(areaOp))
-        );
-        if (!isCreator && !isAdmin && !isGerente && !operatorInvolved) {
+      if (ticket.isConfidential) {
+        const isCreator = ticket.criadoPor === user.uid;
+        const isAdmin = userProfile.funcao === 'administrador';
+        const isInvolvedOperator = userProfile.funcao === 'operador' &&
+                                   (userProfile.area === ticket.area || userProfile.area === ticket.areaDeOrigem);
+
+        if (!isCreator && !isAdmin && !isInvolvedOperator) {
+          console.warn('ACESSO NEGADO: Usuário não autorizado a ver este chamado confidencial.');
           setAccessDenied(true);
         }
       }
@@ -209,8 +161,10 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
 
   const markNotificationsAsRead = async () => {
     if (!user?.uid || !ticketId) return;
+
     try {
       await notificationService.markTicketNotificationsAsRead(user.uid, ticketId);
+      console.log('✅ Notificações marcadas como lidas para o chamado:', ticketId);
     } catch (error) {
       console.error('❌ Erro ao marcar notificações como lidas:', error);
     }
@@ -225,11 +179,16 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
         console.error('Erro ao carregar usuários:', error);
       }
     };
+
     loadUsers();
   }, []);
     
+  // ✅ NOVA FUNÇÃO PARA ARQUIVAR
   const handleArchiveTicket = async () => {
-    if (!window.confirm('Tem certeza que deseja arquivar este chamado? Ele sairá da visualização principal e só poderá ser consultado.')) return;
+    if (!window.confirm('Tem certeza que deseja arquivar este chamado? Ele sairá da visualização principal e só poderá ser consultado.')) {
+        return;
+    }
+
     setUpdating(true);
     try {
         await ticketService.updateTicket(ticketId, {
@@ -241,13 +200,18 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
         alert('Chamado arquivado com sucesso!');
         navigate('/dashboard');
     } catch (error) {
+        console.error('Erro ao arquivar chamado:', error);
         alert('Ocorreu um erro ao arquivar o chamado.');
         setUpdating(false);
     }
   };
 
+  // ✅ NOVA FUNÇÃO PARA DESARQUIVAR
   const handleUnarchiveTicket = async () => {
-    if (!window.confirm('Deseja desarquivar este chamado? Ele voltará para a lista de concluídos.')) return;
+    if (!window.confirm('Deseja desarquivar este chamado? Ele voltará para a lista de concluídos.')) {
+        return;
+    }
+
     setUpdating(true);
     try {
         await ticketService.updateTicket(ticketId, {
@@ -259,27 +223,79 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
         alert('Chamado desarquivado com sucesso!');
         loadTicketData();
     } catch (error) {
+        console.error('Erro ao desarquivar chamado:', error);
         alert('Ocorreu um erro ao desarquivar o chamado.');
     } finally {
         setUpdating(false);
     }
   };
-    
+
   const getUserNameById = (userId) => {
       if (!users || !userId) return 'Sistema';
       const userFound = users.find(u => u.uid === userId || u.id === userId);
       return userFound?.nome || 'Usuário desconhecido';
   };
-  
+
   useEffect(() => {
     if (ticket && users.length > 0) {
         const events = [];
-        if (ticket.criadoEm) { events.push({ date: ticket.criadoEm, description: 'Chamado criado por', userName: ticket.criadoPorNome || getUserNameById(ticket.criadoPor), Icon: PlusCircle, color: 'text-blue-500' }); }
-        if (ticket.escaladoEm && ticket.motivoEscalonamentoGerencial) { events.push({ date: ticket.escaladoEm, description: 'Escalado para gerência por', userName: getUserNameById(ticket.escaladoPor), Icon: Shield, color: 'text-purple-500' }); }
-        if (ticket.aprovadoEm) { events.push({ date: ticket.aprovadoEm, description: 'Aprovado por', userName: getUserNameById(ticket.aprovadoPor), Icon: ThumbsUp, color: 'text-green-500' }); }
-        if (ticket.rejeitadoEm) { events.push({ date: ticket.rejeitadoEm, description: 'Rejeitado / Devolvido por', userName: getUserNameById(ticket.rejeitadoPor), Icon: ThumbsDown, color: 'text-red-500' }); }
-        if (ticket.concluidoEm) { events.push({ date: ticket.concluidoEm, description: 'Concluído por', userName: getUserNameById(ticket.concluidoPor), Icon: CheckCircle, color: 'text-green-600' }); }
-        const sortedEvents = events.sort((a, b) => (a.date.toDate ? a.date.toDate() : new Date(a.date)) - (b.date.toDate ? b.date.toDate() : new Date(b.date)));
+
+        if (ticket.criadoEm) {
+            events.push({
+                date: ticket.criadoEm,
+                description: 'Chamado criado por',
+                userName: ticket.criadoPorNome || getUserNameById(ticket.criadoPor),
+                Icon: PlusCircle,
+                color: 'text-blue-500'
+            });
+        }
+
+        if (ticket.escaladoEm && ticket.motivoEscalonamentoGerencial) {
+             events.push({
+                date: ticket.escaladoEm,
+                description: 'Escalado para gerência por',
+                userName: getUserNameById(ticket.escaladoPor),
+                Icon: Shield,
+                color: 'text-purple-500'
+            });
+        }
+
+        if (ticket.aprovadoEm) {
+            events.push({
+                date: ticket.aprovadoEm,
+                description: 'Aprovado por',
+                userName: getUserNameById(ticket.aprovadoPor),
+                Icon: ThumbsUp,
+                color: 'text-green-500'
+            });
+        }
+
+        if (ticket.rejeitadoEm) {
+            events.push({
+                date: ticket.rejeitadoEm,
+                description: 'Rejeitado / Devolvido por',
+                userName: getUserNameById(ticket.rejeitadoPor),
+                Icon: ThumbsDown,
+                color: 'text-red-500'
+            });
+        }
+
+        if (ticket.concluidoEm) {
+            events.push({
+                date: ticket.concluidoEm,
+                description: 'Concluído por',
+                userName: getUserNameById(ticket.concluidoPor),
+                Icon: CheckCircle,
+                color: 'text-green-600'
+            });
+        }
+
+        const sortedEvents = events.sort((a, b) => {
+            const dateA = a.date.toDate ? a.date.toDate() : new Date(a.date);
+            const dateB = b.date.toDate ? b.date.toDate() : new Date(b.date);
+            return dateA - dateB;
+        });
+
         setHistoryEvents(sortedEvents);
     }
   }, [ticket, users]);
@@ -287,9 +303,14 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
   const detectMentions = (text, position) => {
     const beforeCursor = text.substring(0, position);
     const mentionMatch = beforeCursor.match(/@(\w*)$/);
+
     if (mentionMatch) {
       const query = mentionMatch[1].toLowerCase();
-      const filtered = users.filter(user => user.nome.toLowerCase().includes(query) || user.email.toLowerCase().includes(query)).slice(0, 5);
+      const filtered = users.filter(user =>
+        user.nome.toLowerCase().includes(query) ||
+        user.email.toLowerCase().includes(query)
+      ).slice(0, 5);
+
       setMentionQuery(query);
       setMentionSuggestions(filtered);
       setShowMentionSuggestions(true);
@@ -305,8 +326,12 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
     const afterCursor = newMessage.substring(cursorPosition);
     const beforeMention = beforeCursor.replace(/@\w*$/, '');
     const newText = beforeMention + `@${user.nome} ` + afterCursor;
+
     setNewMessage(newText);
     setShowMentionSuggestions(false);
+    setMentionSuggestions([]);
+    setMentionQuery('');
+
     setTimeout(() => {
       if (textareaRef.current) {
         const newPosition = beforeMention.length + user.nome.length + 2;
@@ -319,203 +344,191 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
   const handleTextareaChange = (e) => {
     const value = e.target.value;
     const position = e.target.selectionStart;
+
     setNewMessage(value);
     setCursorPosition(position);
     detectMentions(value, position);
   };
 
   const handleTextareaKeyDown = (e) => {
-    if (showMentionSuggestions && e.key === 'Escape') {
-      setShowMentionSuggestions(false);
+    if (showMentionSuggestions) {
+      if (e.key === 'Escape') {
+        setShowMentionSuggestions(false);
+        setMentionSuggestions([]);
+        setMentionQuery('');
+      }
     }
   };
 
   const formatDate = (date) => {
     if (!date) return 'Data não disponível';
+
     try {
-      let dateObj = (date.toDate && typeof date.toDate === 'function') ? date.toDate() : new Date(date);
-      if (isNaN(dateObj.getTime())) return 'Data inválida';
-      return dateObj.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      let dateObj;
+      if (date.toDate && typeof date.toDate === 'function') {
+        dateObj = date.toDate();
+      } else if (date instanceof Date) {
+        dateObj = date;
+      } else {
+        dateObj = new Date(date);
+      }
+
+      if (isNaN(dateObj.getTime())) {
+        return 'Data inválida';
+      }
+
+      return dateObj.toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
     } catch (error) {
+      console.error('Erro ao formatar data:', error);
       return 'Erro na data';
     }
   };
 
   const getStatusColor = (status) => {
-    const colors = { 
-        'aberto': 'bg-blue-100 text-blue-800', 
-        'em_tratativa': 'bg-yellow-100 text-yellow-800', 
-        'em_execucao': 'bg-blue-100 text-blue-800', 
-        'enviado_para_area': 'bg-purple-100 text-purple-800', 
-        'escalado_para_area': 'bg-purple-100 text-purple-800', 
-        'escalado_para_outra_area': 'bg-purple-100 text-purple-800', 
-        'aguardando_aprovacao': 'bg-orange-100 text-orange-800', 
-        'executado_aguardando_validacao': 'bg-indigo-100 text-indigo-800', 
-        'concluido': 'bg-green-100 text-green-800', 
-        'cancelado': 'bg-red-100 text-red-800', 
-        'devolvido': 'bg-pink-100 text-pink-800', 
-        'aprovado': 'bg-green-100 text-green-800', 
-        'reprovado': 'bg-red-100 text-red-800', 
-        'arquivado': 'bg-gray-100 text-gray-700', 
-        'executado_pelo_consultor': 'bg-yellow-100 text-yellow-800', 
-        'escalado_para_consultor': 'bg-cyan-100 text-cyan-800',
-        'executado_aguardando_validacao_operador': 'bg-indigo-100 text-indigo-800'
+    const colors = {
+      'aberto': 'bg-blue-100 text-blue-800',
+      'em_tratativa': 'bg-yellow-100 text-yellow-800',
+      'em_execucao': 'bg-blue-100 text-blue-800',
+      'enviado_para_area': 'bg-purple-100 text-purple-800',
+      'escalado_para_area': 'bg-purple-100 text-purple-800',
+      'escalado_para_outra_area': 'bg-purple-100 text-purple-800',
+      'aguardando_aprovacao': 'bg-orange-100 text-orange-800',
+      'executado_aguardando_validacao': 'bg-indigo-100 text-indigo-800',
+      'concluido': 'bg-green-100 text-green-800',
+      'cancelado': 'bg-red-100 text-red-800',
+      'devolvido': 'bg-pink-100 text-pink-800',
+      'aprovado': 'bg-green-100 text-green-800',
+      'reprovado': 'bg-red-100 text-red-800',
+      'arquivado': 'bg-gray-100 text-gray-700'
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
 
   const getStatusText = (status) => {
-    const statusTexts = { 
-        'aberto': 'Aberto', 
-        'em_tratativa': 'Em Tratativa', 
-        'em_execucao': 'Em Execução', 
-        'enviado_para_area': 'Enviado para Área', 
-        'escalado_para_area': 'Escalado para Área', 
-        'escalado_para_outra_area': 'Escalado para Outra Área', 
-        'aguardando_aprovacao': 'Aguardando Aprovação', 
-        'executado_aguardando_validacao': 'Aguardando Validação', 
-        'concluido': 'Concluído', 
-        'cancelado': 'Cancelado', 
-        'devolvido': 'Devolvido', 
-        'aprovado': 'Aprovado', 
-        'reprovado': 'Reprovado', 
-        'arquivado': 'Arquivado', 
-        'executado_pelo_consultor': 'Executado pelo Consultor', 
-        'escalado_para_consultor': 'Escalado para Consultor',
-        'executado_aguardando_validacao_operador': 'Aguardando Validação do Operador'
+    const statusTexts = {
+      'aberto': 'Aberto',
+      'em_tratativa': 'Em Tratativa',
+      'em_execucao': 'Em Execução',
+      'enviado_para_area': 'Enviado para Área',
+      'escalado_para_area': 'Escalado para Área',
+      'escalado_para_outra_area': 'Escalado para Outra Área',
+      'aguardando_aprovacao': 'Aguardando Aprovação',
+      'executado_aguardando_validacao': 'Executado - Aguardando Validação',
+      'concluido': 'Concluído',
+      'cancelado': 'Cancelado',
+      'devolvido': 'Devolvido',
+      'aprovado': 'Aprovado',
+      'reprovado': 'Reprovado',
+      'arquivado': 'Arquivado'
     };
     return statusTexts[status] || status;
   };
 
-  
-const getAvailableStatuses = () => {
-  if (!ticket || !userProfile || !user) return [];
-  const status = ticket.status;
-  const role = userProfile.funcao;
-  const myUid = user.uid;
-  const myArea = userProfile.area;
-  const isAdmin = role === 'administrador';
-  const isGerente = role === 'gerente';
-  const isOperador = role === 'operador';
-  const isConsultor = role === 'consultor';
-  const isProdutor = role === 'produtor';
-  const isCreator = ticket.criadoPor === myUid;
-
-  // Helpers
-  const isResponsibleArea = !!(ticket.area === myArea || ticket.atribuidoA === myUid);
-  const isEscalationTargetGerencia = !!(status === 'aguardando_aprovacao' && ticket.gerenciaDestinoId && userProfile?.gerenciaId && ticket.gerenciaDestinoId === userProfile.gerenciaId);
-
-  // 1) status "concluido" / "cancelado" -> somente admin pode "arquivar"
-  if (status === 'concluido' || status === 'cancelado') {
-    return isAdmin ? [ { value: 'arquivado', label: 'Arquivar chamado' } ] : [];
-  }
-
-  // 2) status "aberto" -> qualquer usuário vê "iniciar tratativa" e "rejeitar / devolver"
-  if (status === 'aberto') {
-    return [
-      { value: 'em_tratativa', label: 'Iniciar tratativa' },
-      { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }
-    ];
-  }
-
-  // 3) status "em_tratativa" -> só o responsável (minha área/meu usuário) pode agir
-  if (status === 'em_tratativa') {
-    if (isAdmin || isResponsibleArea) {
-      // próximo passo permitido: executar
-      return [
-        { value: 'em_execucao', label: 'Executar' },
-        { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }
-      ];
+  const getAvailableStatuses = () => {
+    if (!ticket || !userProfile || !user) {
+      return [];
     }
-    return [];
-  }
 
-  // 4) status "escalado_para_outra_area" -> nova área recebe com duas ações
-  if (status === 'escalado_para_outra_area') {
-    if (isAdmin || isResponsibleArea) {
-      return [
-        { value: 'em_tratativa', label: 'Iniciar tratativa' },
-        { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }
-      ];
+    const currentStatus = ticket.status;
+    const userRole = userProfile.funcao;
+    const isCreator = ticket.criadoPor === user.uid;
+
+    const isProjectProducer = userProfile.funcao === 'produtor' && project && project.produtorId === user.uid;
+    const isConsultantTicketForProducer = ticket.criadoPorFuncao === 'consultor';
+
+    if (isProjectProducer && isConsultantTicketForProducer && (ticket.status === 'aberto' || ticket.status === 'em_tratativa')) {
+        const producerActions = [];
+        if (ticket.status === 'aberto') {
+            producerActions.push({ value: TICKET_STATUS.IN_TREATMENT, label: 'Iniciar Tratativa', description: 'Começar a trabalhar no chamado' });
+        }
+        producerActions.push({ value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Executado', description: 'Marcar como executado para validação do consultor' });
+
+        producerActions.push({ value: 'send_to_area', label: 'Enviar para a Área', description: 'Encaminhar o chamado para a área final' });
+
+        return producerActions;
     }
-    return [];
-  }
 
-  // 5) status "aguardando_aprovacao" -> somente o gerente de destino
-  if (status === 'aguardando_aprovacao') {
-    if (isAdmin || (isGerente && isEscalationTargetGerencia)) {
-      return [
-        { value: 'aprovado', label: 'Aprovar' },
-        { value: 'cancelado', label: 'Reprovar (Cancelar chamado)' }
-      ];
+    if (isCreator && currentStatus === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION) {
+        return [
+            { value: TICKET_STATUS.COMPLETED, label: 'Validar e Concluir', description: 'O chamado foi resolvido corretamente.' },
+            { value: TICKET_STATUS.SENT_TO_AREA, label: 'Rejeitar / Devolver', description: 'Devolver para a área responsável com um motivo.' }
+        ];
     }
-    return [];
-  }
 
-  // 6) status "aprovado" -> volta para área anterior com mesmas ações de "aberto"
-  if (status === 'aprovado') {
-    return [
-      { value: 'em_tratativa', label: 'Iniciar tratativa' },
-      { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }
-    ];
-  }
-
-  // 7) status "transferido_para_produtor" (abertura por consultor p/ produção OU escalado para produtor)
-  if (status === 'transferido_para_produtor') {
-    // produtor do projeto (ou admin) pode agir
-    const isProjProdutor = !!(project && (project.produtorId === myUid || project?.responsaveis?.produtor?.id === myUid));
-    if (isAdmin || isProjProdutor) {
-      // quando veio via escalação, o produtor pode executar ou devolver para área
-      // quando veio via abertura do consultor, também precisa iniciar tratativa antes de executar
-      return [
-        { value: 'em_tratativa', label: 'Iniciar tratativa' },
-        { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }
-      ];
+    if (userRole === 'administrador') {
+      if (currentStatus === TICKET_STATUS.OPEN) {
+        return [
+          { value: TICKET_STATUS.IN_TREATMENT, label: 'Iniciar Tratativa', description: 'Começar a trabalhar no chamado' }
+        ];
+      }
+      if (currentStatus === TICKET_STATUS.IN_TREATMENT) {
+        return [
+          { value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Executado', description: 'Marcar como executado para validação' }
+        ];
+      }
+      if (currentStatus === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION && !isCreator) {
+        return [
+          { value: TICKET_STATUS.COMPLETED, label: 'Forçar Conclusão (Admin)', description: 'Finalizar chamado como administrador.' }
+        ];
+      }
+      if (currentStatus === 'aguardando_aprovacao') {
+        return [
+          { value: TICKET_STATUS.APPROVED, label: 'Aprovar', description: 'Aprovar e retornar para área' },
+          { value: TICKET_STATUS.REJECTED, label: 'Reprovar', description: 'Reprovar e encerrar chamado' }
+        ];
+      }
     }
-    return [];
-  }
 
-  // 8) status "escalado_para_consultor"
-  if (status === 'escalado_para_consultor') {
-    // consultor do projeto (ou admin) pode agir
-    const isProjConsultor = !!(project && (project.consultorId === myUid || project?.responsaveis?.consultor?.id === myUid));
-    if (isAdmin || isProjConsultor) {
-      return [
-        { value: 'em_tratativa', label: 'Iniciar tratativa' },
-        { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }
-      ];
+    if (userRole === 'operador') {
+      const isFromUserArea = ticket.area === userProfile.area;
+      const isAssignedToUser = ticket.atribuidoA === user.uid;
+      const canManage = isFromUserArea || isAssignedToUser;
+
+      if (canManage) {
+        if (currentStatus === TICKET_STATUS.OPEN) {
+          return [
+            { value: TICKET_STATUS.IN_TREATMENT, label: 'Iniciar Tratativa', description: 'Começar a trabalhar no chamado' }
+          ];
+        }
+        if (currentStatus === TICKET_STATUS.IN_TREATMENT) {
+          return [
+            { value: TICKET_STATUS.EXECUTED_AWAITING_VALIDATION, label: 'Executado', description: 'Marcar como executado para validação' }
+          ];
+        }
+      }
     }
-    return [];
-  }
 
-  // 9) status "em_execucao" -> ao executar, volta para origem com validação pendente
-  if (status === 'em_execucao') {
-    if (isAdmin || isResponsibleArea) {
-      // fluxo de execução finalizado: marcar como executado aguardando validação
-      return [
-        { value: 'executado_aguardando_validacao', label: 'Finalizar execução (aguardar validação criador)' },
-        { value: 'executado_aguardando_validacao_operador', label: 'Finalizar execução (aguardar validação operador)' }
-      ];
+    if (userRole === 'gerente') {
+      const isManagerOfArea = userProfile.area === 'producao';
+      const isEscalatedToThisManager = currentStatus === 'aguardando_aprovacao' &&
+                                       (ticket.gerenteResponsavelId === user.uid ||
+                                        (!ticket.gerenteResponsavelId && isManagerOfArea));
+
+      if (isEscalatedToThisManager) {
+        return [
+          { value: TICKET_STATUS.APPROVED, label: 'Aprovar', description: 'Aprovar e retornar para área' },
+          { value: TICKET_STATUS.REJECTED, label: 'Reprovar', description: 'Reprovar e encerrar chamado' }
+        ];
+      }
+      return [];
     }
-    return [];
-  }
 
-  // 10) status "executado_aguardando_validacao" ou "executado_aguardando_validacao_operador"
-  if (status === 'executado_aguardando_validacao' || status === 'executado_aguardando_validacao_operador') {
-    // volta para o criador (ou operador de origem) validar
-    if (isAdmin || isCreator || (isOperador && isResponsibleArea)) {
-      return [
-        { value: 'concluido', label: 'Validar e Concluir' },
-        { value: 'enviado_para_area', label: 'Rejeitar / Devolver' }
-      ];
+    if (userRole === 'consultor' && isCreator) {
+      if (currentStatus === TICKET_STATUS.COMPLETED) {
+        return [
+          { value: TICKET_STATUS.COMPLETED, label: 'Finalizar', description: 'Confirmar finalização do chamado' }
+        ];
+      }
     }
-    return [];
-  }
 
-  // fallback
-  return [];
-};
-;
+    return [];
+  };
 
   const handleEscalation = async () => {
     if (!escalationArea) {
@@ -529,7 +542,7 @@ const getAvailableStatuses = () => {
     setIsEscalating(true);
     try {
       const updateData = {
-        status: 'escalado_para_outra_area',
+        status: TICKET_STATUS.ESCALATED_TO_OTHER_AREA || 'escalado_para_outra_area',
         area: escalationArea || null,
         escalationReason: escalationReason || '',
         userRole: userProfile?.funcao || 'operador',
@@ -710,162 +723,156 @@ const getAvailableStatuses = () => {
 
   const handleStatusUpdate = async () => {
     if (!newStatus) return;
-    await proceedWithStatusUpdate(newStatus);
-  };
-    
-  
-const proceedWithStatusUpdate = async (statusToUpdate) => {
-  // para rejeitar/devolver exigimos justificativa
-  if ((statusToUpdate === 'enviado_para_area') && !conclusionDescription.trim()) {
-    alert('Por favor, forneça um motivo para a rejeição/devolução');
-    return;
-  }
-  setUpdating(true);
-  try {
-    let updateData = {};
-    let systemMessageContent = '';
 
-    // Base
-    updateData = {
-      status: statusToUpdate,
-      atualizadoPor: user?.uid || null,
-      updatedAt: new Date()
-    };
-
-    const current = ticket.status;
-
-    // Status handlers
-    switch (statusToUpdate) {
-      case 'em_tratativa':
-        // permanece na mesma área/atribuição
-        systemMessageContent = '🛠️ **Início de tratativa**';
-        break;
-
-      case 'em_execucao':
-        systemMessageContent = '⚙️ **Em execução**';
-        break;
-
-      case 'executado_aguardando_validacao':
-      case 'executado_aguardando_validacao_operador':
-        // volta para origem para validação
-        updateData.area = ticket.areaDeOrigem || ticket.areaInicial || ticket.area;
-        systemMessageContent = '✅ **Execução finalizada, aguardando validação**';
-        break;
-
-      case 'enviado_para_area':
-        // rejeição/devolução: volta para área anterior
-        updateData.area = ticket.areaDeOrigem || ticket.areaInicial || ticket.area;
-        updateData.rejeicaoMotivo = conclusionDescription.trim();
-        systemMessageContent = `↩️ **Chamado devolvido**\n\n**Motivo:** ${conclusionDescription.trim()}`;
-        break;
-
-      case 'aprovado':
-        // gerente aprovou -> volta para área que escalou, com "aberto"
-        updateData.status = 'aberto';
-        updateData.area = ticket.areaDeOrigem || ticket.areaInicial || ticket.area;
-        systemMessageContent = '✅ **Aprovado pela gerência** — chamado reaberto para tratativas';
-        break;
-
-      case 'cancelado':
-        systemMessageContent = '🛑 **Chamado cancelado**';
-        break;
-
-      case 'arquivado':
-        updateData.arquivadoEm = new Date();
-        updateData.arquivadoPor = user?.uid || null;
-        systemMessageContent = '📦 **Chamado arquivado**';
-        break;
-
-      default:
-        systemMessageContent = `🔄 **Status atualizado para:** ${statusToUpdate}`;
+    if ((newStatus === TICKET_STATUS.REJECTED || (newStatus === TICKET_STATUS.SENT_TO_AREA && ticket.status === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION)) && !conclusionDescription.trim()) {
+      alert('Por favor, forneça um motivo para a rejeição');
+      return;
     }
 
-    // Persiste atualização e mensagem do sistema
-    await ticketService.updateTicket(ticketId, updateData);
-    await messageService.sendMessage(ticketId, {
-      userId: user.uid,
-      remetenteNome: userProfile.nome || user.email,
-      conteudo: systemMessageContent,
-      criadoEm: new Date(),
-      type: 'system'
-    });
+    setUpdating(true);
+    try {
+      let updateData = {};
+      let systemMessageContent = '';
 
-    // Limpa UI
-    setConclusionDescription('');
-    await loadTicketData();
-  } catch (e) {
-    console.error(e);
-    alert('Erro ao atualizar status');
-  } finally {
-    setUpdating(false);
-  }
-};
-;
-  
+      if (newStatus === 'send_to_area') {
+        const targetArea = ticket.areaDestinoOriginal;
+
+        if (!targetArea) {
+            alert('Erro Crítico: A área de destino original não foi encontrada neste chamado. O chamado não pode ser enviado. Por favor, contate o suporte. (O campo areaDestinoOriginal está faltando no ticket).');
+            setUpdating(false);
+            return;
+        }
+
+        const newAreasEnvolvidas = [...new Set([...(ticket.areasEnvolvidas || []), targetArea])];
+
+        updateData = {
+          status: TICKET_STATUS.OPEN,
+          area: targetArea,
+          areasEnvolvidas: newAreasEnvolvidas,
+          atualizadoPor: user.uid,
+          updatedAt: new Date(),
+        };
+        systemMessageContent = `📲 **Chamado enviado pelo produtor para a área de destino: ${targetArea.replace('_', ' ').toUpperCase()}.**`;
+
+      } else {
+        updateData = {
+          status: newStatus,
+          atualizadoPor: user.uid,
+          updatedAt: new Date()
+        };
+
+        if (newStatus === TICKET_STATUS.COMPLETED) {
+          updateData.conclusaoDescricao = conclusionDescription;
+          updateData.conclusaoImagens = conclusionImages;
+          updateData.concluidoEm = new Date();
+          updateData.concluidoPor = user.uid;
+          systemMessageContent = `✅ **Chamado concluído**\n\n**Descrição:** ${conclusionDescription}`;
+        } else if (newStatus === TICKET_STATUS.REJECTED) {
+          updateData.motivoRejeicao = conclusionDescription;
+          updateData.rejeitadoEm = new Date();
+          updateData.rejeitadoPor = user.uid;
+          const managerName = userProfile?.nome || user?.email || 'Gerente';
+          systemMessageContent = `❌ **Chamado reprovado pelo gerente ${managerName}**\n\n**Motivo:** ${conclusionDescription}\n\nO chamado foi encerrado devido à reprovação gerencial.`;
+        } else if (newStatus === TICKET_STATUS.SENT_TO_AREA && ticket.status === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION) {
+          updateData.motivoRejeicao = conclusionDescription;
+          updateData.rejeitadoEm = new Date();
+          updateData.rejeitadoPor = user.uid;
+          updateData.area = ticket.areaDeOrigem || ticket.area;
+          systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(newStatus)}`;
+        } else if (newStatus === TICKET_STATUS.APPROVED) {
+            if (ticket.status === 'aguardando_aprovacao' && userProfile.funcao === 'gerente') {
+                const targetArea = ticket.areaDeOrigem || ticket.area;
+                updateData.status = 'em_tratativa';
+                updateData.area = targetArea;
+                updateData.aprovadoEm = new Date();
+                updateData.aprovadoPor = user.uid;
+                const managerName = userProfile?.nome || user?.email || 'Gerente';
+                systemMessageContent = `✅ **Chamado aprovado pelo gerente ${managerName}**\n\nO chamado foi aprovado e retornará para a área responsável para execução.`;
+            }
+        } else {
+            systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(newStatus)}`;
+        }
+      }
+
+      await ticketService.updateTicket(ticketId, updateData);
+
+      const statusMessage = {
+        userId: user.uid,
+        remetenteNome: userProfile.nome || user.email,
+        conteudo: systemMessageContent,
+        criadoEm: new Date(),
+        type: 'status_update'
+      };
+      await messageService.sendMessage(ticketId, statusMessage);
+
+      try {
+        await notificationService.notifyStatusChange(
+          ticketId,
+          ticket,
+          updateData.status,
+          ticket.status,
+          user.uid
+        );
+        console.log('✅ Notificação de mudança de status enviada');
+      } catch (notificationError) {
+        console.error('❌ Erro ao enviar notificação de mudança de status:', notificationError);
+      }
+
+      await loadTicketData();
+      setNewStatus('');
+      setConclusionDescription('');
+      setConclusionImages([]);
+      alert('Status atualizado com sucesso!');
+    } catch (error) {
+      console.error('Erro ao atualizar status:', error);
+      alert('Erro ao atualizar status: ' + error.message);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (!newMessage.trim() && chatImages.length === 0) return;
+
     setSendingMessage(true);
     try {
-      const messageData = { userId: user.uid, remetenteNome: userProfile.nome || user.email, conteudo: newMessage.trim(), imagens: chatImages, criadoEm: new Date(), type: 'user_message' };
+      const messageData = {
+        userId: user.uid,
+        remetenteNome: userProfile.nome || user.email,
+        conteudo: newMessage.trim(),
+        imagens: chatImages,
+        criadoEm: new Date(),
+        type: 'user_message'
+      };
+
       await messageService.sendMessage(ticketId, messageData);
-      await notificationService.notifyNewMessage(ticketId, ticket, messageData, user.uid);
+
+      try {
+        await notificationService.notifyNewMessage(
+          ticketId,
+          ticket,
+          messageData,
+          user.uid
+        );
+        console.log('✅ Notificação de nova mensagem enviada');
+      } catch (notificationError) {
+        console.error('❌ Erro ao enviar notificação de nova mensagem:', notificationError);
+      }
+
       await loadTicketData();
       setNewMessage('');
       setChatImages([]);
     } catch (error) {
+      console.error('Erro ao enviar mensagem:', error);
       alert('Erro ao enviar mensagem: ' + error.message);
     } finally {
       setSendingMessage(false);
     }
   };
-  
-  const handleResubmitTicket = async () => {
-    if (!additionalInfo.trim()) {
-      alert('Por favor, preencha as informações solicitadas antes de reenviar.');
-      return;
-    }
-    if (!ticket.areaQueRejeitou) {
-      alert('Erro: Não foi possível identificar a área de destino para o reenvio.');
-      return;
-    }
-
-    setIsResubmitting(true);
-    try {
-      const updateData = {
-        status: 'aberto', 
-        area: ticket.areaQueRejeitou,
-        areaDeOrigem: ticket.area,
-        areaQueRejeitou: null,
-        descricao: `${ticket.descricao}\n\n--- INFORMAÇÕES ADICIONAIS (em ${new Date().toLocaleString('pt-BR')}) ---\n${additionalInfo}`,
-        atualizadoPor: user.uid,
-        updatedAt: new Date()
-      };
-
-      await ticketService.updateTicket(ticketId, updateData);
-
-      const resubmitMessage = {
-        userId: user.uid,
-        remetenteNome: userProfile.nome || user.email,
-        conteudo: `📬 **Chamado reenviado com informações adicionais para a área: ${ticket.areaQueRejeitou.replace('_', ' ').toUpperCase()}**\n\n**Informações adicionadas:**\n${additionalInfo}`,
-        criadoEm: new Date(),
-        type: 'status_update'
-      };
-      await messageService.sendMessage(ticketId, resubmitMessage);
-      
-      await loadTicketData();
-      setAdditionalInfo('');
-      alert('Chamado reenviado com sucesso!');
-
-    } catch (error) {
-      alert('Ocorreu um erro ao reenviar o chamado: ' + error.message);
-    } finally {
-      setIsResubmitting(false);
-    }
-  };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
           <p className="text-gray-600">Carregando chamado...</p>
@@ -951,7 +958,7 @@ const proceedWithStatusUpdate = async (statusToUpdate) => {
               </p>
             </div>
             <div className="flex items-center">
-              {(ticket.isConfidential || ticket.confidencial) && (
+              {ticket.isConfidential && (
                 <Badge variant="outline" className="mr-2 border-orange-400 bg-orange-50 text-orange-700">
                   <Lock className="h-3 w-3 mr-1.5" />
                   Confidencial
@@ -963,22 +970,6 @@ const proceedWithStatusUpdate = async (statusToUpdate) => {
             </div>
           </div>
         </div>
-
-        {parentTicketForLink && (
-            <Card className="mb-6 bg-amber-50 border-amber-200">
-                <CardHeader>
-                    <CardTitle className="flex items-center text-base text-amber-900">
-                        <LinkIcon className="h-4 w-4 mr-2" />
-                        Este chamado é vinculado ao Chamado Pai
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <Link to={`/chamado/${parentTicketForLink.id}`} className="text-blue-600 hover:underline">
-                        Ver Chamado Original: {parentTicketForLink.titulo}
-                    </Link>
-                </CardContent>
-            </Card>
-        )}
 
         {isArchived && (
           <Alert variant="default" className="mb-6 bg-gray-100 border-gray-300">
@@ -1098,58 +1089,6 @@ const proceedWithStatusUpdate = async (statusToUpdate) => {
                 )}
               </CardContent>
             </Card>
-
-            {user && ticket.criadoPor === user.uid && ticket.status === 'enviado_para_area' && ticket.areaQueRejeitou && (
-              <Card className="bg-yellow-50 border-yellow-300">
-                <CardHeader>
-                  <CardTitle className="flex items-center text-yellow-900">
-                    <ClipboardEdit className="h-5 w-5 mr-2" />
-                    Ação Necessária: Corrigir e Reenviar Chamado
-                  </CardTitle>
-                  <CardDescription className="text-yellow-800">
-                    Este chamado foi devolvido pela área de{' '}
-                    <strong className="font-semibold">{ticket.areaQueRejeitou.replace('_', ' ').toUpperCase()}</strong>. 
-                    Por favor, adicione as informações solicitadas e reenvie.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {ticket.motivoRejeicao && (
-                       <div className="p-3 bg-white border border-gray-200 rounded-md">
-                         <Label className="text-xs font-medium text-gray-700">Motivo da Devolução</Label>
-                         <p className="text-sm text-gray-800 whitespace-pre-wrap">{ticket.motivoRejeicao}</p>
-                       </div>
-                    )}
-                    <div>
-                      <Label htmlFor="additional-info" className="font-semibold text-gray-800">
-                        Novas Informações / Correções *
-                      </Label>
-                      <Textarea
-                        id="additional-info"
-                        placeholder="Forneça aqui os detalhes ou correções solicitadas pela outra área..."
-                        value={additionalInfo}
-                        onChange={(e) => setAdditionalInfo(e.target.value)}
-                        rows={4}
-                        className="mt-2"
-                        disabled={isResubmitting}
-                      />
-                    </div>
-                    <Button 
-                      onClick={handleResubmitTicket} 
-                      disabled={!additionalInfo.trim() || isResubmitting} 
-                      className="w-full bg-yellow-600 hover:bg-yellow-700 text-white"
-                    >
-                      {isResubmitting ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      ) : (
-                        <Send className="h-4 w-4 mr-2" />
-                      )}
-                      Reenviar para {ticket.areaQueRejeitou.replace('_', ' ')}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
 
             <Card>
               <CardHeader>
@@ -1438,6 +1377,7 @@ const proceedWithStatusUpdate = async (statusToUpdate) => {
             )}
           </div>
 
+          {/* Sidebar */}
           <div className="lg:col-span-1 space-y-4 sm:space-y-6">
             <Card>
               <CardHeader className="pb-3 sm:pb-4">
@@ -1447,30 +1387,6 @@ const proceedWithStatusUpdate = async (statusToUpdate) => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 sm:space-y-4">
-                {/* Projetos vinculados (multi) */}
-                {linkedProjectIds && linkedProjectIds.length > 1 && (
-                  <div className="mb-3">
-                    <div className="text-xs text-gray-500 mb-2">Projetos vinculados</div>
-                    <div className="flex flex-wrap gap-2">
-                      {linkedProjectIds.map((pid) => {
-                        const p = projectsMap[pid];
-                        const label = p?.nome || (ticket?.projetoNome && pid === (ticket?.projetoId || "" ) ? ticket.projetoNome : `Projeto ${pid.slice(-6)}`);
-                        const isActive = activeProjectId === pid;
-                        return (
-                          <button
-                            key={pid}
-                            onClick={() => handleSelectProject(pid)}
-                            className={`px-3 py-1 rounded-full border text-xs transition-colors ${isActive ? "bg-blue-600 text-white border-blue-600" : "bg-white hover:bg-gray-50"}`}
-                            title={p?.nome || pid}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
                 <div>
                   <Label className="text-xs sm:text-sm font-medium text-gray-700">Nome</Label>
                   <p className="text-sm sm:text-base text-gray-900 break-words">{project?.nome || 'Projeto não encontrado'}</p>
@@ -1487,28 +1403,7 @@ const proceedWithStatusUpdate = async (statusToUpdate) => {
                     <p className="text-sm sm:text-base text-gray-900 break-words">{project.local}</p>
                   </div>
                 )}
-                
-                {project && (project.tipoMontagem || project.tipo_de_montagem || project.tipoMontagemPrincipal || project.montagem) && (
-                  <div>
-                    <Label className="text-xs sm:text-sm font-medium text-gray-700">Tipo de Montagem</Label>
-                    <p className="text-sm sm:text-base text-gray-900 break-words">
-                      {project.tipoMontagem || project.tipo_de_montagem || project.tipoMontagemPrincipal || project.montagem}
-                    </p>
-                  </div>
-                )}
-                <div>
-                  <Label className="text-xs sm:text-sm font-medium text-gray-700">Produtor</Label>
-                  <p className="text-sm sm:text-base text-gray-900 break-words">
-                    {resolveUserNameByProjectField(project, 'produtor') || 'Não identificado'}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-xs sm:text-sm font-medium text-gray-700">Consultor</Label>
-                  <p className="text-sm sm:text-base text-gray-900 break-words">
-                    {resolveUserNameByProjectField(project, 'consultor') || 'Não identificado'}
-                  </p>
-                </div>
-{project && (
+                {project && (
                   <div className="pt-3 mt-3 border-t">
                     <Button
                       variant="outline"
@@ -1524,25 +1419,18 @@ const proceedWithStatusUpdate = async (statusToUpdate) => {
               </CardContent>
             </Card>
 
-            {!isArchived && (
+            {isArchived && userProfile?.funcao === 'administrador' && (
               <Card>
-                <CardHeader className="pb-3 sm:pb-4">
+                <CardHeader>
                   <CardTitle className="flex items-center text-base sm:text-lg">
-                    <LinkIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                    Vincular Chamado
+                    <ArchiveRestore className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+                    Ações de Arquivo
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Crie um novo chamado para outra área que ficará vinculado a este.
-                  </p>
-                  <Button
-                    className="w-full"
-                    variant="outline"
-                    onClick={() => navigate('/novo-chamado', { state: { linkedTicketId: ticket.id } })}
-                  >
-                    <PlusCircle className="h-4 w-4 mr-2" />
-                    Criar Chamado Vinculado
+                  <Button onClick={handleUnarchiveTicket} disabled={updating} className="w-full">
+                    {updating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ArchiveRestore className="h-4 w-4 mr-2" />}
+                    Desarquivar Chamado
                   </Button>
                 </CardContent>
               </Card>
@@ -1572,25 +1460,25 @@ const proceedWithStatusUpdate = async (statusToUpdate) => {
                       </SelectContent>
                     </Select>
                   </div>
-                  {(newStatus === 'concluido' || newStatus === 'rejeitado' || newStatus === 'enviado_para_area') && (
+                  {(newStatus === TICKET_STATUS.COMPLETED || newStatus === TICKET_STATUS.REJECTED || (newStatus === TICKET_STATUS.SENT_TO_AREA && ticket.status === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION)) && (
                     <div className="space-y-3">
                       <div>
                         <Label htmlFor="conclusion-description">
-                          {newStatus === 'concluido' ? 'Descrição da Conclusão' : 'Motivo da Rejeição/Devolução'}
+                          {newStatus === TICKET_STATUS.COMPLETED ? 'Descrição da Conclusão' : 'Motivo da Rejeição'}
                         </Label>
                         <Textarea
                           id="conclusion-description"
-                          placeholder={newStatus === 'concluido' ? "Descreva como o problema foi resolvido..." : "Explique o motivo..."}
+                          placeholder={newStatus === TICKET_STATUS.COMPLETED ? "Descreva como o problema foi resolvido..." : "Explique o motivo da rejeição..."}
                           value={conclusionDescription}
                           onChange={(e) => setConclusionDescription(e.target.value)}
                           rows={3}
-                          className={(newStatus === 'rejeitado' || newStatus === 'enviado_para_area') ? "border-red-300 focus:border-red-500" : ""}
+                          className={(newStatus === TICKET_STATUS.REJECTED || (newStatus === TICKET_STATUS.SENT_TO_AREA && ticket.status === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION)) ? "border-red-300 focus:border-red-500" : ""}
                         />
-                        {(newStatus === 'rejeitado' || newStatus === 'enviado_para_area') && (
-                          <p className="text-xs text-red-600 mt-1">* Campo obrigatório</p>
+                        {(newStatus === TICKET_STATUS.REJECTED || (newStatus === TICKET_STATUS.SENT_TO_AREA && ticket.status === TICKET_STATUS.EXECUTED_AWAITING_VALIDATION)) && (
+                          <p className="text-xs text-red-600 mt-1">* Campo obrigatório para rejeição</p>
                         )}
                       </div>
-                      {newStatus === 'concluido' && (
+                      {newStatus === TICKET_STATUS.COMPLETED && (
                         <div>
                           <Label>Evidências (Imagens)</Label>
                           <ImageUpload
@@ -1607,17 +1495,17 @@ const proceedWithStatusUpdate = async (statusToUpdate) => {
                   <Button
                     onClick={handleStatusUpdate}
                     disabled={!newStatus || updating}
-                    className={`w-full ${newStatus === 'rejeitado' || newStatus === 'enviado_para_area' ? 'bg-red-600 hover:bg-red-700' : ''}`}
-                    variant={newStatus === 'rejeitado' || newStatus === 'enviado_para_area' ? 'destructive' : 'default'}
+                    className={`w-full ${newStatus === TICKET_STATUS.REJECTED ? 'bg-red-600 hover:bg-red-700' : ''}`}
+                    variant={newStatus === TICKET_STATUS.REJECTED ? 'destructive' : 'default'}
                   >
-                    {updating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+                    {updating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : newStatus === TICKET_STATUS.REJECTED ? <XCircle className="h-4 w-4 mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
                     {updating ? 'Atualizando...' : 'Confirmar Ação'}
                   </Button>
                 </CardContent>
               </Card>
             )}
 
-            {!isArchived && userProfile?.funcao === 'administrador' && (ticket.status === 'concluido' || ticket.status === 'cancelado') && (
+            {!isArchived && userProfile?.funcao === 'administrador' && ticket.status === 'concluido' && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center text-base sm:text-lg">
