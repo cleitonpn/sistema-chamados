@@ -513,7 +513,7 @@ const messagesData = await messageService.getMessagesByTicket(ticketId);
     setIsEscalatingToManagement(true);
     try {
       // Encontra o gerente correspondente na lista de todos os usuários
-      const targetManager = allUsers.find(user => user.area === managementArea && user.funcao === 'gerente');
+      const targetManager = allUsers.find(user => user.area === managementArea.replace('gerente_', '') && user.funcao === 'gerente');
 
       if (!targetManager) {
         alert(`Erro: Nenhum gerente encontrado para a área "${managementArea}". Verifique o cadastro de usuários.`);
