@@ -952,7 +952,8 @@ updateData.canceladoEm = new Date();
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-orange-600 font-semibold text-sm sm:text-base">🔥 ITEM EXTRA</span>
                     </div>
-                    {ticket.motivoExtra || ticket.motivoItemExtra) && ( 
+                    {
+                      (ticket.motivoExtra || ticket.motivoItemExtra) && (
                       <div>
                         <Label className="text-xs sm:text-sm font-medium text-orange-700">Motivo do Item Extra</Label>
                         <p className="text-sm sm:text-base text-orange-900 whitespace-pre-wrap break-words">{ticket.motivoExtra}</p>
