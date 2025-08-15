@@ -519,26 +519,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         baseTicketData.evento = mainProject.feira;
       }
 
-      // 2. Lógica de exceção ISOLADA e SEGURA
-      const isConsultor = userProfile?.funcao === 'consultor';
-      const isAreaProducao = formData.area === 'producao';
-      const tipoNormalizado = (formData.tipo || '').toLowerCase().replace(/[^a-z0-9_]/g, '_');
-      const tiposManutencao = ['manutencao_tapecaria', 'manutencao_eletrica', 'manutencao_marcenaria'];
-      const isTipoManutencao = tiposManutencao.some(tipo => tipoNormalizado.includes(tipo));
-
-      // A exceção SÓ é aplicada se TODAS as 3 condições forem verdadeiras
-      if (isConsultor && isAreaProducao && isTipoManutencao) {
-        // Altera APENAS os campos necessários para a transferência
-        baseTicketData.status = 'transferido_para_produtor';
-        baseTicketData.transferidoPor = user.uid;
-        baseTicketData.transferidoEm = new Date();
-        if (mainProject?.produtorId) {
-          baseTicketData.produtorResponsavelId = mainProject.produtorId;
-          baseTicketData.responsavelAtual = mainProject.produtorId; // << Atribui o ID do produtor
-        }
-      }
-      // Se a condição acima for falsa, NADA é alterado. O chamado segue como "aberto" para a área selecionada.
-
       if (selectedOperator) {
         Object.assign(baseTicketData, {
           atribuidoA: selectedOperator,
