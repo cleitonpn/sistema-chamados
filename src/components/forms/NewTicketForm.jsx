@@ -247,6 +247,44 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
     isConfidential: false,
     observacoes: ''
   });
+
+  // Estados para campos dinâmicos por área
+  const [dynamicFields, setDynamicFields] = useState({});
+  
+  // Campos específicos por área
+  const AREA_SPECIFIC_FIELDS = {
+    'locacao': [
+      { key: 'codItem', label: 'Código do Item', type: 'text', required: true },
+      { key: 'item', label: 'Item', type: 'text', required: true },
+      { key: 'quantidade', label: 'Quantidade', type: 'number', required: true }
+    ],
+    'compras': [
+      { key: 'item', label: 'Item', type: 'text', required: true },
+      { key: 'quantidade', label: 'Quantidade', type: 'number', required: true }
+    ]
+  };
+
+  // Campos específicos para Financeiro baseados no tipo
+  const FINANCEIRO_SPECIFIC_FIELDS = {
+    'pagamento_de_frete': [
+      { key: 'motorista', label: 'Nome do Motorista', type: 'text', required: true },
+      { key: 'placa', label: 'Placa do Caminhão', type: 'text', required: true },
+      { key: 'dataFrete', label: 'Data do Frete', type: 'date', required: true },
+      { key: 'finalidadeFrete', label: 'Finalidade do Frete', type: 'select', required: true, options: ['Montagem', 'Apoio', 'Desmontagem', 'Mobiliário', 'Extra'] },
+      { key: 'valorInicial', label: 'Valor Inicial (R$)', type: 'currency', required: true },
+      { key: 'valorNegociado', label: 'Valor Negociado (R$)', type: 'currency', required: true },
+      { key: 'centroCustos', label: 'Centro de Custos', type: 'text', required: true },
+      { key: 'dadosPagamento', label: 'Dados de Pagamento', type: 'textarea', required: false }
+    ]
+  };
+
+  // Função para obter campos dinâmicos baseados em área e tipo
+  const getDynamicFields = (area, tipo) => {
+    if (area === 'financeiro') {
+      return FINANCEIRO_SPECIFIC_FIELDS[tipo] || [];
+    }
+    return AREA_SPECIFIC_FIELDS[area] || [];
+  };
   
   const [projects, setProjects] = useState([]);
   const [selectedProjects, setSelectedProjects] = useState([]); // ✅ MUDANÇA: Array para múltiplos projetos
@@ -328,13 +366,26 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
   useEffect(() => {
     if (formData.area) {
       loadTypesByArea(formData.area);
-      // ✅ MUDANÇA: Remover filtro do produtor - carregar operadores para to      loadOperatorsByArea(formData.area);
+      loadOperatorsByArea(formData.area);
+      
+      // Carregar campos dinâmicos baseados na área e tipo
+      const fields = getDynamicFields(formData.area, formData.tipo);
+      if (fields.length > 0) {
+        const initialFields = {};
+        fields.forEach(field => {
+          initialFields[field.key] = '';
+        });
+        setDynamicFields(initialFields);
+      } else {
+        setDynamicFields({});
+      }
     } else {
       setAvailableTypes([]);
       setOperators([]);
       setSelectedOperator('');
+      setDynamicFields({});
     }
-  }, [formData.area]);
+  }, [formData.area, formData.tipo]); // Adicionar formData.tipo como dependência
 
   const loadProjects = async () => {
     try {
@@ -433,6 +484,29 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
     }));
   };
 
+  const handleDynamicFieldChange = (field, value) => {
+    setDynamicFields(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const formatCurrency = (value) => {
+    // Remove tudo que não é número
+    const numbers = value.replace(/\D/g, '');
+    // Converte para formato de moeda
+    const formatted = (parseInt(numbers) / 100).toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+    return formatted === 'NaN' ? '0,00' : formatted;
+  };
+
+  const handleCurrencyChange = (field, value) => {
+    const formatted = formatCurrency(value);
+    handleDynamicFieldChange(field, formatted);
+  };
+
   const handleImageUpload = (event) => {
     const files = Array.from(event.target.files);
     const newImages = files.map(file => ({
@@ -465,7 +539,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
     aiService.recordTemplateUsage(template.id, true);
   };
 
-    const handleSubmit = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!formData.titulo.trim() || !formData.descricao.trim() || !formData.area || !formData.tipo) {
@@ -473,7 +547,7 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
       return;
     }
 
-    if (selectedProjects.length === 0) {
+    if (selectedProjects.length === 0) { // ✅ MUDANÇA: Verificar array
       setError('Selecione pelo menos um projeto');
       return;
     }
@@ -483,18 +557,29 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
       return;
     }
 
+    // Validar campos dinâmicos obrigatórios
+    const fields = getDynamicFields(formData.area, formData.tipo);
+    if (fields.length > 0) {
+      const requiredFields = fields.filter(field => field.required);
+      for (const field of requiredFields) {
+        if (!dynamicFields[field.key] || !dynamicFields[field.key].toString().trim()) {
+          setError(`O campo "${field.label}" é obrigatório`);
+          return;
+        }
+      }
+    }
+
     setLoading(true);
     setError('');
 
     try {
       let ticketId;
       
-      // 1. Prepara os dados base com o que o usuário selecionou.
-      // O status padrão é SEMPRE 'aberto'.
+      // ✅ MUDANÇA: Criar chamado para múltiplos projetos
       const baseTicketData = {
         titulo: formData.titulo.trim(),
         descricao: formData.descricao.trim(),
-        area: formData.area, // << Usa a área que o usuário selecionou (ex: "locacao")
+        area: formData.area,
         tipo: formData.tipo,
         prioridade: formData.prioridade,
         status: 'aberto',
@@ -506,12 +591,14 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         motivoItemExtra: formData.isExtra ? formData.motivoExtra.trim() : null,
         confidencial: formData.isConfidential,
         observacoes: formData.observacoes.trim() || null,
-        projetos: selectedProjects,
+        projetos: selectedProjects, // ✅ MUDANÇA: Array de projetos
         linkedTicketId: linkedTicket?.id || null,
         areaDeOrigem: formData.area,
-        areaInicial: formData.area,
+        // Adicionar campos dinâmicos estruturados
+        camposEspecificos: Object.keys(dynamicFields).length > 0 ? dynamicFields : null
       };
 
+      // Para compatibilidade, usar o primeiro projeto como principal
       const mainProject = projects.find(p => p.id === selectedProjects[0]);
       if (mainProject) {
         baseTicketData.projetoId = mainProject.id;
@@ -519,6 +606,24 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
         baseTicketData.evento = mainProject.feira;
       }
 
+      // Regra: Consultor abre para Produção com tipo manutenção (tapeçaria/eléctrica/marcenaria) -> vai ao PRODUTOR iniciar tratativa
+                  const isConsultor = (userProfile?.funcao === 'consultor');
+      const isProducao = (formData.area === AREAS.PRODUCTION);
+      const tipoRaw = (formData.tipo || '').toString();
+      const tipoNorm = tipoRaw.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
+      const targets = ['manutencao_tapecaria','manutencao_eletrica','manutencao_marcenaria'];
+      const tipoComp = tipoNorm.replace(/[^a-z0-9_]/g,'_');
+      const isMaintenanceType = isProducao && targets.some(k => tipoComp.includes(k));
+      baseTicketData.areaInicial = formData.area;
+      if (isConsultor && isMaintenanceType) {
+        baseTicketData.status = 'transferido_para_produtor';
+        baseTicketData.area = AREAS.PRODUCTION;
+        baseTicketData.transferidoPor = user.uid;
+        baseTicketData.transferidoEm = new Date();
+        if (mainProject?.produtorId) baseTicketData.produtorResponsavelId = mainProject.produtorId;
+      }
+
+      // Atribuição manual: se um operador foi escolhido pelo criador
       if (selectedOperator) {
         Object.assign(baseTicketData, {
           atribuidoA: selectedOperator,
@@ -529,7 +634,6 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
 
       ticketId = await ticketService.createTicket(baseTicketData);
 
-      // O resto da função continua igual...
       try {
         await notificationService.notifyNewTicket(ticketId, baseTicketData, user.uid);
       } catch (notificationError) {
@@ -871,6 +975,106 @@ const NewTicketForm = ({ projectId, onClose, onSuccess }) => {
               rows={2}
             />
           </div>
+
+          {/* Campos Dinâmicos por Área */}
+          {(() => {
+            const fields = getDynamicFields(formData.area, formData.tipo);
+            return fields.length > 0 && (
+              <Card className="border-blue-200 bg-blue-50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base text-blue-800">
+                    📋 Informações Específicas - {formData.area.charAt(0).toUpperCase() + formData.area.slice(1)}
+                    {formData.area === 'financeiro' && formData.tipo && (
+                      <span className="text-sm font-normal"> ({formData.tipo.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())})</span>
+                    )}
+                  </CardTitle>
+                  <CardDescription className="text-blue-600">
+                    Preencha os campos específicos para esta área
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {fields.map((field) => (
+                    <div key={field.key} className="space-y-2">
+                      <Label htmlFor={field.key}>
+                        {field.label} {field.required && <span className="text-red-500">*</span>}
+                      </Label>
+                      
+                      {field.type === 'text' && (
+                        <Input
+                          id={field.key}
+                          value={dynamicFields[field.key] || ''}
+                          onChange={(e) => handleDynamicFieldChange(field.key, e.target.value)}
+                          placeholder={`Digite ${field.label.toLowerCase()}`}
+                          required={field.required}
+                        />
+                      )}
+                      
+                      {field.type === 'number' && (
+                        <Input
+                          id={field.key}
+                          type="number"
+                          value={dynamicFields[field.key] || ''}
+                          onChange={(e) => handleDynamicFieldChange(field.key, e.target.value)}
+                          placeholder={`Digite ${field.label.toLowerCase()}`}
+                          min="1"
+                          required={field.required}
+                        />
+                      )}
+                      
+                      {field.type === 'date' && (
+                        <Input
+                          id={field.key}
+                          type="date"
+                          value={dynamicFields[field.key] || ''}
+                          onChange={(e) => handleDynamicFieldChange(field.key, e.target.value)}
+                          required={field.required}
+                        />
+                      )}
+                      
+                      {field.type === 'currency' && (
+                        <Input
+                          id={field.key}
+                          value={dynamicFields[field.key] || ''}
+                          onChange={(e) => handleCurrencyChange(field.key, e.target.value)}
+                          placeholder="0,00"
+                          required={field.required}
+                        />
+                      )}
+                      
+                      {field.type === 'select' && (
+                        <Select 
+                          value={dynamicFields[field.key] || ''} 
+                          onValueChange={(value) => handleDynamicFieldChange(field.key, value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder={`Selecione ${field.label.toLowerCase()}`} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {field.options.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      
+                      {field.type === 'textarea' && (
+                        <Textarea
+                          id={field.key}
+                          value={dynamicFields[field.key] || ''}
+                          onChange={(e) => handleDynamicFieldChange(field.key, e.target.value)}
+                          placeholder={`Digite ${field.label.toLowerCase()}`}
+                          rows={3}
+                          required={field.required}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           <div className="space-y-2">
             <Label htmlFor="images">Anexar Imagens</Label>
