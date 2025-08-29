@@ -526,7 +526,7 @@ const DashboardPage = () => {
         ]);
         const produtorProjects = allProjects.filter(project => project.produtorId === user.uid);
         const produtorProjectIds = produtorProjects.map(p => p.id);
-        const produtorTickets = allTickets.filter(t => ticketHasAnyProject(t, produtorProjectIds) && isActiveTicket(t) && filterConfidential(t));
+        const produtorTickets = allTickets.filter(t => ticketHasAnyProject(t, produtorProjectIds) && filterConfidential(t));
         setProjects(produtorProjects);
         setTickets(produtorTickets);
         setUsers(allUsers);
@@ -542,7 +542,7 @@ const DashboardPage = () => {
         ]);
         const consultorProjects = allProjects.filter(project => project.consultorId === user.uid);
         const consultorProjectIds = consultorProjects.map(p => p.id);
-        const consultorTickets = allTickets.filter(t => ticketHasAnyProject(t, consultorProjectIds) && isActiveTicket(t) && filterConfidential(t));
+        const consultorTickets = allTickets.filter(t => ticketHasAnyProject(t, consultorProjectIds) && filterConfidential(t));
         setProjects(consultorProjects);
         setTickets(consultorTickets);
         setUsers(allUsers);
