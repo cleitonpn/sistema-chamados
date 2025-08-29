@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { projectService } from '../services/projectService';
@@ -14,7 +14,9 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import NotificationCenter from '../components/NotificationCenter';
 import { 
   LogOut, 
@@ -47,7 +49,15 @@ import {
   UserCheck,
   Play,
   BellRing,
-  Lock
+  Lock,
+  Search,
+  ArrowUpDown,
+  Star,
+  StarOff,
+  Grid,
+  List,
+  Save,
+  Bookmark
 } from 'lucide-react';
 
 const DashboardPage = () => {
@@ -71,6 +81,20 @@ const DashboardPage = () => {
 
   const [activeFilter, setActiveFilter] = useState('todos');
 
+  // Novos estados para as funcionalidades solicitadas
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedEvent, setSelectedEvent] = useState('');
+  const [sortBy, setSortBy] = useState('dataUltimaAtualizacao');
+  const [quickFilters, setQuickFilters] = useState({
+    status: [],
+    area: [],
+    prioridade: []
+  });
+  const [viewMode, setViewMode] = useState('cards'); // 'cards' ou 'list'
+  const [savedFilters, setSavedFilters] = useState([]);
+  const [showSaveFilterDialog, setShowSaveFilterDialog] = useState(false);
+  const [filterName, setFilterName] = useState('');
+
   // Tickets considerados 'abertos/ativos' para Produtor/Consultor
   const isActiveTicket = (t) => !['concluido','cancelado','arquivado'].includes(t.status);
   const ticketHasAnyProject = (t, ids) => {
@@ -81,74 +105,146 @@ const DashboardPage = () => {
   };
 
   const getProjectName = (projetoId) => {
+    const project = projects.find(p => p.id === projetoId);
+    if (project) {
+      return project.feira ? `${project.nome} – ${project.feira}` : project.nome;
+    }
     return projectNames[projetoId] || 'Projeto não encontrado';
   };
 
+  // Função para obter todos os eventos únicos
+  const getAllEvents = () => {
+    const events = [...new Set(projects.map(p => p.feira).filter(Boolean))];
+    return events.sort();
+  };
+
+  // Função para obter áreas únicas dos tickets
+  const getAllAreas = () => {
+    const areas = [...new Set(tickets.map(t => t.area).filter(Boolean))];
+    return areas.sort();
+  };
+
+  // Função para obter status únicos dos tickets
+  const getAllStatus = () => {
+    const status = [...new Set(tickets.map(t => t.status).filter(Boolean))];
+    return status.sort();
+  };
+
+  // Função para obter prioridades únicas dos tickets
+  const getAllPriorities = () => {
+    const priorities = [...new Set(tickets.map(t => t.prioridade).filter(Boolean))];
+    return priorities.sort();
+  };
+
   const getFilteredTickets = () => {
+    let filteredTickets = tickets;
+
     // Se o filtro 'arquivados' estiver ativo, mostre apenas eles.
     if (activeFilter === 'arquivados') {
-        return tickets.filter(ticket => ticket.status === 'arquivado').sort((a, b) => {
-            const dateA = a.arquivadoEm?.toDate?.() || a.dataUltimaAtualizacao?.toDate?.() || new Date(0);
-            const dateB = b.arquivadoEm?.toDate?.() || b.dataUltimaAtualizacao?.toDate?.() || new Date(0);
-            return dateB - dateA;
-        });
+      filteredTickets = tickets.filter(ticket => ticket.status === 'arquivado');
+    } else {
+      // Para todos os outros filtros, pegue apenas os tickets NÃO arquivados.
+      filteredTickets = tickets.filter(ticket => ticket.status !== 'arquivado');
+
+      switch (activeFilter) {
+        case 'todos':
+          // 'todos' agora significa 'todos os ativos'
+          break;
+        case 'com_notificacao':
+          filteredTickets = filteredTickets.filter(ticket => ticketNotifications[ticket.id]);
+          break;
+        case 'sem_tratativa':
+          filteredTickets = filteredTickets.filter(ticket => ticket.status === 'aberto');
+          break;
+        case 'em_tratativa':
+          filteredTickets = filteredTickets.filter(ticket => ticket.status === 'em_tratativa');
+          break;
+        case 'em_execucao':
+          filteredTickets = filteredTickets.filter(ticket => ticket.status === 'em_execucao');
+          break;
+        case 'escalado':
+          filteredTickets = filteredTickets.filter(ticket => 
+            ticket.status === 'enviado_para_area' || ticket.status === 'escalado_para_area'
+          );
+          break;
+        case 'escalado_para_mim':
+          filteredTickets = filteredTickets.filter(ticket => {
+            if (ticket.status === 'escalado_para_outra_area') {
+              if (ticket.areaEscalada === userProfile?.area) return true;
+              if (ticket.usuarioEscalado === user?.uid || 
+                  ticket.usuarioEscalado === userProfile?.email ||
+                  ticket.usuarioEscalado === userProfile?.nome) return true;
+              if (ticket.areasEnvolvidas && ticket.areasEnvolvidas.includes(userProfile?.area)) return true;
+            }
+            return false;
+          });
+          break;
+        case 'aguardando_validacao':
+          filteredTickets = filteredTickets.filter(ticket => 
+            ticket.status === 'executado_aguardando_validacao' || ticket.status === 'executado_aguardando_validacao_operador'
+          );
+          break;
+        case 'concluidos':
+          filteredTickets = filteredTickets.filter(ticket => ticket.status === 'concluido');
+          break;
+        case 'aguardando_aprovacao':
+          filteredTickets = filteredTickets.filter(ticket => ticket.status === 'aguardando_aprovacao');
+          break;
+        default:
+          break;
+      }
     }
 
-    // Para todos os outros filtros, pegue apenas os tickets NÃO arquivados.
-    let filteredTickets = tickets.filter(ticket => ticket.status !== 'arquivado');
-
-    switch (activeFilter) {
-      case 'todos':
-        // 'todos' agora significa 'todos os ativos'
-        break;
-      case 'com_notificacao':
-        filteredTickets = filteredTickets.filter(ticket => ticketNotifications[ticket.id]);
-        break;
-      case 'sem_tratativa':
-        filteredTickets = filteredTickets.filter(ticket => ticket.status === 'aberto');
-        break;
-      case 'em_tratativa':
-        filteredTickets = filteredTickets.filter(ticket => ticket.status === 'em_tratativa');
-        break;
-      case 'em_execucao':
-        filteredTickets = filteredTickets.filter(ticket => ticket.status === 'em_execucao');
-        break;
-      case 'escalado':
-        filteredTickets = filteredTickets.filter(ticket => 
-          ticket.status === 'enviado_para_area' || ticket.status === 'escalado_para_area'
-        );
-        break;
-      case 'escalado_para_mim':
-        filteredTickets = filteredTickets.filter(ticket => {
-          if (ticket.status === 'escalado_para_outra_area') {
-            if (ticket.areaEscalada === userProfile?.area) return true;
-            if (ticket.usuarioEscalado === user?.uid || 
-                ticket.usuarioEscalado === userProfile?.email ||
-                ticket.usuarioEscalado === userProfile?.nome) return true;
-            if (ticket.areasEnvolvidas && ticket.areasEnvolvidas.includes(userProfile?.area)) return true;
-          }
-          return false;
-        });
-        break;
-      case 'aguardando_validacao':
-        filteredTickets = filteredTickets.filter(ticket => 
-          ticket.status === 'executado_aguardando_validacao' || ticket.status === 'executado_aguardando_validacao_operador'
-        );
-        break;
-      case 'concluidos':
-        filteredTickets = filteredTickets.filter(ticket => ticket.status === 'concluido');
-        break;
-      case 'aguardando_aprovacao':
-        filteredTickets = filteredTickets.filter(ticket => ticket.status === 'aguardando_aprovacao');
-        break;
-      default:
-        break;
+    // Aplicar filtro de busca
+    if (searchTerm) {
+      filteredTickets = filteredTickets.filter(ticket => 
+        ticket.titulo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        ticket.descricao?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
     }
 
+    // Aplicar filtro por evento
+    if (selectedEvent) {
+      filteredTickets = filteredTickets.filter(ticket => {
+        const ticketProjectIds = Array.isArray(ticket.projetos) && ticket.projetos.length > 0
+          ? ticket.projetos
+          : (ticket.projetoId ? [ticket.projetoId] : []);
+        
+        return ticketProjectIds.some(projectId => {
+          const project = projects.find(p => p.id === projectId);
+          return project?.feira === selectedEvent;
+        });
+      });
+    }
+
+    // Aplicar filtros rápidos
+    if (quickFilters.status.length > 0) {
+      filteredTickets = filteredTickets.filter(ticket => quickFilters.status.includes(ticket.status));
+    }
+    if (quickFilters.area.length > 0) {
+      filteredTickets = filteredTickets.filter(ticket => quickFilters.area.includes(ticket.area));
+    }
+    if (quickFilters.prioridade.length > 0) {
+      filteredTickets = filteredTickets.filter(ticket => quickFilters.prioridade.includes(ticket.prioridade));
+    }
+
+    // Aplicar ordenação
     return filteredTickets.sort((a, b) => {
-      const dateA = a.dataUltimaAtualizacao?.toDate?.() || a.createdAt?.toDate?.() || new Date(0);
-      const dateB = b.dataUltimaAtualizacao?.toDate?.() || b.createdAt?.toDate?.() || new Date(0);
-      return dateB - dateA;
+      switch (sortBy) {
+        case 'dataUltimaAtualizacao':
+          const dateA = a.dataUltimaAtualizacao?.toDate?.() || a.createdAt?.toDate?.() || new Date(0);
+          const dateB = b.dataUltimaAtualizacao?.toDate?.() || b.createdAt?.toDate?.() || new Date(0);
+          return dateB - dateA;
+        case 'prioridade':
+          const priorityOrder = { 'alta': 3, 'media': 2, 'baixa': 1 };
+          return (priorityOrder[b.prioridade] || 0) - (priorityOrder[a.prioridade] || 0);
+        case 'status':
+          return (a.status || '').localeCompare(b.status || '');
+        case 'titulo':
+          return (a.titulo || '').localeCompare(b.titulo || '');
+        default:
+          return 0;
+      }
     });
   };
 
@@ -201,39 +297,30 @@ const DashboardPage = () => {
   ];
 
   const getDisplayedTickets = () => getFilteredTickets();
-  const getProjectsByEvent = () => {
+  
+  const getTicketsByProject = () => {
     const grouped = {};
-    projects.forEach(project => {
-      const eventName = project.feira || 'Sem Evento';
-      if (!grouped[eventName]) grouped[eventName] = [];
-      grouped[eventName].push(project);
+    const displayedTickets = getDisplayedTickets();
+    displayedTickets.forEach(ticket => {
+      const ids = Array.isArray(ticket.projetos) && ticket.projetos.length > 0
+        ? ticket.projetos
+        : (ticket.projetoId ? [ticket.projetoId] : []);
+      if (ids.length === 0) {
+        if (!grouped['Sem Projeto']) grouped['Sem Projeto'] = [];
+        grouped['Sem Projeto'].push(ticket);
+      } else {
+        ids.forEach(pid => {
+          const name = getProjectName(pid);
+          if (!grouped[name]) grouped[name] = [];
+          grouped[name].push(ticket);
+        });
+      }
     });
     return grouped;
   };
-  const getTicketsByProject = () => {
-  const grouped = {};
-  const displayedTickets = getDisplayedTickets();
-  displayedTickets.forEach(ticket => {
-    const ids = Array.isArray(ticket.projetos) && ticket.projetos.length > 0
-      ? ticket.projetos
-      : (ticket.projetoId ? [ticket.projetoId] : []);
-    if (ids.length === 0) {
-      if (!grouped['Sem Projeto']) grouped['Sem Projeto'] = [];
-      grouped['Sem Projeto'].push(ticket);
-    } else {
-      ids.forEach(pid => {
-        const name = getProjectName(pid);
-        if (!grouped[name]) grouped[name] = [];
-        grouped[name].push(ticket);
-      });
-    }
-  });
-  return grouped;
-};
 
   const toggleEventExpansion = (eventName) => setExpandedEvents(prev => ({ ...prev, [eventName]: !prev[eventName] }));
   const toggleProjectExpansion = (projectName) => setExpandedProjects(prev => ({ ...prev, [projectName]: !prev[projectName] }));
-  const handleProjectClick = (project) => navigate(`/projeto/${project.id}`);
   const handleTicketClick = (ticketId) => navigate(`/chamado/${ticketId}`);
 
   const getStatusColor = (status) => {
@@ -251,6 +338,71 @@ const DashboardPage = () => {
     else newSelected.delete(ticketId);
     setSelectedTickets(newSelected);
   };
+
+  // Função para adicionar/remover filtros rápidos
+  const toggleQuickFilter = (type, value) => {
+    setQuickFilters(prev => ({
+      ...prev,
+      [type]: prev[type].includes(value) 
+        ? prev[type].filter(item => item !== value)
+        : [...prev[type], value]
+    }));
+  };
+
+  // Função para limpar todos os filtros
+  const clearAllFilters = () => {
+    setActiveFilter('todos');
+    setSearchTerm('');
+    setSelectedEvent('');
+    setQuickFilters({ status: [], area: [], prioridade: [] });
+    setSortBy('dataUltimaAtualizacao');
+  };
+
+  // Função para salvar filtro atual
+  const saveCurrentFilter = () => {
+    if (!filterName.trim()) return;
+    
+    const newFilter = {
+      id: Date.now().toString(),
+      name: filterName,
+      activeFilter,
+      searchTerm,
+      selectedEvent,
+      quickFilters,
+      sortBy
+    };
+
+    const updatedFilters = [...savedFilters, newFilter];
+    setSavedFilters(updatedFilters);
+    localStorage.setItem('dashboardSavedFilters', JSON.stringify(updatedFilters));
+    
+    setFilterName('');
+    setShowSaveFilterDialog(false);
+  };
+
+  // Função para aplicar filtro salvo
+  const applySavedFilter = (filter) => {
+    setActiveFilter(filter.activeFilter);
+    setSearchTerm(filter.searchTerm);
+    setSelectedEvent(filter.selectedEvent);
+    setQuickFilters(filter.quickFilters);
+    setSortBy(filter.sortBy);
+  };
+
+  // Função para remover filtro salvo
+  const removeSavedFilter = (filterId) => {
+    const updatedFilters = savedFilters.filter(f => f.id !== filterId);
+    setSavedFilters(updatedFilters);
+    localStorage.setItem('dashboardSavedFilters', JSON.stringify(updatedFilters));
+  };
+
+  // Carregar filtros salvos do localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('dashboardSavedFilters');
+    if (saved) {
+      setSavedFilters(JSON.parse(saved));
+    }
+  }, []);
 
   const loadTicketNotifications = async () => {
     if (!user?.uid || !tickets.length) return;
@@ -324,13 +476,29 @@ const DashboardPage = () => {
       console.log('🔍 Carregando dados para:', userProfile?.funcao);
       
       const filterConfidential = (ticket) => {
-        if (!ticket.isConfidential) {
-          return true;
-        }
-        const isCreator = ticket.criadoPor === user.uid;
-        const isAdmin = userProfile?.funcao === 'administrador';
-        return isCreator || isAdmin;
-      };
+  // ✅ VERIFICA AMBOS OS CAMPOS POSSÍVEIS
+  const isConfidential = ticket.isConfidential || ticket.confidencial;
+  
+  if (!isConfidential) {
+    return true;
+  }
+  
+  const isCreator = ticket.criadoPor === user.uid;
+  const isAdmin = userProfile?.funcao === 'administrador';
+  
+  // ✅ NOVA LÓGICA: Operadores podem ver chamados confidenciais da sua área
+  const isOperatorOfArea = userProfile?.funcao === 'operador' && (
+    ticket.area === userProfile?.area ||
+    ticket.areaDeOrigem === userProfile?.area ||
+    ticket.areaInicial === userProfile?.area ||
+    ticket.areaOriginal === userProfile?.area
+  );
+  
+  // ✅ GERENTES PODEM VER TODOS OS CONFIDENCIAIS
+  const isManager = userProfile?.funcao === 'gerente';
+  
+  return isCreator || isAdmin || isOperatorOfArea || isManager;
+};
 
       if (userProfile?.funcao === 'administrador') {
         console.log('👑 Administrador: carregando TODOS os dados');
@@ -382,30 +550,54 @@ const DashboardPage = () => {
         allProjects.forEach(project => { projectNamesMap[project.id] = project.nome; });
         setProjectNames(projectNamesMap);
       } else if (userProfile?.funcao === 'operador') {
-        console.log('⚙️ Operador: carregando chamados da área (inclui histórico)');
-        const [allProjects, allTickets, allUsers] = await Promise.all([
-          projectService.getAllProjects(),
-          ticketService.getAllTickets(),
-          userService.getAllUsers()
-        ]);
-        const areaOp = userProfile.area;
-        const operatorTickets = allTickets.filter(t => {
-          const atual = t.area === areaOp;
-          const origem = t.areaDeOrigem === areaOp;
-          const destino = t.areaDestino === areaOp;
-          const devolvido = t.status === 'enviado_para_area' && (t.area === areaOp || t.areaDeOrigem === areaOp);
-          const rejeitou = t.areaQueRejeitou === areaOp;
-          const envolvido = Array.isArray(t.areasEnvolvidas) && t.areasEnvolvidas.includes(areaOp);
-          const atribuido = t.atribuidoA === user.uid;
-          const abertoPeloUsuario = t.criadoPor === user.uid;
-          return (atual || origem || destino || devolvido || rejeitou || envolvido || atribuido || abertoPeloUsuario) && filterConfidential(t);
-        });
-        setProjects(allProjects);
-        setTickets(operatorTickets);
-        setUsers(allUsers);
-        const projectNamesMap = {};
-        allProjects.forEach(project => { projectNamesMap[project.id] = project.nome; });
-        setProjectNames(projectNamesMap);
+  console.log('⚙️ Operador: carregando chamados da área (inclui histórico)');
+  const [allProjects, allTickets, allUsers] = await Promise.all([
+    projectService.getAllProjects(),
+    ticketService.getAllTickets(),
+    userService.getAllUsers()
+  ]);
+  
+  const areaOp = userProfile.area;
+  const operatorTickets = allTickets.filter(t => {
+    // ✅ CONDIÇÕES EXPANDIDAS PARA GARANTIR VISIBILIDADE
+    const atual = t.area === areaOp;
+    const origem = t.areaDeOrigem === areaOp || t.areaInicial === areaOp || t.areaOriginal === areaOp;
+    const destino = t.areaDestino === areaOp;
+    const devolvido = t.status === 'enviado_para_area' && (t.area === areaOp || t.areaDeOrigem === areaOp);
+    const rejeitou = t.areaQueRejeitou === areaOp;
+    const envolvido = Array.isArray(t.areasEnvolvidas) && t.areasEnvolvidas.includes(areaOp);
+    const atribuido = t.atribuidoA === user.uid;
+    const abertoPeloUsuario = t.criadoPor === user.uid;
+    
+    // ✅ NOVA CONDIÇÃO: Chamados escalados para a área do operador
+    const escaladoParaArea = t.status === 'escalado_para_outra_area' && t.areaEscalada === areaOp;
+    
+    // ✅ NOVA CONDIÇÃO: Chamados transferidos para a área
+    const transferidoParaArea = t.status === 'transferido_para_area' && t.areaDestino === areaOp;
+    
+    // ✅ CONDIÇÃO ESPECIAL PARA FINANCEIRO: Incluir chamados que precisam de aprovação financeira
+    const precisaFinanceiro = areaOp === 'financeiro' && (
+      t.tipo === 'despesas_programada' || 
+      t.tipo === 'despesas_nao_programadas' ||
+      t.area === 'financeiro' ||
+      t.areaDeOrigem === 'financeiro' ||
+      t.gerenciaDestino === 'gerente_financeiro'
+    );
+    
+    return (atual || origem || destino || devolvido || rejeitou || envolvido || 
+            atribuido || abertoPeloUsuario || escaladoParaArea || 
+            transferidoParaArea || precisaFinanceiro) && filterConfidential(t);
+  });
+  
+  setProjects(allProjects);
+  setTickets(operatorTickets);
+  setUsers(allUsers);
+  
+  const projectNamesMap = {};
+  allProjects.forEach(project => { 
+    projectNamesMap[project.id] = project.nome; 
+  });
+  setProjectNames(projectNamesMap);
       } else if (userProfile?.funcao === 'gerente') {
         console.log('👔 Gerente: carregando TODOS os dados');
         const [allProjects, allTickets, allUsers] = await Promise.all([
@@ -464,6 +656,7 @@ const DashboardPage = () => {
   }
 
   const counts = getTicketCounts();
+  const displayedTickets = getDisplayedTickets();
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -624,82 +817,335 @@ const DashboardPage = () => {
         </header>
 
         <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
-          <Tabs defaultValue="chamados" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="chamados" className="flex items-center space-x-2">
-                <FileText className="h-4 w-4" />
-                <span>Chamados</span>
-              </TabsTrigger>
-              <TabsTrigger value="projetos" className="flex items-center space-x-2">
-                <FolderOpen className="h-4 w-4" />
-                <span>Projetos</span>
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="chamados" className="space-y-6">
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10 gap-3 mb-6">
-                {filterCards.map((card) => {
-                  const IconComponent = card.icon;
-                  const isActive = activeFilter === card.id;
-                  const count = counts[card.id];
-                  
-                  return (
-                    <Card
-                      key={card.id}
-                      className={`cursor-pointer transition-all duration-200 ${
-                        isActive ? card.activeColor : card.color
-                      } hover:shadow-md`}
-                      onClick={() => setActiveFilter(card.id)}
-                    >
-                      <CardContent className="p-3 sm:p-4">
-                        <div className="flex flex-col items-center text-center space-y-2">
-                          <IconComponent 
-                            className={`h-5 w-5 sm:h-6 sm:w-6 ${
-                              isActive ? 'text-white' : card.iconColor
-                            }`} 
-                          />
-                          <div>
-                            <p className={`text-xs sm:text-sm font-medium ${
-                              isActive ? 'text-white' : 'text-gray-900'
-                            }`}>
-                              {card.title}
-                            </p>
-                            <p className={`text-lg sm:text-xl font-bold ${
-                              isActive ? 'text-white' : card.iconColor
-                            }`}>
-                              {count}
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+          <div className="space-y-6">
+            {/* Campo de busca */}
+            <div className="bg-white p-4 rounded-lg border shadow-sm">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Buscar chamados por título ou descrição..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
               </div>
+            </div>
 
-              {activeFilter !== 'todos' && (
-                <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                  <div className="flex items-center space-x-2">
-                    <Filter className="h-4 w-4 text-blue-600" />
-                    <span className="text-sm font-medium text-blue-900">
-                      Filtro ativo: {filterCards.find(c => c.id === activeFilter)?.title}
-                    </span>
-                    <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                      {counts[activeFilter]} chamado{counts[activeFilter] !== 1 ? 's' : ''}
-                    </Badge>
-                  </div>
+            {/* Filtros e controles */}
+            <div className="bg-white p-4 rounded-lg border shadow-sm space-y-4">
+              <div className="flex flex-wrap gap-4 items-center">
+                {/* Filtro por evento */}
+                <div className="min-w-[200px]">
+                  <Select value={selectedEvent} onValueChange={setSelectedEvent}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Filtrar por evento" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Todos os eventos</SelectItem>
+                      {getAllEvents().map(event => (
+                        <SelectItem key={event} value={event}>{event}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Ordenação */}
+                <div className="min-w-[180px]">
+                  <Select value={sortBy} onValueChange={setSortBy}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="dataUltimaAtualizacao">Data de atualização</SelectItem>
+                      <SelectItem value="prioridade">Prioridade</SelectItem>
+                      <SelectItem value="status">Status</SelectItem>
+                      <SelectItem value="titulo">Título</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Toggle de visualização */}
+                <div className="flex border rounded-lg">
                   <Button
-                    variant="ghost"
+                    variant={viewMode === 'cards' ? 'default' : 'ghost'}
                     size="sm"
-                    onClick={() => setActiveFilter('todos')}
-                    className="text-blue-600 hover:text-blue-800"
+                    onClick={() => setViewMode('cards')}
+                    className="rounded-r-none"
                   >
-                    <X className="h-4 w-4 mr-1" />
-                    Limpar filtro
+                    <Grid className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant={viewMode === 'list' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('list')}
+                    className="rounded-l-none"
+                  >
+                    <List className="h-4 w-4" />
                   </Button>
                 </div>
-              )}
-              
+
+                {/* Botões de ações */}
+                <div className="flex gap-2 ml-auto">
+                  {/* Filtros salvos */}
+                  {savedFilters.length > 0 && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <Bookmark className="h-4 w-4 mr-2" />
+                          Filtros Salvos
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        {savedFilters.map(filter => (
+                          <div key={filter.id} className="flex items-center justify-between p-2">
+                            <DropdownMenuItem 
+                              onClick={() => applySavedFilter(filter)}
+                              className="flex-1 cursor-pointer"
+                            >
+                              {filter.name}
+                            </DropdownMenuItem>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeSavedFilter(filter.id);
+                              }}
+                              className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+
+                  <Button variant="outline" size="sm" onClick={() => setShowSaveFilterDialog(true)}>
+                    <Save className="h-4 w-4 mr-2" />
+                    Salvar Filtro
+                  </Button>
+
+                  <Button variant="outline" size="sm" onClick={clearAllFilters}>
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Limpar
+                  </Button>
+                </div>
+              </div>
+
+              {/* Tags/Chips para filtros rápidos */}
+              <div className="space-y-3">
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">Filtros Rápidos - Status:</label>
+                  <div className="flex flex-wrap gap-2">
+                    {getAllStatus().map(status => (
+                      <Badge
+                        key={status}
+                        variant={quickFilters.status.includes(status) ? 'default' : 'outline'}
+                        className="cursor-pointer"
+                        onClick={() => toggleQuickFilter('status', status)}
+                      >
+                        {status.replace('_', ' ')}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">Filtros Rápidos - Área:</label>
+                  <div className="flex flex-wrap gap-2">
+                    {getAllAreas().map(area => (
+                      <Badge
+                        key={area}
+                        variant={quickFilters.area.includes(area) ? 'default' : 'outline'}
+                        className="cursor-pointer"
+                        onClick={() => toggleQuickFilter('area', area)}
+                      >
+                        {area.replace('_', ' ')}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">Filtros Rápidos - Prioridade:</label>
+                  <div className="flex flex-wrap gap-2">
+                    {getAllPriorities().map(priority => (
+                      <Badge
+                        key={priority}
+                        variant={quickFilters.prioridade.includes(priority) ? 'default' : 'outline'}
+                        className="cursor-pointer"
+                        onClick={() => toggleQuickFilter('prioridade', priority)}
+                      >
+                        {priority}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Cards de filtros */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10 gap-3 mb-6">
+              {filterCards.map((card) => {
+                const IconComponent = card.icon;
+                const isActive = activeFilter === card.id;
+                const count = counts[card.id];
+                
+                return (
+                  <Card
+                    key={card.id}
+                    className={`cursor-pointer transition-all duration-200 ${
+                      isActive ? card.activeColor : card.color
+                    } hover:shadow-md`}
+                    onClick={() => setActiveFilter(card.id)}
+                  >
+                    <CardContent className="p-3 sm:p-4">
+                      <div className="flex flex-col items-center text-center space-y-2">
+                        <IconComponent 
+                          className={`h-5 w-5 sm:h-6 sm:w-6 ${
+                            isActive ? 'text-white' : card.iconColor
+                          }`} 
+                        />
+                        <div>
+                          <p className={`text-xs sm:text-sm font-medium ${
+                            isActive ? 'text-white' : 'text-gray-900'
+                          }`}>
+                            {card.title}
+                          </p>
+                          <p className={`text-lg sm:text-xl font-bold ${
+                            isActive ? 'text-white' : card.iconColor
+                          }`}>
+                            {count}
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            {activeFilter !== 'todos' && (
+              <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                <div className="flex items-center space-x-2">
+                  <Filter className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-medium text-blue-900">
+                    Filtro ativo: {filterCards.find(c => c.id === activeFilter)?.title}
+                  </span>
+                  <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                    {counts[activeFilter]} chamado{counts[activeFilter] !== 1 ? 's' : ''}
+                  </Badge>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setActiveFilter('todos')}
+                  className="text-blue-600 hover:text-blue-800"
+                >
+                  <X className="h-4 w-4 mr-1" />
+                  Limpar filtro
+                </Button>
+              </div>
+            )}
+            
+            {/* Visualização dos chamados */}
+            {viewMode === 'list' ? (
+              // Visualização em lista/tabela
+              <Card>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Título</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Prioridade</TableHead>
+                        <TableHead>Área</TableHead>
+                        <TableHead>Projeto/Evento</TableHead>
+                        <TableHead>Última Atualização</TableHead>
+                        <TableHead className="w-[50px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {displayedTickets.map(ticket => (
+                        <TableRow 
+                          key={ticket.id} 
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => handleTicketClick(ticket.id)}
+                        >
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {(ticket.isConfidential || ticket.confidencial) && (
+                                <Lock className="h-4 w-4 text-orange-500" title="Chamado Confidencial" />
+                              )}
+                              <span className="font-medium">{ticket.titulo}</span>
+                              {ticketNotifications[ticket.id] && (
+                                <Badge className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                                  {ticketNotifications[ticket.id]}
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={`${getStatusColor(ticket.status)} text-xs`}>
+                              {ticket.status?.replace('_', ' ')}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={`${getPriorityColor(ticket.prioridade)} text-xs`}>
+                              {ticket.prioridade}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{ticket.area?.replace('_', ' ')}</TableCell>
+                          <TableCell>
+                            {(() => {
+                              const ids = Array.isArray(ticket.projetos) && ticket.projetos.length > 0
+                                ? ticket.projetos
+                                : (ticket.projetoId ? [ticket.projetoId] : []);
+                              return ids.length > 0 ? getProjectName(ids[0]) : 'Sem Projeto';
+                            })()}
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm text-gray-500">
+                              {(ticket.dataUltimaAtualizacao?.toDate?.() || ticket.createdAt?.toDate?.())?.toLocaleDateString('pt-BR') || 'N/A'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleTicketClick(ticket.id);
+                              }}
+                              className="h-8 w-8 p-0"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  
+                  {displayedTickets.length === 0 && (
+                    <div className="p-8 text-center">
+                      <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">
+                        {activeFilter === 'todos' ? 'Nenhum chamado encontrado' : 'Nenhum chamado neste filtro'}
+                      </h3>
+                      <p className="text-gray-500">
+                        {activeFilter === 'todos' 
+                          ? 'Não há chamados para exibir no momento.' 
+                          : `Não há chamados com o filtro "${filterCards.find(c => c.id === activeFilter)?.title}" aplicado.`
+                        }
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ) : (
+              // Visualização em cards (agrupada por projeto)
               <div className="space-y-4">
                 {Object.entries(getTicketsByProject()).map(([projectName, projectTickets]) => (
                   <div key={projectName} className="border rounded-lg">
@@ -839,81 +1285,37 @@ const DashboardPage = () => {
                   </Card>
                 )}
               </div>
-            </TabsContent>
-
-            <TabsContent value="projetos" className="space-y-6">
-              <div className="space-y-4">
-                {Object.entries(getProjectsByEvent()).map(([eventName, eventProjects]) => (
-                  <div key={eventName} className="border rounded-lg">
-                    <button
-                      onClick={() => toggleEventExpansion(eventName)}
-                      className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center space-x-3">
-                        {expandedEvents[eventName] ? (
-                          <ChevronDown className="h-5 w-5 text-gray-500" />
-                        ) : (
-                          <ChevronRight className="h-5 w-5 text-gray-500" />
-                        )}
-                        <h3 className="font-semibold text-lg">{eventName}</h3>
-                        <Badge variant="secondary" className="ml-2">
-                          {eventProjects.length} projeto{eventProjects.length !== 1 ? 's' : ''}
-                        </Badge>
-                      </div>
-                    </button>
-                    
-                    {expandedEvents[eventName] && (
-                      <div className="border-t bg-gray-50/50 p-4 space-y-3">
-                        {eventProjects.map((project) => (
-                          <Card 
-                            key={project.id} 
-                            className="cursor-pointer hover:shadow-md transition-shadow bg-white"
-                            onClick={() => handleProjectClick(project)}
-                          >
-                            <CardContent className="p-4">
-                              <div className="flex items-start justify-between">
-                                <div className="space-y-2">
-                                  <h4 className="font-medium">{project.nome}</h4>
-                                  <div className="flex items-center space-x-2">
-                                    <Badge variant="outline">
-                                      {project.status?.replace('_', ' ')}
-                                    </Badge>
-                                    <span className="text-xs text-gray-500">
-                                      {project.local}
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="text-right text-xs text-gray-500">
-                                  <div>
-                                    {project.dataInicio && new Date(project.dataInicio.seconds * 1000).toLocaleDateString('pt-BR')}
-                                  </div>
-                                  <div>
-                                    {project.dataFim && new Date(project.dataFim.seconds * 1000).toLocaleDateString('pt-BR')}
-                                  </div>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                
-                {Object.keys(getProjectsByEvent()).length === 0 && (
-                  <Card>
-                    <CardContent className="p-8 text-center">
-                      <FolderOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhum projeto encontrado</h3>
-                      <p className="text-gray-500">Não há projetos para exibir no momento.</p>
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            </TabsContent>
-          </Tabs>
+            )}
+          </div>
         </main>
       </div>
+
+      {/* Dialog para salvar filtro */}
+      <Dialog open={showSaveFilterDialog} onOpenChange={setShowSaveFilterDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Salvar Filtro Atual</DialogTitle>
+            <DialogDescription>
+              Dê um nome para o filtro atual para salvá-lo e aplicá-lo rapidamente no futuro.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              placeholder="Nome do filtro..."
+              value={filterName}
+              onChange={(e) => setFilterName(e.target.value)}
+            />
+            <div className="flex justify-end space-x-2">
+              <Button variant="outline" onClick={() => setShowSaveFilterDialog(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={saveCurrentFilter} disabled={!filterName.trim()}>
+                Salvar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
