@@ -83,7 +83,7 @@ const DashboardPage = () => {
 
   // Novos estados para as funcionalidades solicitadas
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedEvent, setSelectedEvent] = useState('');
+  const [selectedEvent, setSelectedEvent] = useState('all');
   const [sortBy, setSortBy] = useState('dataUltimaAtualizacao');
   const [quickFilters, setQuickFilters] = useState({
     status: [],
@@ -204,7 +204,7 @@ const DashboardPage = () => {
     }
 
     // Aplicar filtro por evento
-    if (selectedEvent) {
+    if (selectedEvent && selectedEvent !== 'all') {
       filteredTickets = filteredTickets.filter(ticket => {
         const ticketProjectIds = Array.isArray(ticket.projetos) && ticket.projetos.length > 0
           ? ticket.projetos
@@ -353,7 +353,7 @@ const DashboardPage = () => {
   const clearAllFilters = () => {
     setActiveFilter('todos');
     setSearchTerm('');
-    setSelectedEvent('');
+    setSelectedEvent('all');
     setQuickFilters({ status: [], area: [], prioridade: [] });
     setSortBy('dataUltimaAtualizacao');
   };
@@ -841,7 +841,7 @@ const DashboardPage = () => {
                       <SelectValue placeholder="Filtrar por evento" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todos os eventos</SelectItem>
+                      <SelectItem value="all">Todos os eventos</SelectItem>
                       {getAllEvents().map(event => (
                         <SelectItem key={event} value={event}>{event}</SelectItem>
                       ))}
