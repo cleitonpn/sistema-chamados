@@ -659,20 +659,29 @@ const DashboardPage = () => {
   const displayedTickets = getDisplayedTickets();
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      <div className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0`}>
-        <div className="flex items-center justify-between h-16 px-6 border-b">
-          <h1 className="text-xl font-semibold text-gray-900">Gestão de Chamados</h1>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20">
+      {/* Sidebar com design mais elegante */}
+      <div className={`${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 w-72 bg-white/95 backdrop-blur-xl shadow-2xl border-r border-slate-200/60 transform transition-all duration-300 ease-out lg:translate-x-0 lg:static lg:inset-0`}>
+        <div className="flex items-center justify-between h-20 px-6 border-b border-slate-200/50 bg-gradient-to-r from-slate-50 to-white">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg">
+              <FileText className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-slate-900">Gestão</h1>
+              <p className="text-sm text-slate-500 -mt-1">Chamados</p>
+            </div>
+          </div>
           <button
             onClick={() => setMobileMenuOpen(false)}
-            className="lg:hidden"
+            className="lg:hidden p-2 rounded-lg hover:bg-slate-100 transition-colors"
           >
-            <X className="h-6 w-6" />
+            <X className="h-5 w-5 text-slate-600" />
           </button>
         </div>
         
-        <nav className="mt-6 px-3">
-          <div className="space-y-1">
+        <nav className="mt-8 px-4">
+          <div className="space-y-2">
             {(userProfile?.funcao === 'produtor' || userProfile?.funcao === 'consultor' || userProfile?.funcao === 'administrador' || 
               (userProfile?.funcao === 'operador' && userProfile?.area === 'operacional') ||
               (userProfile?.funcao === 'operador' && userProfile?.area === 'comunicacao_visual') ||
@@ -680,10 +689,10 @@ const DashboardPage = () => {
               (userProfile?.funcao === 'operador' && userProfile?.area === 'logistica')) && (
               <Button 
                 onClick={() => navigate('/novo-chamado')}
-                className="w-full justify-start mb-4"
+                className="w-full justify-start mb-6 h-12 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all duration-200 rounded-xl"
               >
-                <Plus className="h-4 w-4 mr-3" />
-                Novo Chamado
+                <Plus className="h-5 w-5 mr-3" />
+                <span className="font-medium">Novo Chamado</span>
               </Button>
             )}
             
@@ -691,92 +700,99 @@ const DashboardPage = () => {
               <Button 
                 onClick={() => navigate('/novo-projeto')}
                 variant="outline"
-                className="w-full justify-start mb-4"
+                className="w-full justify-start mb-4 h-11 border-slate-200 hover:bg-slate-50 rounded-xl transition-all duration-200"
               >
                 <Plus className="h-4 w-4 mr-3" />
-                Novo Projeto
+                <span className="font-medium">Novo Projeto</span>
               </Button>
             )}
             
-            <Button 
-              onClick={() => navigate('/projetos')}
-              variant="ghost"
-              className="w-full justify-start"
-            >
-              <FolderOpen className="h-4 w-4 mr-3" />
-              Ver Projetos
-            </Button>
-            
-            <Button 
-              onClick={() => navigate('/cronograma')}
-              variant="ghost"
-              className="w-full justify-start"
-            >
-              <Calendar className="h-4 w-4 mr-3" />
-              Cronograma
-            </Button>
-            
-            {userProfile?.funcao === 'administrador' && (
-              <>
-                <Button 
-                  onClick={() => navigate('/eventos')}
-                  variant="ghost"
-                  className="w-full justify-start"
-                >
-                  <Calendar className="h-4 w-4 mr-3" />
-                  Eventos
-                </Button>
-                
-                <Button 
-                  onClick={() => navigate('/usuarios')}
-                  variant="ghost"
-                  className="w-full justify-start"
-                >
-                  <Users className="h-4 w-4 mr-3" />
-                  Usuários
-                </Button>
-                
-                <Button 
-                  onClick={() => navigate('/relatorios')}
-                  variant="ghost"
-                  className="w-full justify-start"
-                >
-                  <BarChart3 className="h-4 w-4 mr-3" />
-                  Relatórios
-                </Button>
-                
-                <Button 
-                  onClick={() => navigate('/analytics')}
-                  variant="ghost"
-                  className="w-full justify-start"
-                >
-                  <BarChart3 className="h-4 w-4 mr-3" />
-                  Analytics
-                </Button>
-                
-                <Button 
-                  onClick={() => navigate('/admin/painel')}
-                  variant="ghost"
-                  className="w-full justify-start"
-                >
-                  <BarChart3 className="h-4 w-4 mr-3" />
-                  Painel Admin
-                </Button>
-              </>
-            )}
+            <div className="space-y-1">
+              <Button 
+                onClick={() => navigate('/projetos')}
+                variant="ghost"
+                className="w-full justify-start h-11 hover:bg-slate-100 rounded-xl transition-all duration-200 text-slate-700 hover:text-slate-900"
+              >
+                <FolderOpen className="h-4 w-4 mr-3" />
+                <span className="font-medium">Ver Projetos</span>
+              </Button>
+              
+              <Button 
+                onClick={() => navigate('/cronograma')}
+                variant="ghost"
+                className="w-full justify-start h-11 hover:bg-slate-100 rounded-xl transition-all duration-200 text-slate-700 hover:text-slate-900"
+              >
+                <Calendar className="h-4 w-4 mr-3" />
+                <span className="font-medium">Cronograma</span>
+              </Button>
+              
+              {userProfile?.funcao === 'administrador' && (
+                <>
+                  <Button 
+                    onClick={() => navigate('/eventos')}
+                    variant="ghost"
+                    className="w-full justify-start h-11 hover:bg-slate-100 rounded-xl transition-all duration-200 text-slate-700 hover:text-slate-900"
+                  >
+                    <Calendar className="h-4 w-4 mr-3" />
+                    <span className="font-medium">Eventos</span>
+                  </Button>
+                  
+                  <Button 
+                    onClick={() => navigate('/usuarios')}
+                    variant="ghost"
+                    className="w-full justify-start h-11 hover:bg-slate-100 rounded-xl transition-all duration-200 text-slate-700 hover:text-slate-900"
+                  >
+                    <Users className="h-4 w-4 mr-3" />
+                    <span className="font-medium">Usuários</span>
+                  </Button>
+                  
+                  <Button 
+                    onClick={() => navigate('/relatorios')}
+                    variant="ghost"
+                    className="w-full justify-start h-11 hover:bg-slate-100 rounded-xl transition-all duration-200 text-slate-700 hover:text-slate-900"
+                  >
+                    <BarChart3 className="h-4 w-4 mr-3" />
+                    <span className="font-medium">Relatórios</span>
+                  </Button>
+                  
+                  <Button 
+                    onClick={() => navigate('/analytics')}
+                    variant="ghost"
+                    className="w-full justify-start h-11 hover:bg-slate-100 rounded-xl transition-all duration-200 text-slate-700 hover:text-slate-900"
+                  >
+                    <BarChart3 className="h-4 w-4 mr-3" />
+                    <span className="font-medium">Analytics</span>
+                  </Button>
+                  
+                  <Button 
+                    onClick={() => navigate('/admin/painel')}
+                    variant="ghost"
+                    className="w-full justify-start h-11 hover:bg-slate-100 rounded-xl transition-all duration-200 text-slate-700 hover:text-slate-900"
+                  >
+                    <BarChart3 className="h-4 w-4 mr-3" />
+                    <span className="font-medium">Painel Admin</span>
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         </nav>
         
-        <div className="absolute bottom-0 w-full p-4 border-t">
+        <div className="absolute bottom-0 w-full p-4 border-t border-slate-200/50 bg-gradient-to-t from-slate-50/80 to-transparent">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="w-full justify-start">
-                <User className="h-4 w-4 mr-3" />
-                {userProfile?.nome || user?.email}
+              <Button variant="ghost" className="w-full justify-start h-12 hover:bg-slate-100 rounded-xl transition-all duration-200">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-400 to-slate-600 flex items-center justify-center mr-3 text-white text-sm font-medium">
+                  {(userProfile?.nome || user?.email)?.charAt(0)?.toUpperCase()}
+                </div>
+                <div className="text-left overflow-hidden">
+                  <p className="font-medium text-slate-900 truncate">{userProfile?.nome || user?.email}</p>
+                  <p className="text-xs text-slate-500 capitalize truncate">{userProfile?.funcao}</p>
+                </div>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={logout}>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={logout} className="text-red-600 hover:text-red-700 hover:bg-red-50">
                 <LogOut className="h-4 w-4 mr-2" />
                 Sair
               </DropdownMenuItem>
@@ -785,28 +801,37 @@ const DashboardPage = () => {
         </div>
       </div>
 
+      {/* Mobile overlay com blur elegante */}
       {mobileMenuOpen && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 lg:hidden transition-all duration-300"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white shadow-sm border-b">
-          <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
+        {/* Header redesigned - mais elegante e responsivo */}
+        <header className="bg-white/80 backdrop-blur-xl shadow-sm border-b border-slate-200/60 sticky top-0 z-30">
+          <div className="flex items-center justify-between h-20 px-4 sm:px-6 lg:px-8">
             <div className="flex items-center space-x-4">
               <button
                 onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden"
+                className="lg:hidden p-2 rounded-xl hover:bg-slate-100 transition-colors"
               >
-                <Menu className="h-6 w-6" />
+                <Menu className="h-6 w-6 text-slate-700" />
               </button>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">Dashboard</h2>
-                <p className="text-sm text-gray-500">
-                  Bem-vindo, {userProfile?.nome || user?.email} ({userProfile?.funcao})
-                </p>
+              <div className="flex items-center space-x-4">
+                <div className="hidden sm:block">
+                  <h2 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                    Dashboard
+                  </h2>
+                  <p className="text-sm text-slate-500 -mt-1">
+                    Bem-vindo, <span className="font-medium text-slate-700">{userProfile?.nome || user?.email}</span>
+                  </p>
+                </div>
+                <div className="sm:hidden">
+                  <h2 className="text-xl font-bold text-slate-900">Dashboard</h2>
+                </div>
               </div>
             </div>
             
@@ -816,133 +841,159 @@ const DashboardPage = () => {
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
-          <div className="space-y-6">
-            {/* Campo de busca */}
-            <div className="bg-white p-4 rounded-lg border shadow-sm">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Buscar chamados por título ou descrição..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
+        <main className="flex-1 overflow-auto bg-gradient-to-b from-transparent to-slate-50/30">
+          <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
+            {/* Campo de busca elegante */}
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400" />
+              <Input
+                placeholder="Pesquisar chamados por título ou descrição..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-12 h-14 text-lg bg-white/80 backdrop-blur-sm border-slate-200/60 rounded-2xl shadow-sm hover:shadow-md focus:shadow-lg transition-all duration-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+              />
             </div>
 
-            {/* Filtros e controles */}
-            <div className="bg-white p-4 rounded-lg border shadow-sm space-y-4">
-              <div className="flex flex-wrap gap-4 items-center">
-                {/* Filtro por evento */}
-                <div className="min-w-[200px]">
-                  <Select value={selectedEvent} onValueChange={setSelectedEvent}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Filtrar por evento" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos os eventos</SelectItem>
-                      {getAllEvents().map(event => (
-                        <SelectItem key={event} value={event}>{event}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Ordenação */}
-                <div className="min-w-[180px]">
-                  <Select value={sortBy} onValueChange={setSortBy}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="dataUltimaAtualizacao">Data de atualização</SelectItem>
-                      <SelectItem value="prioridade">Prioridade</SelectItem>
-                      <SelectItem value="status">Status</SelectItem>
-                      <SelectItem value="titulo">Título</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Toggle de visualização */}
-                <div className="flex border rounded-lg">
-                  <Button
-                    variant={viewMode === 'cards' ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => setViewMode('cards')}
-                    className="rounded-r-none"
-                  >
-                    <Grid className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant={viewMode === 'list' ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => setViewMode('list')}
-                    className="rounded-l-none"
-                  >
-                    <List className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                {/* Botões de ações */}
-                <div className="flex gap-2 ml-auto">
-                  {/* Filtros salvos */}
-                  {savedFilters.length > 0 && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm">
-                          <Bookmark className="h-4 w-4 mr-2" />
-                          Filtros Salvos
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        {savedFilters.map(filter => (
-                          <div key={filter.id} className="flex items-center justify-between p-2">
-                            <DropdownMenuItem 
-                              onClick={() => applySavedFilter(filter)}
-                              className="flex-1 cursor-pointer"
-                            >
-                              {filter.name}
-                            </DropdownMenuItem>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeSavedFilter(filter.id);
-                              }}
-                              className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
+            {/* Filtros e controles elegantes */}
+            <div className="bg-white/60 backdrop-blur-xl p-6 rounded-2xl border border-slate-200/60 shadow-sm space-y-6">
+              <div className="flex flex-col lg:flex-row gap-4 lg:items-center">
+                <div className="flex flex-col sm:flex-row gap-4 flex-1">
+                  {/* Filtro por evento */}
+                  <div className="flex-1 min-w-[200px]">
+                    <Select value={selectedEvent} onValueChange={setSelectedEvent}>
+                      <SelectTrigger className="h-12 bg-white/70 backdrop-blur-sm border-slate-200/60 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+                        <SelectValue placeholder="Filtrar por evento" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl border-slate-200 shadow-xl">
+                        <SelectItem value="all" className="rounded-lg">Todos os eventos</SelectItem>
+                        {getAllEvents().map(event => (
+                          <SelectItem key={event} value={event} className="rounded-lg">{event}</SelectItem>
                         ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                  <Button variant="outline" size="sm" onClick={() => setShowSaveFilterDialog(true)}>
-                    <Save className="h-4 w-4 mr-2" />
-                    Salvar Filtro
-                  </Button>
-
-                  <Button variant="outline" size="sm" onClick={clearAllFilters}>
-                    <RotateCcw className="h-4 w-4 mr-2" />
-                    Limpar
-                  </Button>
+                  {/* Ordenação */}
+                  <div className="flex-1 min-w-[180px]">
+                    <Select value={sortBy} onValueChange={setSortBy}>
+                      <SelectTrigger className="h-12 bg-white/70 backdrop-blur-sm border-slate-200/60 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl border-slate-200 shadow-xl">
+                        <SelectItem value="dataUltimaAtualizacao" className="rounded-lg">Data de atualização</SelectItem>
+                        <SelectItem value="prioridade" className="rounded-lg">Prioridade</SelectItem>
+                        <SelectItem value="status" className="rounded-lg">Status</SelectItem>
+                        <SelectItem value="titulo" className="rounded-lg">Título</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              </div>
 
-              {/* Tags/Chips para filtros rápidos */}
-              <div className="space-y-3">
+                {/* Controles de ação */}
+                <div className="flex items-center gap-3">
+                  {/* Toggle de visualização */}
+                  <div className="flex items-center bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-xl p-1 shadow-sm">
+                    <Button
+                      variant={viewMode === 'cards' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setViewMode('cards')}
+                      className={`h-9 px-4 rounded-lg transition-all duration-200 ${
+                        viewMode === 'cards' 
+                          ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm' 
+                          : 'hover:bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      <Grid className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant={viewMode === 'list' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className={`h-9 px-4 rounded-lg transition-all duration-200 ${
+                        viewMode === 'list' 
+                          ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm' 
+                          : 'hover:bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      <List className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {/* Filtros salvos */}
+                  <div className="flex gap-2">
+                    {savedFilters.length > 0 && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-10 px-4 bg-white/70 backdrop-blur-sm border-slate-200/60 rounded-xl shadow-sm hover:shadow-md transition-all duration-200">
+                            <Bookmark className="h-4 w-4 mr-2" />
+                            <span className="hidden sm:inline">Filtros Salvos</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-64 rounded-xl border-slate-200 shadow-xl">
+                          {savedFilters.map(filter => (
+                            <div key={filter.id} className="flex items-center justify-between p-2">
+                              <DropdownMenuItem 
+                                onClick={() => applySavedFilter(filter)}
+                                className="flex-1 cursor-pointer rounded-lg"
+                              >
+                                <Star className="h-4 w-4 mr-2 text-yellow-500" />
+                                {filter.name}
+                              </DropdownMenuItem>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeSavedFilter(filter.id);
+                                }}
+                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg"
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => setShowSaveFilterDialog(true)}
+                      className="h-10 px-4 bg-white/70 backdrop-blur-sm border-slate-200/60 rounded-xl shadow-sm hover:shadow-md transition-all duration-200"
+                    >
+                      <Save className="h-4 w-4 mr-2" />
+                      <span className="hidden sm:inline">Salvar</span>
+                    </Button>
+
+                    {(searchTerm || selectedEvent !== 'all' || sortBy !== 'dataUltimaAtualizacao') && (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={clearAllFilters}
+                        className="h-10 px-4 bg-white/70 backdrop-blur-sm border-red-200/60 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-xl shadow-sm hover:shadow-md transition-all duration-200"
+                      >
+                        <RotateCcw className="h-4 w-4 mr-2" />
+                        <span className="hidden sm:inline">Limpar</span>
+                      </Button>
+                    )}
+            {/* Tags/Chips para filtros rápidos */}
+            <div className="bg-white/60 backdrop-blur-xl p-6 rounded-2xl border border-slate-200/60 shadow-sm space-y-4">
+              <h3 className="text-lg font-semibold text-slate-800 mb-4">Filtros Rápidos</h3>
+              
+              <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">Filtros Rápidos - Status:</label>
+                  <label className="text-sm font-medium text-slate-700 mb-3 block">Status:</label>
                   <div className="flex flex-wrap gap-2">
                     {getAllStatus().map(status => (
                       <Badge
                         key={status}
                         variant={quickFilters.status.includes(status) ? 'default' : 'outline'}
-                        className="cursor-pointer"
+                        className={`cursor-pointer transition-all duration-200 px-3 py-1.5 rounded-xl ${
+                          quickFilters.status.includes(status) 
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm' 
+                            : 'bg-white/70 hover:bg-blue-50 text-slate-700 border-slate-300 hover:border-blue-300'
+                        }`}
                         onClick={() => toggleQuickFilter('status', status)}
                       >
                         {status.replace('_', ' ')}
@@ -952,13 +1003,17 @@ const DashboardPage = () => {
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">Filtros Rápidos - Área:</label>
+                  <label className="text-sm font-medium text-slate-700 mb-3 block">Área:</label>
                   <div className="flex flex-wrap gap-2">
                     {getAllAreas().map(area => (
                       <Badge
                         key={area}
                         variant={quickFilters.area.includes(area) ? 'default' : 'outline'}
-                        className="cursor-pointer"
+                        className={`cursor-pointer transition-all duration-200 px-3 py-1.5 rounded-xl ${
+                          quickFilters.area.includes(area) 
+                            ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm' 
+                            : 'bg-white/70 hover:bg-indigo-50 text-slate-700 border-slate-300 hover:border-indigo-300'
+                        }`}
                         onClick={() => toggleQuickFilter('area', area)}
                       >
                         {area.replace('_', ' ')}
@@ -968,13 +1023,17 @@ const DashboardPage = () => {
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">Filtros Rápidos - Prioridade:</label>
+                  <label className="text-sm font-medium text-slate-700 mb-3 block">Prioridade:</label>
                   <div className="flex flex-wrap gap-2">
                     {getAllPriorities().map(priority => (
                       <Badge
                         key={priority}
                         variant={quickFilters.prioridade.includes(priority) ? 'default' : 'outline'}
-                        className="cursor-pointer"
+                        className={`cursor-pointer transition-all duration-200 px-3 py-1.5 rounded-xl ${
+                          quickFilters.prioridade.includes(priority) 
+                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm' 
+                            : 'bg-white/70 hover:bg-emerald-50 text-slate-700 border-slate-300 hover:border-emerald-300'
+                        }`}
                         onClick={() => toggleQuickFilter('prioridade', priority)}
                       >
                         {priority}
@@ -985,8 +1044,8 @@ const DashboardPage = () => {
               </div>
             </div>
 
-            {/* Cards de filtros */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10 gap-3 mb-6">
+            {/* Cards de filtros elegantes e responsivos */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4">
               {filterCards.map((card) => {
                 const IconComponent = card.icon;
                 const isActive = activeFilter === card.id;
@@ -995,26 +1054,34 @@ const DashboardPage = () => {
                 return (
                   <Card
                     key={card.id}
-                    className={`cursor-pointer transition-all duration-200 ${
-                      isActive ? card.activeColor : card.color
-                    } hover:shadow-md`}
+                    className={`cursor-pointer transition-all duration-300 transform hover:scale-105 ${
+                      isActive 
+                        ? 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white border-blue-500 shadow-lg shadow-blue-500/25' 
+                        : 'bg-white/80 backdrop-blur-sm hover:bg-white border-slate-200/60 hover:border-slate-300 shadow-sm hover:shadow-md'
+                    } rounded-2xl overflow-hidden`}
                     onClick={() => setActiveFilter(card.id)}
                   >
-                    <CardContent className="p-3 sm:p-4">
-                      <div className="flex flex-col items-center text-center space-y-2">
-                        <IconComponent 
-                          className={`h-5 w-5 sm:h-6 sm:w-6 ${
-                            isActive ? 'text-white' : card.iconColor
-                          }`} 
-                        />
-                        <div>
-                          <p className={`text-xs sm:text-sm font-medium ${
-                            isActive ? 'text-white' : 'text-gray-900'
+                    <CardContent className="p-4 sm:p-5">
+                      <div className="flex flex-col items-center text-center space-y-3">
+                        <div className={`p-3 rounded-xl ${
+                          isActive 
+                            ? 'bg-white/20 backdrop-blur-sm' 
+                            : 'bg-gradient-to-br from-slate-100 to-slate-200'
+                        }`}>
+                          <IconComponent 
+                            className={`h-6 w-6 ${
+                              isActive ? 'text-white' : 'text-slate-600'
+                            }`} 
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <p className={`text-xs sm:text-sm font-medium leading-tight ${
+                            isActive ? 'text-white/90' : 'text-slate-700'
                           }`}>
                             {card.title}
                           </p>
-                          <p className={`text-lg sm:text-xl font-bold ${
-                            isActive ? 'text-white' : card.iconColor
+                          <p className={`text-xl sm:text-2xl font-bold ${
+                            isActive ? 'text-white' : 'text-slate-900'
                           }`}>
                             {count}
                           </p>
@@ -1022,28 +1089,31 @@ const DashboardPage = () => {
                       </div>
                     </CardContent>
                   </Card>
-                );
-              })}
-            </div>
-
+            {/* Indicador de filtro ativo */}
             {activeFilter !== 'todos' && (
-              <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                <div className="flex items-center space-x-2">
-                  <Filter className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm font-medium text-blue-900">
-                    Filtro ativo: {filterCards.find(c => c.id === activeFilter)?.title}
-                  </span>
-                  <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                    {counts[activeFilter]} chamado{counts[activeFilter] !== 1 ? 's' : ''}
-                  </Badge>
+              <div className="flex items-center justify-between bg-gradient-to-r from-blue-50/80 to-indigo-50/80 backdrop-blur-sm border border-blue-200/60 rounded-2xl p-4 shadow-sm">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-blue-100 rounded-xl">
+                    <Filter className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <div>
+                    <span className="text-sm font-semibold text-blue-900">
+                      Filtro ativo: {filterCards.find(c => c.id === activeFilter)?.title}
+                    </span>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <Badge className="bg-blue-600 text-white px-3 py-1 rounded-xl text-xs">
+                        {counts[activeFilter]} chamado{counts[activeFilter] !== 1 ? 's' : ''}
+                      </Badge>
+                    </div>
+                  </div>
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setActiveFilter('todos')}
-                  className="text-blue-600 hover:text-blue-800"
+                  className="text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-xl transition-all duration-200"
                 >
-                  <X className="h-4 w-4 mr-1" />
+                  <X className="h-4 w-4 mr-2" />
                   Limpar filtro
                 </Button>
               </div>
@@ -1051,21 +1121,123 @@ const DashboardPage = () => {
             
             {/* Visualização dos chamados */}
             {viewMode === 'list' ? (
-              // Visualização em lista/tabela
-              <Card>
+              // Visualização em lista/tabela elegante
+              <Card className="overflow-hidden rounded-2xl border-slate-200/60 shadow-lg">
                 <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Título</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Prioridade</TableHead>
-                        <TableHead>Área</TableHead>
-                        <TableHead>Projeto/Evento</TableHead>
-                        <TableHead>Última Atualização</TableHead>
-                        <TableHead className="w-[50px]"></TableHead>
-                      </TableRow>
-                    </TableHeader>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200">
+                          <TableHead className="font-semibold text-slate-700 px-6 py-4">Título</TableHead>
+                          <TableHead className="font-semibold text-slate-700 px-4 py-4">Status</TableHead>
+                          <TableHead className="font-semibold text-slate-700 px-4 py-4">Prioridade</TableHead>
+                          <TableHead className="font-semibold text-slate-700 px-4 py-4">Área</TableHead>
+                          <TableHead className="font-semibold text-slate-700 px-4 py-4">Projeto/Evento</TableHead>
+                          <TableHead className="font-semibold text-slate-700 px-4 py-4">Atualização</TableHead>
+                          <TableHead className="w-[80px] px-4 py-4"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {getFilteredAndSortedTickets().map((ticket) => {
+                          const projectInfo = getProjectInfo(ticket);
+                          return (
+                            <TableRow 
+                              key={ticket.id} 
+                              className="hover:bg-slate-50/80 transition-colors duration-200 border-b border-slate-100 cursor-pointer"
+                              onClick={() => handleTicketClick(ticket.id)}
+                            >
+                              <TableCell className="px-6 py-4">
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    {(ticket.isConfidential || ticket.confidencial) && (
+                                      <Lock className="h-4 w-4 text-orange-500 flex-shrink-0" title="Chamado Confidencial" />
+                                    )}
+                                    <h3 className="font-medium text-slate-900 truncate max-w-xs">{ticket.titulo}</h3>
+                                    {ticketNotifications[ticket.id] && (
+                                      <Badge className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                                        {ticketNotifications[ticket.id]}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <p className="text-sm text-slate-600 truncate max-w-md">{(ticket.isConfidential || ticket.confidencial) ? 'Descrição confidencial' : ticket.descricao}</p>
+                                </div>
+                              </TableCell>
+                              <TableCell className="px-4 py-4">
+                                <Badge className={`${getStatusColor(ticket.status)} text-xs px-3 py-1 rounded-xl`}>
+                                  {ticket.status?.replace('_', ' ')}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="px-4 py-4">
+                                <Badge className={`${getPriorityColor(ticket.prioridade)} text-xs px-3 py-1 rounded-xl`}>
+                                  {ticket.prioridade}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="px-4 py-4">
+                                <span className="text-sm text-slate-600 capitalize">
+                                  {ticket.area?.replace('_', ' ')}
+                                </span>
+                              </TableCell>
+                              <TableCell className="px-4 py-4">
+                                <span className="text-sm text-slate-700 font-medium truncate max-w-xs block">
+                                  {projectInfo}
+                                </span>
+                              </TableCell>
+                              <TableCell className="px-4 py-4">
+                                <div className="text-sm text-slate-600">
+                                  <div className="font-medium">
+                                    {(ticket.dataUltimaAtualizacao?.toDate?.() || ticket.createdAt?.toDate?.())?.toLocaleDateString('pt-BR') || 'N/A'}
+                                  </div>
+                                  <div className="text-xs opacity-75">
+                                    {(ticket.dataUltimaAtualizacao?.toDate?.() || ticket.createdAt?.toDate?.())?.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) || ''}
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="px-4 py-4">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleTicketClick(ticket.id);
+                                  }}
+                                  className="h-8 w-8 p-0 hover:bg-blue-100 rounded-lg transition-colors duration-200"
+                                >
+                                  <Eye className="h-4 w-4 text-slate-600" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  
+                  {getFilteredAndSortedTickets().length === 0 && (
+                    <div className="p-12 text-center">
+                      <FileText className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-slate-700 mb-2">
+                        {activeFilter === 'todos' ? 'Nenhum chamado encontrado' : 'Nenhum chamado neste filtro'}
+                      </h3>
+                      <p className="text-slate-500 mb-4">
+                        {activeFilter === 'todos' 
+                          ? 'Não há chamados para exibir no momento.' 
+                          : `Não há chamados com o filtro "${filterCards.find(c => c.id === activeFilter)?.title}" aplicado.`
+                        }
+                      </p>
+                      {activeFilter !== 'todos' && (
+                        <Button
+                          variant="outline"
+                          onClick={() => setActiveFilter('todos')}
+                          className="rounded-xl"
+                        >
+                          Ver todos os chamados
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ) : (
                     <TableBody>
                       {displayedTickets.map(ticket => (
                         <TableRow 
@@ -1145,118 +1317,183 @@ const DashboardPage = () => {
                 </CardContent>
               </Card>
             ) : (
-              // Visualização em cards (agrupada por projeto)
-              <div className="space-y-4">
+              // Visualização em cards elegantes (agrupada por projeto)
+              <div className="space-y-6">
                 {Object.entries(getTicketsByProject()).map(([projectName, projectTickets]) => (
-                  <div key={projectName} className="border rounded-lg">
+                  <Card key={projectName} className="overflow-hidden rounded-2xl border-slate-200/60 shadow-lg bg-white/80 backdrop-blur-sm">
                     <button
                       onClick={() => toggleProjectExpansion(projectName)}
-                      className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
+                      className="w-full flex items-center justify-between p-6 text-left hover:bg-slate-50/80 transition-all duration-200"
                     >
-                      <div className="flex items-center space-x-3">
-                        {expandedProjects[projectName] ? (
-                          <ChevronDown className="h-4 w-4 text-gray-500" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 text-gray-500" />
-                        )}
+                      <div className="flex items-center space-x-4">
+                        <div className={`p-2 rounded-xl transition-all duration-200 ${expandedProjects[projectName] ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
+                          {expandedProjects[projectName] ? (
+                            <ChevronDown className="h-5 w-5" />
+                          ) : (
+                            <ChevronRight className="h-5 w-5" />
+                          )}
+                        </div>
                         <div>
-                          <h3 className="font-medium text-sm md:text-base">{projectName}</h3>
-                          <p className="text-xs text-gray-500">{projectTickets.length} chamado{projectTickets.length !== 1 ? 's' : ''}</p>
+                          <h3 className="font-semibold text-lg text-slate-900">{projectName}</h3>
+                          <p className="text-sm text-slate-500 mt-1">
+                            {projectTickets.length} chamado{projectTickets.length !== 1 ? 's' : ''}
+                          </p>
                         </div>
                       </div>
+                      <Badge className="bg-blue-600 text-white px-4 py-2 rounded-xl">
+                        {projectTickets.length}
+                      </Badge>
                     </button>
                     
                     {expandedProjects[projectName] && (
-                      <div className="border-t bg-gray-50/50 p-4 space-y-3">
-                        {projectTickets.map((ticket) => {
-                          const isAwaitingApproval = ticket.status === 'aguardando_aprovacao' && 
-                                                   userProfile?.funcao === 'gerente' && 
-                                                   ticket.gerenteResponsavelId === user.uid;
-                          
-                          const cardClassName = `${bulkActionMode ? 'cursor-default' : 'cursor-pointer hover:shadow-md'} transition-shadow ${
-                            isAwaitingApproval 
-                              ? 'bg-orange-50 border-2 border-orange-400 shadow-lg ring-2 ring-orange-200' 
-                              : 'bg-white'
-                          } ${selectedTickets.has(ticket.id) ? 'ring-2 ring-blue-500' : ''}`;
-                          
-                          return (
-                          <Card 
-                            key={ticket.id} 
-                            className={cardClassName}
-                            onClick={bulkActionMode ? undefined : () => handleTicketClick(ticket.id)}
-                          >
-                            <CardContent className="p-3 md:p-4">
-                              <div className="flex flex-col space-y-3">
-                                <div className="flex items-start justify-between">
-                                  {bulkActionMode && (
-                                    <div className="flex items-center mr-3">
-                                      <Checkbox
-                                        checked={selectedTickets.has(ticket.id)}
-                                        onCheckedChange={(checked) => handleTicketSelect(ticket.id, checked)}
-                                        onClick={(e) => e.stopPropagation()}
-                                      />
-                                    </div>
-                                  )}
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      {(ticket.isConfidential || ticket.confidencial) && (
-                                        <Lock className="h-4 w-4 text-orange-500 flex-shrink-0" title="Chamado Confidencial" />
-                                      )}
-                                      <h3 className="font-medium text-sm md:text-base truncate">{ticket.titulo}</h3>
-                                      {ticketNotifications[ticket.id] && (
-                                        <Badge className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                                          {ticketNotifications[ticket.id]}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    <p className="text-xs md:text-sm text-gray-600 mt-1 line-clamp-2">{(ticket.isConfidential || ticket.confidencial) ? 'Descrição confidencial' : ticket.descricao}</p>
-                                  </div>
-                                  
-                                  <div className="flex items-center space-x-2 ml-2 flex-shrink-0">
-                                    <div className="text-right text-xs text-gray-500">
-                                      <div className="flex flex-col items-end">
-                                        <span className="font-medium">
-                                          {(ticket.dataUltimaAtualizacao?.toDate?.() || ticket.createdAt?.toDate?.())?.toLocaleDateString('pt-BR') || 'N/A'}
-                                        </span>
-                                        <span className="text-xs opacity-75">
-                                          {(ticket.dataUltimaAtualizacao?.toDate?.() || ticket.createdAt?.toDate?.())?.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) || ''}
-                                        </span>
+                      <div className="border-t border-slate-200/60 bg-gradient-to-b from-slate-50/50 to-slate-50/30 p-6">
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                          {projectTickets.map((ticket) => {
+                            const isAwaitingApproval = ticket.status === 'aguardando_aprovacao' && 
+                                                     userProfile?.funcao === 'gerente' && 
+                                                     ticket.gerenteResponsavelId === user.uid;
+                            
+                            return (
+                              <Card 
+                                key={ticket.id} 
+                                className={`cursor-pointer hover:shadow-xl transition-all duration-300 transform hover:scale-105 rounded-2xl overflow-hidden ${
+                                  isAwaitingApproval 
+                                    ? 'bg-gradient-to-br from-orange-50 to-orange-100 border-2 border-orange-300 shadow-lg' 
+                                    : 'bg-white/90 backdrop-blur-sm border-slate-200/60 hover:border-slate-300'
+                                }`}
+                                onClick={() => handleTicketClick(ticket.id)}
+                              >
+                                <CardContent className="p-5">
+                                  <div className="space-y-4">
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex-1 min-w-0 space-y-2">
+                                        <div className="flex items-center gap-2">
+                                          {(ticket.isConfidential || ticket.confidencial) && (
+                                            <div className="p-1 bg-orange-100 rounded-lg">
+                                              <Lock className="h-4 w-4 text-orange-600" title="Chamado Confidencial" />
+                                            </div>
+                                          )}
+                                          <h4 className="font-semibold text-slate-900 truncate text-base">{ticket.titulo}</h4>
+                                          {ticketNotifications[ticket.id] && (
+                                            <Badge className="bg-red-500 text-white text-xs px-2 py-1 rounded-full shadow-sm">
+                                              {ticketNotifications[ticket.id]}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <p className="text-sm text-slate-600 line-clamp-2 leading-relaxed">
+                                          {(ticket.isConfidential || ticket.confidencial) ? 'Descrição confidencial' : ticket.descricao}
+                                        </p>
                                       </div>
                                     </div>
                                     
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleTicketClick(ticket.id);
-                                      }}
-                                      className="h-8 w-8 p-0"
-                                    >
-                                      <Eye className="h-4 w-4" />
-                                    </Button>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge className={`${getStatusColor(ticket.status)} text-xs px-3 py-1 rounded-xl font-medium`}>
+                                        {ticket.status?.replace('_', ' ')}
+                                      </Badge>
+                                      <Badge className={`${getPriorityColor(ticket.prioridade)} text-xs px-3 py-1 rounded-xl font-medium`}>
+                                        {ticket.prioridade}
+                                      </Badge>
+                                      {ticket.area && (
+                                        <Badge variant="outline" className="text-xs px-3 py-1 rounded-xl bg-slate-50 text-slate-600 border-slate-300">
+                                          {ticket.area?.replace('_', ' ')}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    
+                                    <div className="flex items-center justify-between pt-2 border-t border-slate-200/60">
+                                      <div className="text-xs text-slate-500">
+                                        <div className="font-medium">
+                                          {(ticket.dataUltimaAtualizacao?.toDate?.() || ticket.createdAt?.toDate?.())?.toLocaleDateString('pt-BR') || 'N/A'}
+                                        </div>
+                                        <div className="opacity-75">
+                                          {(ticket.dataUltimaAtualizacao?.toDate?.() || ticket.createdAt?.toDate?.())?.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) || ''}
+                                        </div>
+                                      </div>
+                                      
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleTicketClick(ticket.id);
+                                        }}
+                                        className="h-8 w-8 p-0 hover:bg-blue-100 rounded-lg transition-all duration-200"
+                                      >
+                                        <Eye className="h-4 w-4 text-slate-600" />
+                                      </Button>
+                                    </div>
                                   </div>
-                                </div>
-                                
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Badge className={`${getStatusColor(ticket.status)} text-xs`}>
-                                    {ticket.status?.replace('_', ' ')}
-                                  </Badge>
-                                  <Badge className={`${getPriorityColor(ticket.prioridade)} text-xs`}>
-                                    {ticket.prioridade}
-                                  </Badge>
-                                  <span className="text-xs text-gray-500">
-                                    {ticket.area?.replace('_', ' ')}
-                                  </span>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                          );
-                        })}
+                                </CardContent>
+                              </Card>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
+                  </Card>
+                ))}
+                
+                {Object.keys(getTicketsByProject()).length === 0 && (
+                  <Card className="rounded-2xl border-slate-200/60 bg-white/80 backdrop-blur-sm">
+                    <CardContent className="p-12 text-center">
+                      <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-slate-100 to-slate-200 rounded-2xl flex items-center justify-center">
+                        <FileText className="h-10 w-10 text-slate-400" />
+                      </div>
+                      <h3 className="text-xl font-semibold text-slate-800 mb-3">
+                        {activeFilter === 'todos' ? 'Nenhum chamado encontrado' : 'Nenhum chamado neste filtro'}
+                      </h3>
+                      <p className="text-slate-500 mb-6 max-w-md mx-auto leading-relaxed">
+                        {activeFilter === 'todos' 
+                          ? 'Não há chamados para exibir no momento.' 
+                          : `Não há chamados com o filtro "${filterCards.find(c => c.id === activeFilter)?.title}" aplicado.`
+                        }
+                      </p>
+                      {activeFilter !== 'todos' && (
+                        <Button
+                          variant="outline"
+                          onClick={() => setActiveFilter('todos')}
+                          className="rounded-xl px-6 py-3 bg-white hover:bg-slate-50 border-slate-300 hover:border-slate-400 transition-all duration-200"
+                        >
+                          Ver todos os chamados
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            
+            {/* Dialog para salvar filtros */}
+            <Dialog open={showSaveFilterDialog} onOpenChange={setShowSaveFilterDialog}>
+              <DialogContent className="rounded-2xl">
+                <DialogHeader>
+                  <DialogTitle>Salvar Filtro</DialogTitle>
+                  <DialogDescription>
+                    Dê um nome para este conjunto de filtros
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <Input
+                    placeholder="Nome do filtro..."
+                    value={filterName}
+                    onChange={(e) => setFilterName(e.target.value)}
+                    className="rounded-xl"
+                  />
+                  <div className="flex justify-end space-x-3">
+                    <Button variant="outline" onClick={() => setShowSaveFilterDialog(false)} className="rounded-xl">
+                      Cancelar
+                    </Button>
+                    <Button onClick={saveCurrentFilter} className="rounded-xl">
+                      Salvar
+                    </Button>
                   </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
                 ))}
                 
                 {Object.keys(getTicketsByProject()).length === 0 && (
