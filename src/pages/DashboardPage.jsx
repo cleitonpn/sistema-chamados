@@ -1089,6 +1089,10 @@ const DashboardPage = () => {
                       </div>
                     </CardContent>
                   </Card>
+                );
+              })}
+            </div>
+
             {/* Indicador de filtro ativo */}
             {activeFilter !== 'todos' && (
               <div className="flex items-center justify-between bg-gradient-to-r from-blue-50/80 to-indigo-50/80 backdrop-blur-sm border border-blue-200/60 rounded-2xl p-4 shadow-sm">
