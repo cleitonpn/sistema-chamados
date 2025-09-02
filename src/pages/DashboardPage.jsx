@@ -1089,10 +1089,6 @@ const DashboardPage = () => {
                       </div>
                     </CardContent>
                   </Card>
-                );
-              })}
-            </div>
-
             {/* Indicador de filtro ativo */}
             {activeFilter !== 'todos' && (
               <div className="flex items-center justify-between bg-gradient-to-r from-blue-50/80 to-indigo-50/80 backdrop-blur-sm border border-blue-200/60 rounded-2xl p-4 shadow-sm">
@@ -1225,7 +1221,7 @@ const DashboardPage = () => {
                       <p className="text-slate-500 mb-4">
                         {activeFilter === 'todos' 
                           ? 'Não há chamados para exibir no momento.' 
-                          : `Não há chamados com o filtro "${filterCards.find(c => c.id === activeFilter)?.title}" aplicado.`
+                          : 'Não há chamados com este filtro aplicado.'
                         }
                       </p>
                       {activeFilter !== 'todos' && (
@@ -1313,7 +1309,7 @@ const DashboardPage = () => {
                       <p className="text-gray-500">
                         {activeFilter === 'todos' 
                           ? 'Não há chamados para exibir no momento.' 
-                          : `Não há chamados com o filtro "${filterCards.find(c => c.id === activeFilter)?.title}" aplicado.`
+                          : 'Não há chamados com este filtro aplicado.'
                         }
                       </p>
                     </div>
@@ -1449,7 +1445,7 @@ const DashboardPage = () => {
                       <p className="text-slate-500 mb-6 max-w-md mx-auto leading-relaxed">
                         {activeFilter === 'todos' 
                           ? 'Não há chamados para exibir no momento.' 
-                          : `Não há chamados com o filtro "${filterCards.find(c => c.id === activeFilter)?.title}" aplicado.`
+                          : 'Não há chamados com este filtro aplicado.'
                         }
                       </p>
                       {activeFilter !== 'todos' && (
@@ -1510,7 +1506,7 @@ const DashboardPage = () => {
                       <p className="text-gray-500">
                         {activeFilter === 'todos' 
                           ? 'Não há chamados para exibir no momento.' 
-                          : `Não há chamados com o filtro "${filterCards.find(c => c.id === activeFilter)?.title}" aplicado.`
+                          : 'Não há chamados com este filtro aplicado.'
                         }
                       </p>
                       {activeFilter !== 'todos' && (
