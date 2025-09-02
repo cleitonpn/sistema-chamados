@@ -415,12 +415,12 @@ const DashboardPage = () => {
             notificationCounts[ticket.id] = count;
           }
         } catch (ticketError) {
-          console.warn(`⚠️ Erro ao carregar notificações do chamado ${ticket.id}:`, ticketError);
+          // Silently handle individual ticket errors
         }
       }
       setTicketNotifications(notificationCounts);
     } catch (error) {
-      console.error('❌ Erro ao carregar notificações dos chamados:', error);
+      // Silently handle notification errors
       setTicketNotifications({});
     }
   };
@@ -428,13 +428,11 @@ const DashboardPage = () => {
  useEffect(() => {
   if (authInitialized && user && userProfile && user.uid) {
     // 1. Carrega os dados imediatamente quando a página abre
-    console.log("Carregando dados iniciais...");
     loadDashboardData();
 
     // 2. Configura um intervalo para recarregar os dados a cada 3 minutos
     const tresMinutos = 3 * 60 * 1000;
     const intervalId = setInterval(() => {
-      console.log("Recarregando dados automaticamente...");
       loadDashboardData();
     }, tresMinutos);
 
@@ -473,7 +471,7 @@ const DashboardPage = () => {
     try {
       setLoading(true);
       
-      console.log('🔍 Carregando dados para:', userProfile?.funcao);
+      // console.log('🔍 Carregando dados para:', userProfile?.funcao);
       
       const filterConfidential = (ticket) => {
   // ✅ VERIFICA AMBOS OS CAMPOS POSSÍVEIS
@@ -501,7 +499,7 @@ const DashboardPage = () => {
 };
 
       if (userProfile?.funcao === 'administrador') {
-        console.log('👑 Administrador: carregando TODOS os dados');
+        // console.log('👑 Administrador: carregando TODOS os dados');
         const [allProjects, allTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
           ticketService.getAllTickets(),
@@ -518,7 +516,7 @@ const DashboardPage = () => {
         setProjectNames(projectNamesMap);
         
       } else if (userProfile?.funcao === 'produtor') {
-        console.log('🏭 Produtor: carregando projetos próprios e chamados relacionados');
+        // console.log('🏭 Produtor: carregando projetos próprios e chamados relacionados');
         const [allProjects, allTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
           ticketService.getAllTickets(),
@@ -534,7 +532,7 @@ const DashboardPage = () => {
         produtorProjects.forEach(project => { projectNamesMap[project.id] = project.nome; });
         setProjectNames(projectNamesMap);
       } else if (userProfile?.funcao === 'consultor') {
-        console.log('👨‍💼 Consultor: carregando projetos próprios e chamados (somente abertos)');
+        // console.log('👨‍💼 Consultor: carregando projetos próprios e chamados (somente abertos)');
         const [allProjects, allTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
           ticketService.getAllTickets(),
@@ -550,7 +548,7 @@ const DashboardPage = () => {
         allProjects.forEach(project => { projectNamesMap[project.id] = project.nome; });
         setProjectNames(projectNamesMap);
       } else if (userProfile?.funcao === 'operador') {
-  console.log('⚙️ Operador: carregando chamados da área (inclui histórico)');
+  // console.log('⚙️ Operador: carregando chamados da área (inclui histórico)');
   const [allProjects, allTickets, allUsers] = await Promise.all([
     projectService.getAllProjects(),
     ticketService.getAllTickets(),
@@ -599,7 +597,7 @@ const DashboardPage = () => {
   });
   setProjectNames(projectNamesMap);
       } else if (userProfile?.funcao === 'gerente') {
-        console.log('👔 Gerente: carregando TODOS os dados');
+        // console.log('👔 Gerente: carregando TODOS os dados');
         const [allProjects, allTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
           ticketService.getAllTickets(),
@@ -617,7 +615,7 @@ const DashboardPage = () => {
         setProjectNames(projectNamesMap);
         
       } else {
-        console.log('👤 Usuário padrão: carregando dados básicos');
+        // console.log('👤 Usuário padrão: carregando dados básicos');
         const [allProjects, userTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
           ticketService.getTicketsByUser(user.uid),
@@ -636,7 +634,7 @@ const DashboardPage = () => {
       }
       
     } catch (error) {
-      console.error('❌ Erro ao carregar dados do dashboard:', error);
+      // Silently handle dashboard loading errors
       setProjects([]);
       setTickets([]);
     } finally {
@@ -1089,6 +1087,10 @@ const DashboardPage = () => {
                       </div>
                     </CardContent>
                   </Card>
+                );
+              })}
+            </div>
+            
             {/* Indicador de filtro ativo */}
             {activeFilter !== 'todos' && (
               <div className="flex items-center justify-between bg-gradient-to-r from-blue-50/80 to-indigo-50/80 backdrop-blur-sm border border-blue-200/60 rounded-2xl p-4 shadow-sm">
