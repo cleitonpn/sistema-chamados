@@ -415,12 +415,12 @@ const DashboardPage = () => {
             notificationCounts[ticket.id] = count;
           }
         } catch (ticketError) {
-          // Silently handle individual ticket errors
+          console.warn(`⚠️ Erro ao carregar notificações do chamado ${ticket.id}:`, ticketError);
         }
       }
       setTicketNotifications(notificationCounts);
     } catch (error) {
-      // Silently handle notification errors
+      console.error('❌ Erro ao carregar notificações dos chamados:', error);
       setTicketNotifications({});
     }
   };
@@ -428,11 +428,13 @@ const DashboardPage = () => {
  useEffect(() => {
   if (authInitialized && user && userProfile && user.uid) {
     // 1. Carrega os dados imediatamente quando a página abre
+    console.log("Carregando dados iniciais...");
     loadDashboardData();
 
     // 2. Configura um intervalo para recarregar os dados a cada 3 minutos
     const tresMinutos = 3 * 60 * 1000;
     const intervalId = setInterval(() => {
+      console.log("Recarregando dados automaticamente...");
       loadDashboardData();
     }, tresMinutos);
 
@@ -471,7 +473,7 @@ const DashboardPage = () => {
     try {
       setLoading(true);
       
-      // console.log('🔍 Carregando dados para:', userProfile?.funcao);
+      console.log('🔍 Carregando dados para:', userProfile?.funcao);
       
       const filterConfidential = (ticket) => {
   // ✅ VERIFICA AMBOS OS CAMPOS POSSÍVEIS
@@ -499,7 +501,7 @@ const DashboardPage = () => {
 };
 
       if (userProfile?.funcao === 'administrador') {
-        // console.log('👑 Administrador: carregando TODOS os dados');
+        console.log('👑 Administrador: carregando TODOS os dados');
         const [allProjects, allTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
           ticketService.getAllTickets(),
@@ -516,7 +518,7 @@ const DashboardPage = () => {
         setProjectNames(projectNamesMap);
         
       } else if (userProfile?.funcao === 'produtor') {
-        // console.log('🏭 Produtor: carregando projetos próprios e chamados relacionados');
+        console.log('🏭 Produtor: carregando projetos próprios e chamados relacionados');
         const [allProjects, allTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
           ticketService.getAllTickets(),
@@ -532,7 +534,7 @@ const DashboardPage = () => {
         produtorProjects.forEach(project => { projectNamesMap[project.id] = project.nome; });
         setProjectNames(projectNamesMap);
       } else if (userProfile?.funcao === 'consultor') {
-        // console.log('👨‍💼 Consultor: carregando projetos próprios e chamados (somente abertos)');
+        console.log('👨‍💼 Consultor: carregando projetos próprios e chamados (somente abertos)');
         const [allProjects, allTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
           ticketService.getAllTickets(),
@@ -548,7 +550,7 @@ const DashboardPage = () => {
         allProjects.forEach(project => { projectNamesMap[project.id] = project.nome; });
         setProjectNames(projectNamesMap);
       } else if (userProfile?.funcao === 'operador') {
-  // console.log('⚙️ Operador: carregando chamados da área (inclui histórico)');
+  console.log('⚙️ Operador: carregando chamados da área (inclui histórico)');
   const [allProjects, allTickets, allUsers] = await Promise.all([
     projectService.getAllProjects(),
     ticketService.getAllTickets(),
@@ -597,7 +599,7 @@ const DashboardPage = () => {
   });
   setProjectNames(projectNamesMap);
       } else if (userProfile?.funcao === 'gerente') {
-        // console.log('👔 Gerente: carregando TODOS os dados');
+        console.log('👔 Gerente: carregando TODOS os dados');
         const [allProjects, allTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
           ticketService.getAllTickets(),
@@ -615,7 +617,7 @@ const DashboardPage = () => {
         setProjectNames(projectNamesMap);
         
       } else {
-        // console.log('👤 Usuário padrão: carregando dados básicos');
+        console.log('👤 Usuário padrão: carregando dados básicos');
         const [allProjects, userTickets, allUsers] = await Promise.all([
           projectService.getAllProjects(),
           ticketService.getTicketsByUser(user.uid),
@@ -634,7 +636,7 @@ const DashboardPage = () => {
       }
       
     } catch (error) {
-      // Silently handle dashboard loading errors
+      console.error('❌ Erro ao carregar dados do dashboard:', error);
       setProjects([]);
       setTickets([]);
     } finally {
@@ -1090,7 +1092,7 @@ const DashboardPage = () => {
                 );
               })}
             </div>
-            
+
             {/* Indicador de filtro ativo */}
             {activeFilter !== 'todos' && (
               <div className="flex items-center justify-between bg-gradient-to-r from-blue-50/80 to-indigo-50/80 backdrop-blur-sm border border-blue-200/60 rounded-2xl p-4 shadow-sm">
@@ -1123,7 +1125,7 @@ const DashboardPage = () => {
             
             {/* Visualização dos chamados */}
             {viewMode === 'list' ? (
-              // Visualização em lista/tabela elegante
+              /* Visualização em lista/tabela elegante */
               <Card className="overflow-hidden rounded-2xl border-slate-200/60 shadow-lg">
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
@@ -1223,7 +1225,7 @@ const DashboardPage = () => {
                       <p className="text-slate-500 mb-4">
                         {activeFilter === 'todos' 
                           ? 'Não há chamados para exibir no momento.' 
-                          : 'Não há chamados com este filtro aplicado.'
+                          : 'Não há chamados com o filtro "' + (filterCards.find(c => c.id === activeFilter)?.title || '') + '" aplicado.'
                         }
                       </p>
                       {activeFilter !== 'todos' && (
@@ -1311,7 +1313,7 @@ const DashboardPage = () => {
                       <p className="text-gray-500">
                         {activeFilter === 'todos' 
                           ? 'Não há chamados para exibir no momento.' 
-                          : 'Não há chamados com este filtro aplicado.'
+                          : 'Não há chamados com o filtro "' + (filterCards.find(c => c.id === activeFilter)?.title || '') + '" aplicado.'
                         }
                       </p>
                     </div>
@@ -1319,7 +1321,7 @@ const DashboardPage = () => {
                 </CardContent>
               </Card>
             ) : (
-              // Visualização em cards elegantes (agrupada por projeto)
+              /* Visualização em cards elegantes (agrupada por projeto) */
               <div className="space-y-6">
                 {Object.entries(getTicketsByProject()).map(([projectName, projectTickets]) => (
                   <Card key={projectName} className="overflow-hidden rounded-2xl border-slate-200/60 shadow-lg bg-white/80 backdrop-blur-sm">
@@ -1447,7 +1449,7 @@ const DashboardPage = () => {
                       <p className="text-slate-500 mb-6 max-w-md mx-auto leading-relaxed">
                         {activeFilter === 'todos' 
                           ? 'Não há chamados para exibir no momento.' 
-                          : 'Não há chamados com este filtro aplicado.'
+                          : 'Não há chamados com o filtro "' + (filterCards.find(c => c.id === activeFilter)?.title || '') + '" aplicado.'
                         }
                       </p>
                       {activeFilter !== 'todos' && (
@@ -1508,7 +1510,7 @@ const DashboardPage = () => {
                       <p className="text-gray-500">
                         {activeFilter === 'todos' 
                           ? 'Não há chamados para exibir no momento.' 
-                          : 'Não há chamados com este filtro aplicado.'
+                          : 'Não há chamados com o filtro "' + (filterCards.find(c => c.id === activeFilter)?.title || '') + '" aplicado.'
                         }
                       </p>
                       {activeFilter !== 'todos' && (
