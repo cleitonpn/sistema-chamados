@@ -87,14 +87,14 @@ const DashboardPage = () => {
     if (activeFilter === 'arquivados') {
       filtered = tickets.filter(t => t.status === 'arquivado');
     } else {
-      filtered = tickets.filter(t => t.status !== 'arquivado');
+      filtered = filtered.filter(t => t.status !== 'arquivado'); // Filtrar arquivados em todos os outros
       switch (activeFilter) {
         case 'com_notificacao': filtered = filtered.filter(t => ticketNotifications[t.id]); break;
         case 'sem_tratativa': filtered = filtered.filter(t => t.status === 'aberto'); break;
         case 'em_tratativa': filtered = filtered.filter(t => t.status === 'em_tratativa'); break;
         case 'em_execucao': filtered = filtered.filter(t => t.status === 'em_execucao'); break;
-        case 'escalado': filtered = filtered.filter(t => ['enviado_para_area', 'escalado_para_area'].includes(t.status)); break;
-        case 'escalado_para_mim':
+        case 'escalado': filtered = filtered.filter(t => ['enviado_para_area', 'escalado_para_area', 'escalado_para_outra_area'].includes(t.status)); break;
+        case 'para_mim':
           filtered = filtered.filter(t => 
             t.status === 'escalado_para_outra_area' &&
             (t.areaEscalada === userProfile?.area || 
@@ -150,21 +150,31 @@ const DashboardPage = () => {
 
   // --- CONTAGENS (Otimizado com useMemo) ---
   const ticketCounts = useMemo(() => {
-    const activeTickets = tickets.filter(t => t.status !== 'arquivado');
-    return {
-      todos: activeTickets.length,
+    const counts = {
+      todos: tickets.filter(t => t.status !== 'arquivado').length,
       com_notificacao: Object.keys(ticketNotifications).length,
-      sem_tratativa: activeTickets.filter(t => t.status === 'aberto').length,
-      em_tratativa: activeTickets.filter(t => t.status === 'em_tratativa').length,
-      em_execucao: activeTickets.filter(t => t.status === 'em_execucao').length,
-      escalado: activeTickets.filter(t => ['enviado_para_area', 'escalado_para_area'].includes(t.status)).length,
-      escalado_para_mim: activeTickets.filter(t => t.status === 'escalado_para_outra_area' && (t.areaEscalada === userProfile?.area || t.usuarioEscalado === user?.uid || t.areasEnvolvidas?.includes(userProfile?.area))).length,
-      aguardando_validacao: activeTickets.filter(t => ['executado_aguardando_validacao', 'executado_aguardando_validacao_operador'].includes(t.status)).length,
-      concluidos: activeTickets.filter(t => t.status === 'concluido').length,
-      aguardando_aprovacao: activeTickets.filter(t => t.status === 'aguardando_aprovacao').length,
+      sem_tratativa: tickets.filter(t => t.status === 'aberto').length,
+      em_tratativa: tickets.filter(t => t.status === 'em_tratativa').length,
+      em_execucao: tickets.filter(t => t.status === 'em_execucao').length,
+      escalado: tickets.filter(t => ['enviado_para_area', 'escalado_para_area', 'escalado_para_outra_area'].includes(t.status)).length,
+      para_mim: tickets.filter(t => 
+        t.status === 'escalado_para_outra_area' &&
+        (t.areaEscalada === userProfile?.area || 
+         t.usuarioEscalado === user?.uid || 
+         t.areasEnvolvidas?.includes(userProfile?.area))
+      ).length,
+      aguardando_validacao: tickets.filter(t => ['executado_aguardando_validacao', 'executado_aguardando_validacao_operador'].includes(t.status)).length,
+      concluidos: tickets.filter(t => t.status === 'concluido').length,
+      aguardando_aprovacao: tickets.filter(t => t.status === 'aguardando_aprovacao').length,
       arquivados: tickets.filter(t => t.status === 'arquivado').length,
     };
-  }, [tickets, ticketNotifications, userProfile, user]);
+    // Ajuste para 'todos' se o filtro principal já for 'arquivados'
+    if (activeFilter === 'arquivados') {
+        counts.todos = tickets.length; // Inclui arquivados na contagem total se essa for a aba ativa
+    }
+    return counts;
+  }, [tickets, ticketNotifications, userProfile, user, activeFilter]);
+
 
   const ticketsByProject = useMemo(() => {
     const grouped = {};
@@ -333,22 +343,22 @@ const DashboardPage = () => {
   };
   
   // --- DEFINIÇÕES DE UI ---
-  const filterCards = useMemo(() => [
-    { id: 'todos', title: 'Todos', icon: FileText },
-    ...(userProfile?.funcao === 'gerente' ? [{ id: 'aguardando_aprovacao', title: 'Aprovação', icon: UserCheck }] : []),
-    { id: 'com_notificacao', title: 'Notificações', icon: BellRing },
-    { id: 'sem_tratativa', title: 'Sem Tratativa', icon: AlertCircle },
-    { id: 'em_tratativa', title: 'Em Tratativa', icon: Clock },
-    { id: 'em_execucao', title: 'Em Execução', icon: Play },
-    { id: 'escalado', title: 'Escalado', icon: ArrowUp },
-    { id: 'escalado_para_mim', title: 'Para Mim', icon: ChevronDown },
-    { id: 'aguardando_validacao', title: 'Validação', icon: Hourglass },
-    { id: 'concluidos', title: 'Concluídos', icon: CheckCircle },
-    { id: 'arquivados', title: 'Arquivados', icon: Archive }
+  const filterCardsConfig = useMemo(() => [
+    { id: 'todos', title: 'Todos', shortTitle: 'Todos', icon: FileText, bgColor: 'bg-blue-600', textColor: 'text-white' },
+    { id: 'com_notificacao', title: 'Notificações', shortTitle: 'Notif.', icon: BellRing, bgColor: 'bg-red-500', textColor: 'text-white' },
+    { id: 'sem_tratativa', title: 'Sem Tratativa', shortTitle: 'S/ Trat.', icon: AlertCircle, bgColor: 'bg-yellow-500', textColor: 'text-white' },
+    { id: 'em_tratativa', title: 'Em Tratativa', shortTitle: 'Em Trat.', icon: Clock, bgColor: 'bg-orange-500', textColor: 'text-white' },
+    { id: 'em_execucao', title: 'Em Execução', shortTitle: 'Execução', icon: Play, bgColor: 'bg-cyan-500', textColor: 'text-white' },
+    { id: 'escalado', title: 'Escalado', shortTitle: 'Escalado', icon: ArrowUp, bgColor: 'bg-purple-500', textColor: 'text-white' },
+    { id: 'para_mim', title: 'Para Mim', shortTitle: 'P/ Mim', icon: ChevronDown, bgColor: 'bg-indigo-500', textColor: 'text-white' },
+    { id: 'aguardando_validacao', title: 'Aguardando Validação', shortTitle: 'Validação', icon: Hourglass, bgColor: 'bg-teal-500', textColor: 'text-white' },
+    { id: 'concluidos', title: 'Concluídos', shortTitle: 'Concluídos', icon: CheckCircle, bgColor: 'bg-green-500', textColor: 'text-white' },
+    ...(userProfile?.funcao === 'gerente' ? [{ id: 'aguardando_aprovacao', title: 'Aguardando Aprovação', shortTitle: 'Aprovação', icon: UserCheck, bgColor: 'bg-pink-500', textColor: 'text-white' }] : []),
+    { id: 'arquivados', title: 'Arquivados', shortTitle: 'Arquiv.', icon: Archive, bgColor: 'bg-gray-500', textColor: 'text-white' }
   ], [userProfile?.funcao]);
 
   const getStatusColor = (status) => {
-    const colors = { 'aberto': 'bg-blue-100 text-blue-800', 'em_tratativa': 'bg-yellow-100 text-yellow-800', 'em_execucao': 'bg-cyan-100 text-cyan-800', 'enviado_para_area': 'bg-purple-100 text-purple-800', 'escalado_para_area': 'bg-purple-100 text-purple-800', 'aguardando_aprovacao': 'bg-orange-100 text-orange-800', 'executado_aguardando_validacao': 'bg-indigo-100 text-indigo-800', 'concluido': 'bg-green-100 text-green-800', 'cancelado': 'bg-red-100 text-red-800', 'devolvido': 'bg-pink-100 text-pink-800', 'arquivado': 'bg-gray-100 text-gray-700' };
+    const colors = { 'aberto': 'bg-blue-100 text-blue-800', 'em_tratativa': 'bg-yellow-100 text-yellow-800', 'em_execucao': 'bg-cyan-100 text-cyan-800', 'enviado_para_area': 'bg-purple-100 text-purple-800', 'escalado_para_area': 'bg-purple-100 text-purple-800', 'aguardando_aprovacao': 'bg-orange-100 text-orange-800', 'executado_aguardando_validacao': 'bg-indigo-100 text-indigo-800', 'concluido': 'bg-green-100 text-green-800', 'cancelado': 'bg-red-100 text-red-800', 'devolvido': 'bg-pink-100 text-pink-800', 'arquivado': 'bg-gray-100 text-gray-700', 'escalado_para_outra_area': 'bg-indigo-100 text-indigo-800' };
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
   
@@ -454,23 +464,23 @@ const DashboardPage = () => {
   );
   
   const renderFilterCards = () => (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-9">
-      {filterCards.map(({ id, title, icon: Icon }) => {
+    <div className="flex flex-nowrap overflow-x-auto pb-2 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8"> {/* Removido gap-3, adicionado flex-nowrap e padding horizontal */}
+      {filterCardsConfig.map(({ id, title, shortTitle, icon: Icon, bgColor, textColor }) => {
         const isActive = activeFilter === id;
         const count = ticketCounts[id] || 0;
         return (
           <Card
             key={id}
             onClick={() => setActiveFilter(id)}
-            className={`cursor-pointer overflow-hidden rounded-xl transition-all duration-300 transform hover:-translate-y-1 ${
-              isActive
-                ? 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/20'
-                : 'bg-white hover:bg-slate-50 hover:shadow-md'
-            }`}
+            className={`flex-shrink-0 w-[140px] sm:w-[150px] md:w-[160px] lg:w-[140px] xl:w-[145px] 2xl:w-[150px]
+                        cursor-pointer overflow-hidden rounded-xl transition-all duration-300 transform hover:-translate-y-1 mx-2
+                        ${isActive ? `${bgColor} ${textColor} shadow-lg ${bgColor.replace('bg-', 'shadow-')}/20` : 'bg-white hover:bg-slate-50 hover:shadow-md'}`
+            }
           >
             <CardContent className="p-4 text-center">
               <Icon className={`mx-auto h-6 w-6 mb-2 ${isActive ? 'text-white/80' : 'text-slate-500'}`} />
-              <p className={`text-sm font-semibold leading-tight ${isActive ? 'text-white' : 'text-slate-800'}`}>{title}</p>
+              <p className={`text-sm font-semibold leading-tight ${isActive ? 'text-white' : 'text-slate-800'} hidden sm:block`}>{title}</p>
+              <p className={`text-sm font-semibold leading-tight ${isActive ? 'text-white' : 'text-slate-800'} sm:hidden`}>{shortTitle}</p> {/* Título menor para mobile */}
               <p className={`text-xl font-bold ${isActive ? 'text-white' : 'text-slate-900'}`}>{count}</p>
             </CardContent>
           </Card>
@@ -525,7 +535,7 @@ const DashboardPage = () => {
             <p className="text-sm font-medium text-slate-600">
                 {filteredAndSortedTickets.length} chamado{filteredAndSortedTickets.length !== 1 ? 's' : ''} encontrado{filteredAndSortedTickets.length !== 1 ? 's' : ''}
             </p>
-            {(searchTerm || selectedEvent !== 'all' || sortBy !== 'dataUltimaAtualizacao' || quickFilters.status.length > 0 || quickFilters.area.length > 0 || quickFilters.prioridade.length > 0) && (
+            {(searchTerm || selectedEvent !== 'all' || sortBy !== 'dataUltimaAtualizacao' || quickFilters.status.length > 0 || quickFilters.area.length > 0 || quickFilters.prioridade.length > 0 || activeFilter !== 'todos') && (
               <Button variant="ghost" size="sm" onClick={clearAllFilters} className="text-blue-600 hover:bg-blue-50 hover:text-blue-700">
                   <RotateCcw className="mr-2 h-4 w-4" /> Limpar filtros
               </Button>
@@ -576,9 +586,9 @@ const DashboardPage = () => {
         <FileText className="mx-auto h-16 w-16 text-slate-300" />
         <h3 className="mt-4 text-lg font-semibold text-slate-800">Nenhum chamado encontrado</h3>
         <p className="mt-1 text-slate-500">Tente ajustar seus filtros ou aguarde por novos chamados.</p>
-        {activeFilter !== 'todos' && (
-          <Button onClick={() => setActiveFilter('todos')} className="mt-6 rounded-xl">
-            Ver Todos os Chamados
+        {(searchTerm || selectedEvent !== 'all' || sortBy !== 'dataUltimaAtualizacao' || quickFilters.status.length > 0 || quickFilters.area.length > 0 || quickFilters.prioridade.length > 0 || activeFilter !== 'todos') && (
+          <Button onClick={clearAllFilters} className="mt-6 rounded-xl">
+            Limpar Todos os Filtros
           </Button>
         )}
       </CardContent>
@@ -607,7 +617,7 @@ const DashboardPage = () => {
                   <div className="flex items-center gap-2">
                     {(ticket.isConfidential || ticket.confidencial) && <Lock className="h-4 w-4 flex-shrink-0 text-orange-500" title="Confidencial"/>}
                     <span className="truncate" title={ticket.titulo}>{ticket.titulo}</span>
-                    {ticketNotifications[ticket.id] && <Badge className="bg-red-500 text-white rounded-full px-2">{ticketNotifications[ticket.id]}</Badge>}
+                    {ticketNotifications[ticket.id] > 0 && <Badge className="bg-red-500 text-white rounded-full px-2">{ticketNotifications[ticket.id]}</Badge>}
                   </div>
                 </TableCell>
                 <TableCell><Badge className={`${getStatusColor(ticket.status)} font-medium capitalize`}>{ticket.status?.replace(/_/g, ' ')}</Badge></TableCell>
@@ -647,7 +657,7 @@ const DashboardPage = () => {
                     <CardContent className="p-4 space-y-3">
                       <div className="flex items-start justify-between">
                         <h4 className="font-semibold text-slate-800 pr-2">{ticket.titulo}</h4>
-                        {ticketNotifications[ticket.id] && <Badge className="bg-red-500 text-white rounded-full px-2">{ticketNotifications[ticket.id]}</Badge>}
+                        {ticketNotifications[ticket.id] > 0 && <Badge className="bg-red-500 text-white rounded-full px-2">{ticketNotifications[ticket.id]}</Badge>}
                       </div>
                       <p className="text-sm text-slate-600 line-clamp-2">{(ticket.isConfidential || ticket.confidencial) ? 'Descrição confidencial' : ticket.descricao}</p>
                       <div className="flex flex-wrap gap-2">
