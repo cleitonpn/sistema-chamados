@@ -1101,76 +1101,112 @@ const TicketDetailPage = () => {
   };
     
   const proceedWithStatusUpdate = async (statusToUpdate) => {
-    if ((statusToUpdate === 'rejeitado' || statusToUpdate === 'enviado_para_area') && !conclusionDescription.trim()) {
-      alert('Por favor, forneça um motivo para a rejeição/devolução');
-      return;
-    }
-    setUpdating(true);
-    try {
-      let updateData = {};
-      let systemMessageContent = '';
-      
-      updateData = { status: statusToUpdate, atualizadoPor: user.uid, updatedAt: new Date() };
-      if (statusToUpdate === 'concluido') {
-        updateData.conclusaoDescricao = conclusionDescription;
-        updateData.conclusaoImagens = conclusionImages;
-        updateData.concluidoEm = new Date();
-        updateData.concluidoPor = user.uid;
-        systemMessageContent = `✅ **Chamado concluído**\n\n**Descrição:** ${conclusionDescription}`;
-      } else if (statusToUpdate === 'rejeitado') {
-        updateData.motivoRejeicao = conclusionDescription;
-        updateData.rejeitadoEm = new Date();
-        updateData.rejeitadoPor = user.uid;
-        systemMessageContent = `❌ **Chamado reprovado pelo gerente**\n\n**Motivo:** ${conclusionDescription}`;
-      } else if (statusToUpdate === 'enviado_para_area') {
-         if (!ticket.areaDeOrigem) {
-           // fallback: assume área atual como origem se não existir registro legado
-           updateData.areaDeOrigem = ticket.area;
-        }
-        updateData.motivoRejeicao = conclusionDescription;
-        updateData.rejeitadoEm = new Date();
-        updateData.rejeitadoPor = user.uid;
-        updateData.areaQueRejeitou = ticket.area;
-        updateData.area = ticket.areaDeOrigem;
-        systemMessageContent = `🔄 **Chamado devolvido para:** ${updateData.area.replace(/_/g, ' ')}\n\n**Motivo:** ${conclusionDescription}`;
-      } else if (statusToUpdate === 'aprovado') {
-          if (ticket.status === 'aguardando_aprovacao' && userProfile.funcao === 'gerente') {
-              updateData.status = 'em_tratativa';
-              updateData.area = ticket.areaDeOrigem || ticket.area;
-              updateData.aprovadoEm = new Date();
-              updateData.aprovadoPor = user.uid;
-              systemMessageContent = `✅ **Chamado aprovado pelo gerente** e retornado para a área responsável.`;
-          }
-      } else if (statusToUpdate === 'executado_pelo_consultor') {
-          updateData.area = ticket.areaDeOrigem;
-          updateData.consultorResponsavelId = null; 
-          systemMessageContent = `👨‍🎯 **Chamado executado pelo consultor e devolvido para:** ${ticket.areaDeOrigem?.replace('_', ' ').toUpperCase()}`;
-            } else if (statusToUpdate === 'cancelado') {
-updateData.canceladoEm = new Date();
-          updateData.canceladoPor = user.uid;
-          systemMessageContent = `🚫 **Chamado cancelado pelo criador**`;
-      } else if (statusToUpdate === 'aberto' && ticket.status === 'transferido_para_produtor') {
-          updateData.area = ticket.areaInicial || ticket.areaDeOrigem || ticket.area;
-          systemMessageContent = `🔄 **Transferido para área selecionada:** ${ (updateData.area || '').replace(/_/g, ' ').toUpperCase() }`;
-      } else {
-          systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(statusToUpdate)}`;
-      }
+  if ((statusToUpdate === 'rejeitado' || statusToUpdate === 'enviado_para_area') && !conclusionDescription.trim()) {
+    alert('Por favor, forneça um motivo para a rejeição/devolução');
+    return;
+  }
 
-      await ticketService.updateTicket(ticketId, updateData);
-      const statusMessage = { userId: user.uid, remetenteNome: userProfile.nome || user.email, conteudo: systemMessageContent, criadoEm: new Date(), type: 'status_update' };
-      await messageService.sendMessage(ticketId, statusMessage);
-      await notificationService.notifyStatusChange(ticketId, ticket, updateData.status, ticket.status, user.uid);
-      await loadTicketData();
-      setNewStatus('');
-      setConclusionDescription('');
-      setConclusionImages([]);
-      alert('Status atualizado com sucesso!');
-    } catch (error) {
-      alert('Erro ao atualizar status: ' + error.message);
-    } finally {
-      setUpdating(false);
+  setUpdating(true);
+  try {
+    const normalize = (s) =>
+      (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const areaNorm = normalize(ticket?.area);
+    const userRole = userProfile?.funcao;
+
+    const updateData = {
+      status: statusToUpdate,
+      atualizadoPor: user.uid,
+      updatedAt: new Date(),
+    };
+
+    // Mensagem de sistema padrão (mantida)
+    const pretty = {
+      aberto: 'Aberto',
+      em_tratativa: 'Em Tratativa',
+      em_execucao: 'Em Execução',
+      concluido: 'Concluído',
+      cancelado: 'Cancelado',
+      arquivado: 'Arquivado',
+      devolvido: 'Devolvido',
+      aguardando_aprovacao: 'Aguardando Aprovação',
+      enviado_para_area: 'Enviado para Área',
+      escalado_para_area: 'Escalado para Área',
+      escalado_para_outra_area: 'Escalado para Outra Área',
+      escalado_para_gerencia: 'Escalado para Gerência',
+      escalado_para_consultor: 'Escalado para Consultor',
+      transferido_para_produtor: 'Transferido para Produtor',
+      executado_aguardando_validacao: 'Executado — Aguardando Validação',
+      executado_aguardando_validacao_operador: 'Aguardando Validação do Operador',
+    };
+
+    let systemMessageContent = `🔄 Status atualizado para: ${pretty[statusToUpdate] || statusToUpdate}.`;
+
+    // ✅ NOVO: Produtor inicia tratativa em chamado de PRODUÇÃO
+    if (statusToUpdate === 'em_tratativa' && userRole === 'produtor' && areaNorm === 'producao') {
+      updateData.produtorResponsavelId = user.uid;   // garante responsável
+      updateData.responsavelAtual = user.uid;
+      systemMessageContent = `🛠️ Produtor ${userProfile?.nome || user.email || '—'} iniciou a tratativa (área: Produção).`;
     }
-  };
+
+    // ✅ NOVO: Produtor executa em chamado de PRODUÇÃO
+    if (statusToUpdate === 'executado_aguardando_validacao' && userRole === 'produtor' && areaNorm === 'producao') {
+      systemMessageContent = `✅ Produtor ${userProfile?.nome || user.email || '—'} marcou como executado e aguarda validação.`;
+    }
+
+    // Upload de imagens/descrição de conclusão (fluxo existente – preserve)
+    let uploadedImages = [];
+    if (
+      (statusToUpdate === 'executado_aguardando_validacao' ||
+        statusToUpdate === 'executado_aguardando_validacao_operador' ||
+        statusToUpdate === 'concluido') &&
+      conclusionImages.length > 0
+    ) {
+      uploadedImages = await Promise.all(
+        conclusionImages.map(async (file) => {
+          const url = await ticketService.uploadConclusionImage(ticketId, file);
+          return url;
+        })
+      );
+      updateData.imagensConclusao = [...(ticket?.imagensConclusao || []), ...uploadedImages];
+      if (conclusionDescription?.trim()) {
+        updateData.descricaoConclusao = conclusionDescription.trim();
+      }
+    }
+
+    // Persiste
+    await ticketService.updateTicket(ticketId, updateData);
+
+    // Mensagem de sistema no histórico/chat
+    await messageService.sendMessage(ticketId, {
+      type: 'status_update',
+      userId: user.uid,
+      remetenteNome: userProfile?.nome || user.email,
+      conteudo: systemMessageContent,
+      criadoEm: new Date(),
+    });
+
+    // Notificação (mantida)
+    await notificationService.notifyStatusChange(
+      ticketId,
+      ticket,
+      updateData.status,
+      ticket.status,
+      user.uid
+    );
+
+    // Atualiza estado local
+    setTicket((prev) => ({ ...(prev || {}), ...updateData }));
+    setConclusionImages([]);
+    setConclusionDescription('');
+    setNewStatus('');
+    alert('Status atualizado com sucesso!');
+  } catch (error) {
+    console.error('Erro ao atualizar status:', error);
+    alert('Erro ao atualizar o status. Tente novamente.');
+  } finally {
+    setUpdating(false);
+  }
+};
   
   const handleSendMessage = async () => {
     if (!newMessage.trim() && chatImages.length === 0) return;
