@@ -860,19 +860,69 @@ const TicketDetailPage = () => {
       return [ { value: 'aprovado', label: 'Aprovar' }, { value: 'reprovado', label: 'Reprovar' } ];
     }
     
-    const normalize = (s) =>
-    (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const areaNorm = normalize(ticket?.area);
-  if (userRole === 'produtor' && areaNorm === 'producao') {
-    if (
-      ['aberto', 'enviado_para_area', 'escalado_para_outra_area', 'transferido_para_produtor'].includes(
-        currentStatus
-      )
-    ) {
-      return [{ value: 'em_tratativa', label: 'Iniciar Tratativa' }];
-    }
-    if (currentStatus === 'em_tratativa') {
+    if (userRole === 'produtor' && currentStatus === 'transferido_para_produtor' && ticket.produtorResponsavelId === user.uid) {
       return [{ value: 'executado_aguardando_validacao', label: 'Executar' }];
+      if (userRole === 'produtor') {
+      const normalizeArea = (area) =>
+        (area || '')
+          .toString()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase();
+
+      const areaHistory = [
+        ticket.area,
+        ticket.areaOriginal,
+        ticket.areaInicial,
+        ticket.areaDeOrigem
+      ].filter(Boolean);
+
+      const isProductionTicket = areaHistory.some((area) => normalizeArea(area) === 'producao');
+
+      const possibleProducerIds = [
+        ticket.produtorResponsavelId,
+        ticket.produtorResponsavelUid,
+        ticket.produtorId,
+        ticket.produtorUid,
+        project?.produtorId,
+        project?.produtorUid
+      ].filter(Boolean);
+
+      const possibleProducerEmails = [
+        ticket.produtorResponsavelEmail,
+        ticket.produtorEmail,
+        project?.produtorEmail
+      ].filter(Boolean);
+
+      const possibleProducerNames = [
+        ticket.produtorResponsavelNome,
+        ticket.produtorNome,
+        project?.produtorNome
+      ].filter(Boolean);
+
+      const isProducerResponsible =
+        possibleProducerIds.includes(user.uid) ||
+        (userProfile?.email && possibleProducerEmails.includes(userProfile.email)) ||
+        (userProfile?.nome && possibleProducerNames.includes(userProfile.nome));
+
+      const producerActions = [];
+
+      if (currentStatus === 'transferido_para_produtor' && isProducerResponsible) {
+        producerActions.push({ value: 'executado_aguardando_validacao', label: 'Executar' });
+      }
+
+      if (isProductionTicket && isProducerResponsible) {
+        if (['aberto', 'escalado_para_outra_area', 'enviado_para_area'].includes(currentStatus)) {
+          producerActions.push({ value: 'em_tratativa', label: 'Iniciar Tratativa (Produção)' });
+        } else if (currentStatus === 'em_tratativa') {
+          producerActions.push({ value: 'executado_aguardando_validacao', label: 'Executado' });
+        }
+      }
+
+      if (producerActions.length > 0) {
+        return producerActions;
+      }
+    }
 
     if (userRole === 'administrador') {
       if (currentStatus === 'aberto' || currentStatus === 'escalado_para_outra_area' || currentStatus === 'enviado_para_area') return [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
@@ -1101,112 +1151,76 @@ const TicketDetailPage = () => {
   };
     
   const proceedWithStatusUpdate = async (statusToUpdate) => {
-  if ((statusToUpdate === 'rejeitado' || statusToUpdate === 'enviado_para_area') && !conclusionDescription.trim()) {
-    alert('Por favor, forneça um motivo para a rejeição/devolução');
-    return;
-  }
-
-  setUpdating(true);
-  try {
-    const normalize = (s) =>
-      (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const areaNorm = normalize(ticket?.area);
-    const userRole = userProfile?.funcao;
-
-    const updateData = {
-      status: statusToUpdate,
-      atualizadoPor: user.uid,
-      updatedAt: new Date(),
-    };
-
-    // Mensagem de sistema padrão (mantida)
-    const pretty = {
-      aberto: 'Aberto',
-      em_tratativa: 'Em Tratativa',
-      em_execucao: 'Em Execução',
-      concluido: 'Concluído',
-      cancelado: 'Cancelado',
-      arquivado: 'Arquivado',
-      devolvido: 'Devolvido',
-      aguardando_aprovacao: 'Aguardando Aprovação',
-      enviado_para_area: 'Enviado para Área',
-      escalado_para_area: 'Escalado para Área',
-      escalado_para_outra_area: 'Escalado para Outra Área',
-      escalado_para_gerencia: 'Escalado para Gerência',
-      escalado_para_consultor: 'Escalado para Consultor',
-      transferido_para_produtor: 'Transferido para Produtor',
-      executado_aguardando_validacao: 'Executado — Aguardando Validação',
-      executado_aguardando_validacao_operador: 'Aguardando Validação do Operador',
-    };
-
-    let systemMessageContent = `🔄 Status atualizado para: ${pretty[statusToUpdate] || statusToUpdate}.`;
-
-    // ✅ NOVO: Produtor inicia tratativa em chamado de PRODUÇÃO
-    if (statusToUpdate === 'em_tratativa' && userRole === 'produtor' && areaNorm === 'producao') {
-      updateData.produtorResponsavelId = user.uid;   // garante responsável
-      updateData.responsavelAtual = user.uid;
-      systemMessageContent = `🛠️ Produtor ${userProfile?.nome || user.email || '—'} iniciou a tratativa (área: Produção).`;
+    if ((statusToUpdate === 'rejeitado' || statusToUpdate === 'enviado_para_area') && !conclusionDescription.trim()) {
+      alert('Por favor, forneça um motivo para a rejeição/devolução');
+      return;
     }
-
-    // ✅ NOVO: Produtor executa em chamado de PRODUÇÃO
-    if (statusToUpdate === 'executado_aguardando_validacao' && userRole === 'produtor' && areaNorm === 'producao') {
-      systemMessageContent = `✅ Produtor ${userProfile?.nome || user.email || '—'} marcou como executado e aguarda validação.`;
-    }
-
-    // Upload de imagens/descrição de conclusão (fluxo existente – preserve)
-    let uploadedImages = [];
-    if (
-      (statusToUpdate === 'executado_aguardando_validacao' ||
-        statusToUpdate === 'executado_aguardando_validacao_operador' ||
-        statusToUpdate === 'concluido') &&
-      conclusionImages.length > 0
-    ) {
-      uploadedImages = await Promise.all(
-        conclusionImages.map(async (file) => {
-          const url = await ticketService.uploadConclusionImage(ticketId, file);
-          return url;
-        })
-      );
-      updateData.imagensConclusao = [...(ticket?.imagensConclusao || []), ...uploadedImages];
-      if (conclusionDescription?.trim()) {
-        updateData.descricaoConclusao = conclusionDescription.trim();
+    setUpdating(true);
+    try {
+      let updateData = {};
+      let systemMessageContent = '';
+      
+      updateData = { status: statusToUpdate, atualizadoPor: user.uid, updatedAt: new Date() };
+      if (statusToUpdate === 'concluido') {
+        updateData.conclusaoDescricao = conclusionDescription;
+        updateData.conclusaoImagens = conclusionImages;
+        updateData.concluidoEm = new Date();
+        updateData.concluidoPor = user.uid;
+        systemMessageContent = `✅ **Chamado concluído**\n\n**Descrição:** ${conclusionDescription}`;
+      } else if (statusToUpdate === 'rejeitado') {
+        updateData.motivoRejeicao = conclusionDescription;
+        updateData.rejeitadoEm = new Date();
+        updateData.rejeitadoPor = user.uid;
+        systemMessageContent = `❌ **Chamado reprovado pelo gerente**\n\n**Motivo:** ${conclusionDescription}`;
+      } else if (statusToUpdate === 'enviado_para_area') {
+         if (!ticket.areaDeOrigem) {
+           // fallback: assume área atual como origem se não existir registro legado
+           updateData.areaDeOrigem = ticket.area;
+        }
+        updateData.motivoRejeicao = conclusionDescription;
+        updateData.rejeitadoEm = new Date();
+        updateData.rejeitadoPor = user.uid;
+        updateData.areaQueRejeitou = ticket.area;
+        updateData.area = ticket.areaDeOrigem;
+        systemMessageContent = `🔄 **Chamado devolvido para:** ${updateData.area.replace(/_/g, ' ')}\n\n**Motivo:** ${conclusionDescription}`;
+      } else if (statusToUpdate === 'aprovado') {
+          if (ticket.status === 'aguardando_aprovacao' && userProfile.funcao === 'gerente') {
+              updateData.status = 'em_tratativa';
+              updateData.area = ticket.areaDeOrigem || ticket.area;
+              updateData.aprovadoEm = new Date();
+              updateData.aprovadoPor = user.uid;
+              systemMessageContent = `✅ **Chamado aprovado pelo gerente** e retornado para a área responsável.`;
+          }
+      } else if (statusToUpdate === 'executado_pelo_consultor') {
+          updateData.area = ticket.areaDeOrigem;
+          updateData.consultorResponsavelId = null; 
+          systemMessageContent = `👨‍🎯 **Chamado executado pelo consultor e devolvido para:** ${ticket.areaDeOrigem?.replace('_', ' ').toUpperCase()}`;
+            } else if (statusToUpdate === 'cancelado') {
+updateData.canceladoEm = new Date();
+          updateData.canceladoPor = user.uid;
+          systemMessageContent = `🚫 **Chamado cancelado pelo criador**`;
+      } else if (statusToUpdate === 'aberto' && ticket.status === 'transferido_para_produtor') {
+          updateData.area = ticket.areaInicial || ticket.areaDeOrigem || ticket.area;
+          systemMessageContent = `🔄 **Transferido para área selecionada:** ${ (updateData.area || '').replace(/_/g, ' ').toUpperCase() }`;
+      } else {
+          systemMessageContent = `🔄 **Status atualizado para:** ${getStatusText(statusToUpdate)}`;
       }
+
+      await ticketService.updateTicket(ticketId, updateData);
+      const statusMessage = { userId: user.uid, remetenteNome: userProfile.nome || user.email, conteudo: systemMessageContent, criadoEm: new Date(), type: 'status_update' };
+      await messageService.sendMessage(ticketId, statusMessage);
+      await notificationService.notifyStatusChange(ticketId, ticket, updateData.status, ticket.status, user.uid);
+      await loadTicketData();
+      setNewStatus('');
+      setConclusionDescription('');
+      setConclusionImages([]);
+      alert('Status atualizado com sucesso!');
+    } catch (error) {
+      alert('Erro ao atualizar status: ' + error.message);
+    } finally {
+      setUpdating(false);
     }
-
-    // Persiste
-    await ticketService.updateTicket(ticketId, updateData);
-
-    // Mensagem de sistema no histórico/chat
-    await messageService.sendMessage(ticketId, {
-      type: 'status_update',
-      userId: user.uid,
-      remetenteNome: userProfile?.nome || user.email,
-      conteudo: systemMessageContent,
-      criadoEm: new Date(),
-    });
-
-    // Notificação (mantida)
-    await notificationService.notifyStatusChange(
-      ticketId,
-      ticket,
-      updateData.status,
-      ticket.status,
-      user.uid
-    );
-
-    // Atualiza estado local
-    setTicket((prev) => ({ ...(prev || {}), ...updateData }));
-    setConclusionImages([]);
-    setConclusionDescription('');
-    setNewStatus('');
-    alert('Status atualizado com sucesso!');
-  } catch (error) {
-    console.error('Erro ao atualizar status:', error);
-    alert('Erro ao atualizar o status. Tente novamente.');
-  } finally {
-    setUpdating(false);
-  }
-};
+  };
   
   const handleSendMessage = async () => {
     if (!newMessage.trim() && chatImages.length === 0) return;
