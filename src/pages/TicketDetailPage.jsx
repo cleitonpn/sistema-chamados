@@ -306,8 +306,8 @@ const TicketDetailPage = () => {
           <fieldset class="group">
             <legend>${group}</legend>
             <div class="actions">
-              <button type="button" onclick="(function(g){document.querySelectorAll('[data-group=\\''+g+'\\']').forEach(el=>el.checked=true)})(\`${group}\`)">Selecionar tudo</button>
-              <button type="button" onclick="(function(g){document.querySelectorAll('[data-group=\\''+g+'\\']').forEach(el=>el.checked=false)})(\`${group}\`)">Limpar</button>
+              <button type="button" onclick="(function(g){document.querySelectorAll('[data-group=\\''+g+'\\']').forEach(el=>el.checked=true)})(\`${group}\">Selecionar tudo</button>
+              <button type="button" onclick="(function(g){document.querySelectorAll('[data-group=\\''+g+'\\']').forEach(el=>el.checked=false)})(\`${group}\">Limpar</button>
             </div>
             <div class="grid">${checkboxes}</div>
           </fieldset>
@@ -434,7 +434,21 @@ builderScript.text =
 "    }).join('');" + "\n" +
 "    return '<html><head><meta charset=\\\"utf-8\\\" />' + cssPrint + '</head><body><h1>' + title + '</h1>' + (sectionsHTML || '<p class=\\\"muted\\\">Nenhum campo selecionado.</p>') + '</body></html>';" + "\n" +
 "  }" + "\n" +
-"  document.getElementById('btn-print').addEventListener('click', function(){" + "\n" +
+"  "    // Bind select-all / clear buttons\n\" + \"\n\" +
+\"    Array.prototype.slice.call(document.querySelectorAll('.btn-select-all')).forEach(function(btn){\n\" + \"\n\" +
+\"      var g = btn.getAttribute('data-group');\n\" + \"\n\" +
+\"      btn.addEventListener('click', function(){\n\" + \"\n\" +
+\"        Array.prototype.slice.call(document.querySelectorAll('input[type=checkbox][data-group=\"' + g + '\"]')).forEach(function(el){ el.checked = true; });\n\" + \"\n\" +
+\"      });\n\" + \"\n\" +
+\"    });\n\" + \"\n\" +
+\"    Array.prototype.slice.call(document.querySelectorAll('.btn-clear')).forEach(function(btn){\n\" + \"\n\" +
+\"      var g = btn.getAttribute('data-group');\n\" + \"\n\" +
+\"      btn.addEventListener('click', function(){\n\" + \"\n\" +
+\"        Array.prototype.slice.call(document.querySelectorAll('input[type=checkbox][data-group=\"' + g + '\"]')).forEach(function(el){ el.checked = false; });\n\" + \"\n\" +
+\"      });\n\" + \"\n\" +
+\"    });\n\" + \"\n\" +
+\"  " + "\n" +
+document.getElementById('btn-print').addEventListener('click', function(){" + "\n" +
 "    var checks = Array.prototype.slice.call(document.querySelectorAll('input[type=checkbox][data-key]'));" + "\n" +
 "    var selectedByGroup = {};" + "\n" +
 "    for (var i=0;i<checks.length;i++){" + "\n" +
