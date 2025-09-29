@@ -359,9 +359,9 @@ const TicketDetailPage = () => {
       const builderScript = w.document.createElement("script");
 builderScript.type = "text/javascript";
 builderScript.text =
-"(function(){
-  var TICKET = {};
-  try { var el = document.getElementById('ticket-json'); if (el) TICKET = JSON.parse(el.textContent || '{}'); } catch(e) { TICKET = {}; }" + "\n" +
+"(function(){" + "\n" +
+  "  var TICKET = {};" + "\n" +
+  "  try { var el = document.getElementById('ticket-json'); if (el) TICKET = JSON.parse(el.textContent || '{}'); } catch(e) { TICKET = {}; }" + "\n" +
 "  function get(obj, path, dflt){" + "\n" +
 "    if(dflt===undefined) dflt = '—';" + "\n" +
 "    try { return path.split('.').reduce(function(o,k){ return (o && (o[k] !== undefined)) ? o[k] : undefined; }, obj); } catch(e) { return dflt; }" + "\n" +
