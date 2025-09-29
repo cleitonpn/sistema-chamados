@@ -359,84 +359,108 @@ const TicketDetailPage = () => {
 
       // Inject print builder as a script tag
       const builderScript = w.document.createElement("script");
-      builderScript.type = "text/javascript";
-      builderScript.text = `
-        (function(){
-          const get = ${get.__code__ if False else "(obj, path, dflt = '—') => { try { return path.split('.').reduce((o, k) => (o?.[k] ?? undefined), obj) ?? dflt; } catch { return dflt; } }"};
-          const toBRL = ${"(v) => (typeof v === 'number' ? v : Number(v || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })"};
-          const fmtDate = ${"(iso) => (iso ? new Date(iso).toLocaleDateString('pt-BR') : '—')"};
-          const cssPrint = `${cssPrint}`;
-
-          function renderKeyValueTable(rows, ticket){
-            return \`<table class="kv"><tbody>\${rows.map(r=>{
-              if(String(r.key).startsWith('__')) return '';
-              const raw = get(ticket, r.key);
-              const val = r.fmt ? r.fmt(raw) : (raw ?? '—');
-              return \`<tr><th>\${r.label}</th><td>\${val}</td></tr>\`;
-            }).join('')}</tbody></table>\`;
-          }
-          function renderSpecialBlocks(keys, ticket){
-            const out = [];
-            if(keys.includes('__historico')) out.push('<div class="section"><h2>Histórico</h2><div class="muted">[Sua timeline aqui, se disponível]</div></div>');
-            if(keys.includes('__mensagens')) out.push('<div class="section"><h2>Mensagens</h2><div class="muted">[Mensagens/comentários, se disponível]</div></div>');
-            if(keys.includes('__anexos')) {
-              const anexos = (TICKET?.anexos || TICKET?.links || []);
-              out.push('<div class="section"><h2>Anexos</h2>' + (Array.isArray(anexos) && anexos.length ? '<ul>' + anexos.map(a => '<li>' + (a?.nome ? '<strong>'+a.nome+':</strong> ' : '') + (a?.url || a || '—') + '</li>').join('') + '</ul>' : '<p class="muted">Sem anexos.</p>') + '</div>');
-            }
-            const docKeys = keys.filter(k => k.startsWith('__doc:'));
-            if(docKeys.length){
-              out.push('<div class="section"><h2>Documentos</h2><ul>' + docKeys.map(k => {
-                const path = k.replace('__doc:','');
-                const val = get(TICKET, path, '');
-                if(!val || val === '—') return '';
-                const label = path.split('.').slice(-1)[0];
-                return '<li><span>'+label+':</span> ' + val + '</li>';
-              }).join('') + '</ul></div>');
-            }
-            return out.join('');
-          }
-
-          function buildHTML(ticket, title, selectedMap, groupsDef){
-            const sectionsHTML = Object.entries(groupsDef).map(([group, rows])=>{
-              const sel = selectedMap[group];
-              if(!sel || !sel.size) return '';
-              const chosenRows = rows.filter(r => sel.has(r.key) && !String(r.key).startsWith('__'));
-              const specialKeys = rows.filter(r => sel.has(r.key) && String(r.key).startsWith('__')).map(r => r.key);
-              const table = chosenRows.length ? renderKeyValueTable(chosenRows, ticket) : '';
-              const specials = specialKeys.length ? renderSpecialBlocks(specialKeys, ticket) : '';
-              if(!table && !specials) return '';
-              return '<div class="section"><h2>'+group+'</h2>'+table+specials+'</div>';
-            }).join('');
-            return '<html><head><meta charset="utf-8" />'+cssPrint+'</head><body><h1>'+title+'</h1>'+(sectionsHTML || '<p class="muted">Nenhum campo selecionado.</p>')+'</body></html>';
-          }
-
-          document.getElementById('btn-print').addEventListener('click', function(){
-            // collect selections
-            const checks = Array.from(document.querySelectorAll('input[type=checkbox][data-key]'));
-            const selectedByGroup = {};
-            for (const c of checks) {
-              const g = c.getAttribute('data-group');
-              if(!selectedByGroup[g]) selectedByGroup[g] = new Set();
-              if(c.checked) selectedByGroup[g].add(c.getAttribute('data-key'));
-            }
-            const title = document.title.replace(' — Seleção de impressão','');
-            const groupsDef = {}; // rebuild groups from DOM
-            const groupEls = document.querySelectorAll('fieldset.group');
-            groupEls.forEach(fs => {
-              const name = fs.querySelector('legend')?.textContent || 'Grupo';
-              const rows = Array.from(fs.querySelectorAll('input[data-key]')).map(inp => ({ key: inp.getAttribute('data-key'), label: inp.parentElement.querySelector('span').textContent }));
-              groupsDef[name] = rows;
-            });
-
-            const html = buildHTML(TICKET, title, selectedByGroup, groupsDef);
-            const w2 = window.open('', '_blank');
-            w2.document.write(html);
-            w2.document.close();
-            w2.onload = () => { w2.print(); w2.close(); };
-          });
-        })();
-      `;
-      w.document.body.appendChild(builderScript);
+builderScript.type = "text/javascript";
+builderScript.text =
+"(function(){" + "\n" +
+"  function get(obj, path, dflt){" + "\n" +
+"    if(dflt===undefined) dflt = '—';" + "\n" +
+"    try { return path.split('.').reduce(function(o,k){ return (o && (o[k] !== undefined)) ? o[k] : undefined; }, obj); } catch(e) { return dflt; }" + "\n" +
+"    var r = path.split('.').reduce(function(o,k){ return (o && (o[k] !== undefined)) ? o[k] : undefined; }, obj);" + "\n" +
+"    return (r === undefined || r === null) ? dflt : r;" + "\n" +
+"  }" + "\n" +
+"  function toBRL(v){ var n = (typeof v === 'number') ? v : Number(v || 0); return n.toLocaleString('pt-BR', {style:'currency', currency:'BRL'}); }" + "\n" +
+"  function fmtDate(iso){ return iso ? (new Date(iso)).toLocaleDateString('pt-BR') : '—'; }" + "\n" +
+"  var cssPrint = " +
+"'\\n<style>\\n' +" + "\n" +
+"'@media print { * { -webkit-print-color-adjust: exact; color-adjust: exact; } }\\n' +" + "\n" +
+"'body { font-family: Arial, sans-serif; font-size: 12px; color:#111; }\\n' +" + "\n" +
+"'h1 { font-size: 18px; margin: 0 0 12px; }\\n' +" + "\n" +
+"'h2 { font-size: 14px; margin: 16px 0 8px; }\\n' +" + "\n" +
+"'.section { page-break-inside: avoid; margin-bottom: 12px; }\\n' +" + "\n" +
+"'.kv { width: 100%; border-collapse: collapse; }\\n' +" + "\n" +
+"'.kv th { text-align: left; background:#f3f3f3; padding:6px; width: 32%; }\\n' +" + "\n" +
+"'.kv td { padding:6px; border-bottom:1px solid #eee; }\\n' +" + "\n" +
+"'.muted { color:#666; }\\n' +" + "\n" +
+"'@page { size: A4; margin: 12mm; }\\n' +" + "\n" +
+"'</style>\\n';" + "\n" +
+"  function renderKeyValueTable(rows, ticket){" + "\n" +
+"    var html = '<table class=\\\"kv\\\"><tbody>';"+ "\n" +
+"    for (var i=0;i<rows.length;i++){" + "\n" +
+"      var r = rows[i];" + "\n" +
+"      if (String(r.key).indexOf('__') === 0) continue;" + "\n" +
+"      var raw = get(ticket, r.key);" + "\n" +
+"      var val = r.fmt ? r.fmt(raw) : (raw == null ? '—' : raw);" + "\n" +
+"      html += '<tr><th>' + r.label + '</th><td>' + val + '</td></tr>';" + "\n" +
+"    }" + "\n" +
+"    html += '</tbody></table>';" + "\n" +
+"    return html;" + "\n" +
+"  }" + "\n" +
+"  function renderSpecialBlocks(keys, ticket){" + "\n" +
+"    var out = [];" + "\n" +
+"    if (keys.indexOf('__historico') >= 0) out.push('<div class=\\\"section\\\"><h2>Histórico</h2><div class=\\\"muted\\\">[Sua timeline aqui, se disponível]</div></div>');" + "\n" +
+"    if (keys.indexOf('__mensagens') >= 0) out.push('<div class=\\\"section\\\"><h2>Mensagens</h2><div class=\\\"muted\\\">[Mensagens/comentários, se disponível]</div></div>');" + "\n" +
+"    if (keys.indexOf('__anexos') >= 0) {" + "\n" +
+"      var anexos = (TICKET && (TICKET.anexos || TICKET.links)) || [];" + "\n" +
+"      if (Array.isArray(anexos) && anexos.length) {" + "\n" +
+"        out.push('<div class=\\\"section\\\"><h2>Anexos</h2><ul>' + anexos.map(function(a){ return '<li>' + (a && a.nome ? ('<strong>'+a.nome+':</strong> ') : '') + (a && a.url ? a.url : (a || '—')) + '</li>'; }).join('') + '</ul></div>');" + "\n" +
+"      } else {" + "\n" +
+"        out.push('<div class=\\\"section\\\"><h2>Anexos</h2><p class=\\\"muted\\\">Sem anexos.</p></div>');" + "\n" +
+"      }" + "\n" +
+"    }" + "\n" +
+"    var docKeys = keys.filter(function(k){ return k.indexOf('__doc:') === 0; });" + "\n" +
+"    if (docKeys.length) {" + "\n" +
+"      var lis = docKeys.map(function(k){" + "\n" +
+"        var path = k.replace('__doc:', '');" + "\n" +
+"        var val = get(TICKET, path, '');" + "\n" +
+"        if (!val || val === '—') return '';" + "\n" +
+"        var label = path.split('.'); label = label[label.length-1];" + "\n" +
+"        return '<li><span>' + label + ':</span> ' + val + '</li>';" + "\n" +
+"      }).join('');" + "\n" +
+"      out.push('<div class=\\\"section\\\"><h2>Documentos</h2><ul>' + lis + '</ul></div>');" + "\n" +
+"    }" + "\n" +
+"    return out.join('');" + "\n" +
+"  }" + "\n" +
+"  function buildHTML(ticket, title, selectedMap, groupsDef){" + "\n" +
+"    var sectionsHTML = Object.keys(groupsDef).map(function(group){" + "\n" +
+"      var rows = groupsDef[group];" + "\n" +
+"      var sel = selectedMap[group];" + "\n" +
+"      if (!sel || !sel.size) return '';" + "\n" +
+"      var chosenRows = rows.filter(function(r){ return sel.has(r.key) && String(r.key).indexOf('__') !== 0; });" + "\n" +
+"      var specialKeys = rows.filter(function(r){ return sel.has(r.key) && String(r.key).indexOf('__') === 0; }).map(function(r){ return r.key; });" + "\n" +
+"      var table = chosenRows.length ? renderKeyValueTable(chosenRows, ticket) : '';" + "\n" +
+"      var specials = specialKeys.length ? renderSpecialBlocks(specialKeys, ticket) : '';" + "\n" +
+"      if (!table && !specials) return '';" + "\n" +
+"      return '<div class=\\\"section\\\"><h2>' + group + '</h2>' + table + specials + '</div>';" + "\n" +
+"    }).join('');" + "\n" +
+"    return '<html><head><meta charset=\\\"utf-8\\\" />' + cssPrint + '</head><body><h1>' + title + '</h1>' + (sectionsHTML || '<p class=\\\"muted\\\">Nenhum campo selecionado.</p>') + '</body></html>';" + "\n" +
+"  }" + "\n" +
+"  document.getElementById('btn-print').addEventListener('click', function(){" + "\n" +
+"    var checks = Array.prototype.slice.call(document.querySelectorAll('input[type=checkbox][data-key]'));" + "\n" +
+"    var selectedByGroup = {};" + "\n" +
+"    for (var i=0;i<checks.length;i++){" + "\n" +
+"      var c = checks[i];" + "\n" +
+"      var g = c.getAttribute('data-group');" + "\n" +
+"      if(!selectedByGroup[g]) selectedByGroup[g] = new Set();" + "\n" +
+"      if(c.checked) selectedByGroup[g].add(c.getAttribute('data-key'));" + "\n" +
+"    }" + "\n" +
+"    var title = document.title.replace(' — Seleção de impressão','');" + "\n" +
+"    // Rebuild groupsDef from DOM (labels) to print readable names" + "\n" +
+"    var groupsDef = {}; var groupEls = document.querySelectorAll('fieldset.group');" + "\n" +
+"    groupEls.forEach(function(fs){" + "\n" +
+"      var name = (fs.querySelector('legend') && fs.querySelector('legend').textContent) || 'Grupo';" + "\n" +
+"      var rows = Array.prototype.slice.call(fs.querySelectorAll('input[data-key]')).map(function(inp){" + "\n" +
+"        return { key: inp.getAttribute('data-key'), label: inp.parentElement.querySelector('span').textContent };" + "\n" +
+"      });" + "\n" +
+"      groupsDef[name] = rows;" + "\n" +
+"    });" + "\n" +
+"    var html = buildHTML(TICKET, title, selectedByGroup, groupsDef);" + "\n" +
+"    var w2 = window.open('', '_blank');" + "\n" +
+"    w2.document.write(html);" + "\n" +
+"    w2.document.close();" + "\n" +
+"    w2.onload = function(){ w2.print(); w2.close(); };" + "\n" +
+"  });" + "\n" +
+"})();";
+w.document.body.appendChild(builderScript);
     } catch (err) {
       console.error("Erro no handlePrintAdvanced:", err);
       alert("Não foi possível abrir a impressão personalizada.");
