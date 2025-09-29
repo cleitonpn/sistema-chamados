@@ -289,6 +289,7 @@ const TicketDetailPage = () => {
 
       // Build config window
       const w = window.open("", "_blank", "width=980,height=700");
+      if (!w) { throw new Error("Popup bloqueado pelo navegador"); }
       const baseTitle = `Chamado #${ticket?.numero || (ticketId || '').slice(-6) || ticket?.id || ""} • ${area || ""}${tipo ? " • " + tipo : ""}`;
 
       const groupHTML = Object.entries(groups).map(([group, rows]) => {
@@ -344,10 +345,7 @@ const TicketDetailPage = () => {
               <button id="btn-print">Imprimir</button>
               <button class="secondary" onclick="window.close()">Cancelar</button>
             </footer>
-            <script>
-              // Receive serialized ticket
-              const TICKET = ${JSON.stringify({}, ensure_ascii=False)}; // placeholder, will be replaced
-            </script>
+            <script id="ticket-json" type="application/json"></script>
           </body>
         </html>
       `);
@@ -361,7 +359,9 @@ const TicketDetailPage = () => {
       const builderScript = w.document.createElement("script");
 builderScript.type = "text/javascript";
 builderScript.text =
-"(function(){" + "\n" +
+"(function(){
+  var TICKET = {};
+  try { var el = document.getElementById('ticket-json'); if (el) TICKET = JSON.parse(el.textContent || '{}'); } catch(e) { TICKET = {}; }" + "\n" +
 "  function get(obj, path, dflt){" + "\n" +
 "    if(dflt===undefined) dflt = '—';" + "\n" +
 "    try { return path.split('.').reduce(function(o,k){ return (o && (o[k] !== undefined)) ? o[k] : undefined; }, obj); } catch(e) { return dflt; }" + "\n" +
@@ -460,6 +460,11 @@ builderScript.text =
 "    w2.onload = function(){ w2.print(); w2.close(); };" + "\n" +
 "  });" + "\n" +
 "})();";
+      // Inject ticket JSON safely
+      try {
+        const holder = w.document.getElementById('ticket-json');
+        if (holder) { holder.textContent = JSON.stringify(ticket || {}); }
+      } catch (e) { console.warn('Falha ao injetar ticket JSON', e); }
 w.document.body.appendChild(builderScript);
     } catch (err) {
       console.error("Erro no handlePrintAdvanced:", err);
