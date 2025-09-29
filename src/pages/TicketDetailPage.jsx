@@ -135,7 +135,315 @@ const TicketDetailPage = () => {
   const [parentTicketForLink, setParentTicketForLink] = useState(null);
 
   // ======= Função para imprimir o chamado (ATUALIZADA) =======
-  const handlePrint = () => {
+  
+  /* === START: Print with selections (handlePrintAdvanced) === */
+  const handlePrintAdvanced = () => {
+    try {
+      const area = (ticket?.area || '').trim();
+      const tipo = (ticket?.tipo || '').trim();
+
+      // Helpers
+      const get = (obj, path, dflt = "—") => {
+        try {
+          return path.split(".").reduce((o, k) => (o?.[k] ?? undefined), obj) ?? dflt;
+        } catch { return dflt; }
+      };
+      const toBRL = v => (typeof v === "number" ? v : Number(v || 0)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+      const fmtDate = iso => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "—");
+
+      // Catalog of fields by profile
+      const FIELD_GROUPS = {
+        default: {
+          "Informações Básicas": [
+            { key: "projeto.nome", label: "Projeto" },
+            { key: "projeto.evento.nome", label: "Evento" },
+            { key: "status", label: "Status" },
+            { key: "area", label: "Área" },
+            { key: "tipo", label: "Tipo" },
+            { key: "datas.abertura", label: "Abertura", fmt: fmtDate },
+            { key: "datas.previsao", label: "Previsão", fmt: fmtDate },
+          ],
+          "Histórico": [{ key: "__historico", label: "Histórico do Chamado" }],
+          "Mensagens": [{ key: "__mensagens", label: "Mensagens/Comentários" }],
+          "Anexos": [{ key: "__anexos", label: "Links/Anexos" }],
+        },
+        "Operações:Pedido de Pagamento de Frete": {
+          "Informações Básicas": [
+            { key: "projeto.nome", label: "Projeto" },
+            { key: "projeto.evento.nome", label: "Evento" },
+            { key: "status", label: "Status" },
+            { key: "area", label: "Área" },
+            { key: "tipo", label: "Tipo" },
+            { key: "datas.abertura", label: "Abertura", fmt: fmtDate },
+            { key: "datas.previsao", label: "Previsão", fmt: fmtDate },
+          ],
+          "Resumo do Frete": [
+            { key: "frete.transportadora", label: "Transportadora" },
+            { key: "frete.motorista", label: "Motorista" },
+            { key: "frete.placa", label: "Placa" },
+            { key: "frete.origem", label: "Origem" },
+            { key: "frete.destino", label: "Destino" },
+            { key: "frete.valor", label: "Valor do Frete", fmt: toBRL },
+            { key: "frete.adiantamento", label: "Adiantamento", fmt: toBRL },
+            { key: "frete.formaPagamento", label: "Forma de Pagamento" },
+          ],
+          "Documentos do Frete": [
+            { key: "__doc:frete.documentos.nf", label: "NF (link/texto)" },
+            { key: "__doc:frete.documentos.cte", label: "CT-e (link/texto)" },
+            { key: "__doc:frete.documentos.comprovanteEntrega", label: "Comprovante de Entrega" },
+          ],
+          "Anexos": [{ key: "__anexos", label: "Links/Anexos" }],
+        },
+        "Comunicação Visual": {
+          "Informações Básicas": [
+            { key: "projeto.nome", label: "Projeto" },
+            { key: "projeto.evento.nome", label: "Evento" },
+            { key: "status", label: "Status" },
+            { key: "area", label: "Área" },
+            { key: "tipo", label: "Tipo" },
+            { key: "datas.abertura", label: "Abertura", fmt: fmtDate },
+            { key: "datas.previsao", label: "Previsão", fmt: fmtDate },
+          ],
+          "Comunicação Visual": [
+            { key: "cv.peca", label: "Peça" },
+            { key: "cv.dimensoes", label: "Dimensões" },
+            { key: "cv.material", label: "Material" },
+            { key: "cv.acabamento", label: "Acabamento" },
+            { key: "cv.arquivo", label: "Arquivo" },
+            { key: "cv.obs", label: "Observações" },
+          ],
+          "Anexos": [{ key: "__anexos", label: "Links/Anexos" }],
+        },
+      };
+
+      const resolveGroups = () => {
+        const keyAT = area && tipo && `${area}:${tipo}`;
+        if (keyAT && FIELD_GROUPS[keyAT]) return FIELD_GROUPS[keyAT];
+        if (area && FIELD_GROUPS[area]) return FIELD_GROUPS[area];
+        if (tipo && FIELD_GROUPS[tipo]) return FIELD_GROUPS[tipo];
+        return FIELD_GROUPS.default;
+      };
+
+      // Build HTML from selections
+      const renderKeyValueTable = (rows) => `
+        <table class="kv">
+          <tbody>
+            ${rows.map(r => {
+              if (String(r.key).startsWith("__")) return "";
+              const raw = get(ticket, r.key);
+              const val = r.fmt ? r.fmt(raw) : (raw ?? "—");
+              return `<tr><th>${r.label}</th><td>${val}</td></tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      `;
+
+      const renderSpecialBlocks = (keys) => {
+        const out = [];
+        if (keys.includes("__historico")) {
+          out.push(`<div class="section"><h2>Histórico</h2><div class="muted">[Sua timeline aqui, se disponível]</div></div>`);
+        }
+        if (keys.includes("__mensagens")) {
+          out.push(`<div class="section"><h2>Mensagens</h2><div class="muted">[Mensagens/comentários, se disponível]</div></div>`);
+        }
+        if (keys.includes("__anexos")) {
+          const anexos = ticket?.anexos || ticket?.links || [];
+          out.push(`<div class="section"><h2>Anexos</h2>${
+            Array.isArray(anexos) && anexos.length
+              ? `<ul>${anexos.map(a => `<li>${a?.nome ? `<strong>${a.nome}:</strong> ` : ""}${a?.url || a || "—"}</li>`).join("")}</ul>`
+              : `<p class="muted">Sem anexos.</p>`
+          }</div>`);
+        }
+        const docKeys = keys.filter(k => k.startsWith("__doc:"));
+        if (docKeys.length) {
+          out.push(`<div class="section"><h2>Documentos</h2><ul>${
+            docKeys.map(k => {
+              const path = k.replace("__doc:", "");
+              const val = get(ticket, path, "");
+              if (!val || val === "—") return "";
+              const label = path.split(".").slice(-1)[0];
+              return `<li><span>${label}:</span> ${val}</li>`;
+            }).join("")
+          }</ul></div>`);
+        }
+        return out.join("");
+      };
+
+      const cssPrint = `
+        <style>
+          @media print { * { -webkit-print-color-adjust: exact; color-adjust: exact; } }
+          body { font-family: Arial, sans-serif; font-size: 12px; color:#111; }
+          h1 { font-size: 18px; margin: 0 0 12px; }
+          h2 { font-size: 14px; margin: 16px 0 8px; }
+          .section { page-break-inside: avoid; margin-bottom: 12px; }
+          .kv { width: 100%; border-collapse: collapse; }
+          .kv th { text-align: left; background:#f3f3f3; padding:6px; width: 32%; }
+          .kv td { padding:6px; border-bottom:1px solid #eee; }
+          .muted { color:#666; }
+          @page { size: A4; margin: 12mm; }
+        </style>
+      `;
+
+      const groups = resolveGroups();
+      const profileKey = (area && tipo && `${area}:${tipo}`) || area || tipo || "default";
+
+      // Build config window
+      const w = window.open("", "_blank", "width=980,height=700");
+      const baseTitle = `Chamado #${ticket?.numero || (ticketId || '').slice(-6) || ticket?.id || ""} • ${area || ""}${tipo ? " • " + tipo : ""}`;
+
+      const groupHTML = Object.entries(groups).map(([group, rows]) => {
+        const checkboxes = rows.map((r, idx) => {
+          const defaultChecked = group === "Informações Básicas"; // pré-seleciona básicas
+          return `
+            <label class="item">
+              <input type="checkbox" data-key="${r.key}" data-group="${group}" ${defaultChecked ? "checked" : ""} />
+              <span>${r.label}</span>
+            </label>
+          `;
+        }).join("");
+        return `
+          <fieldset class="group">
+            <legend>${group}</legend>
+            <div class="actions">
+              <button type="button" onclick="(function(g){document.querySelectorAll('[data-group=\\''+g+'\\']').forEach(el=>el.checked=true)})(\`${group}\`)">Selecionar tudo</button>
+              <button type="button" onclick="(function(g){document.querySelectorAll('[data-group=\\''+g+'\\']').forEach(el=>el.checked=false)})(\`${group}\`)">Limpar</button>
+            </div>
+            <div class="grid">${checkboxes}</div>
+          </fieldset>
+        `;
+      }).join("");
+
+      const cssUI = `
+        <style>
+          body { font-family: Arial, sans-serif; margin: 0; color: #eee; background: #0f0f10; }
+          header, footer { padding: 12px 16px; background: #101214; border-bottom: 1px solid #1c1c1c; }
+          footer { border-top: 1px solid #1c1c1c; border-bottom: none; display:flex; gap:8px; justify-content:flex-end; }
+          main { padding: 12px 16px; }
+          .muted { color:#aaa; font-size:12px; }
+          .group { margin: 12px 0; border: 1px solid #1f1f1f; border-radius: 10px; padding: 10px; }
+          .group legend { padding: 0 6px; font-weight: 600; }
+          .actions { display:flex; gap:8px; margin-bottom:8px; }
+          .grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(230px,1fr)); gap: 8px 12px; }
+          .item { display:flex; align-items:center; gap:8px; background:#15161a; border:1px solid #222; border-radius:8px; padding:6px; }
+          button { background:#4b8cff; color:#fff; border:0; border-radius:8px; padding:8px 12px; cursor:pointer; }
+          button.secondary { background:#222; color:#ddd; }
+        </style>
+      `;
+
+      w.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head><meta charset="utf-8" /><title>${baseTitle} — Seleção de impressão</title>${cssUI}</head>
+          <body>
+            <header>
+              <div><strong>${baseTitle}</strong></div>
+              <div class="muted">Perfil: ${profileKey}</div>
+            </header>
+            <main>${groupHTML}</main>
+            <footer>
+              <button id="btn-print">Imprimir</button>
+              <button class="secondary" onclick="window.close()">Cancelar</button>
+            </footer>
+            <script>
+              // Receive serialized ticket
+              const TICKET = ${JSON.stringify({}, ensure_ascii=False)}; // placeholder, will be replaced
+            </script>
+          </body>
+        </html>
+      `);
+
+      // Replace TICKET placeholder with safe JSON (avoiding closing tags in content)
+      const safeTicketJSON = JSON.stringify(ticket || {}, (k, v) => v, 2)
+        .replace(/<\\//g, '<\\\\/'); // avoid closing script tag issues
+      w.document.body.querySelector("script").textContent = "const TICKET = " + safeTicketJSON + ";";
+
+      // Inject print builder as a script tag
+      const builderScript = w.document.createElement("script");
+      builderScript.type = "text/javascript";
+      builderScript.text = `
+        (function(){
+          const get = ${get.__code__ if False else "(obj, path, dflt = '—') => { try { return path.split('.').reduce((o, k) => (o?.[k] ?? undefined), obj) ?? dflt; } catch { return dflt; } }"};
+          const toBRL = ${"(v) => (typeof v === 'number' ? v : Number(v || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })"};
+          const fmtDate = ${"(iso) => (iso ? new Date(iso).toLocaleDateString('pt-BR') : '—')"};
+          const cssPrint = `${cssPrint}`;
+
+          function renderKeyValueTable(rows, ticket){
+            return \`<table class="kv"><tbody>\${rows.map(r=>{
+              if(String(r.key).startsWith('__')) return '';
+              const raw = get(ticket, r.key);
+              const val = r.fmt ? r.fmt(raw) : (raw ?? '—');
+              return \`<tr><th>\${r.label}</th><td>\${val}</td></tr>\`;
+            }).join('')}</tbody></table>\`;
+          }
+          function renderSpecialBlocks(keys, ticket){
+            const out = [];
+            if(keys.includes('__historico')) out.push('<div class="section"><h2>Histórico</h2><div class="muted">[Sua timeline aqui, se disponível]</div></div>');
+            if(keys.includes('__mensagens')) out.push('<div class="section"><h2>Mensagens</h2><div class="muted">[Mensagens/comentários, se disponível]</div></div>');
+            if(keys.includes('__anexos')) {
+              const anexos = (TICKET?.anexos || TICKET?.links || []);
+              out.push('<div class="section"><h2>Anexos</h2>' + (Array.isArray(anexos) && anexos.length ? '<ul>' + anexos.map(a => '<li>' + (a?.nome ? '<strong>'+a.nome+':</strong> ' : '') + (a?.url || a || '—') + '</li>').join('') + '</ul>' : '<p class="muted">Sem anexos.</p>') + '</div>');
+            }
+            const docKeys = keys.filter(k => k.startsWith('__doc:'));
+            if(docKeys.length){
+              out.push('<div class="section"><h2>Documentos</h2><ul>' + docKeys.map(k => {
+                const path = k.replace('__doc:','');
+                const val = get(TICKET, path, '');
+                if(!val || val === '—') return '';
+                const label = path.split('.').slice(-1)[0];
+                return '<li><span>'+label+':</span> ' + val + '</li>';
+              }).join('') + '</ul></div>');
+            }
+            return out.join('');
+          }
+
+          function buildHTML(ticket, title, selectedMap, groupsDef){
+            const sectionsHTML = Object.entries(groupsDef).map(([group, rows])=>{
+              const sel = selectedMap[group];
+              if(!sel || !sel.size) return '';
+              const chosenRows = rows.filter(r => sel.has(r.key) && !String(r.key).startsWith('__'));
+              const specialKeys = rows.filter(r => sel.has(r.key) && String(r.key).startsWith('__')).map(r => r.key);
+              const table = chosenRows.length ? renderKeyValueTable(chosenRows, ticket) : '';
+              const specials = specialKeys.length ? renderSpecialBlocks(specialKeys, ticket) : '';
+              if(!table && !specials) return '';
+              return '<div class="section"><h2>'+group+'</h2>'+table+specials+'</div>';
+            }).join('');
+            return '<html><head><meta charset="utf-8" />'+cssPrint+'</head><body><h1>'+title+'</h1>'+(sectionsHTML || '<p class="muted">Nenhum campo selecionado.</p>')+'</body></html>';
+          }
+
+          document.getElementById('btn-print').addEventListener('click', function(){
+            // collect selections
+            const checks = Array.from(document.querySelectorAll('input[type=checkbox][data-key]'));
+            const selectedByGroup = {};
+            for (const c of checks) {
+              const g = c.getAttribute('data-group');
+              if(!selectedByGroup[g]) selectedByGroup[g] = new Set();
+              if(c.checked) selectedByGroup[g].add(c.getAttribute('data-key'));
+            }
+            const title = document.title.replace(' — Seleção de impressão','');
+            const groupsDef = {}; // rebuild groups from DOM
+            const groupEls = document.querySelectorAll('fieldset.group');
+            groupEls.forEach(fs => {
+              const name = fs.querySelector('legend')?.textContent || 'Grupo';
+              const rows = Array.from(fs.querySelectorAll('input[data-key]')).map(inp => ({ key: inp.getAttribute('data-key'), label: inp.parentElement.querySelector('span').textContent }));
+              groupsDef[name] = rows;
+            });
+
+            const html = buildHTML(TICKET, title, selectedByGroup, groupsDef);
+            const w2 = window.open('', '_blank');
+            w2.document.write(html);
+            w2.document.close();
+            w2.onload = () => { w2.print(); w2.close(); };
+          });
+        })();
+      `;
+      w.document.body.appendChild(builderScript);
+    } catch (err) {
+      console.error("Erro no handlePrintAdvanced:", err);
+      alert("Não foi possível abrir a impressão personalizada.");
+    }
+  };
+  /* === END: Print with selections (handlePrintAdvanced) === */
+const handlePrint = () => {
     const printWindow = window.open('', '_blank');
 
     // --- helpers para resolver nomes/labels ---
@@ -848,73 +1156,41 @@ const TicketDetailPage = () => {
   const userRole = userProfile.funcao;
   const isCreator = ticket.criadoPor === user.uid;
 
-  // Ações do criador
-  if (
-    isCreator &&
-    (currentStatus === 'executado_aguardando_validacao' ||
-     currentStatus === 'executado_aguardando_validacao_operador')
-  ) {
+  // Criador
+  if (isCreator && (currentStatus === 'executado_aguardando_validacao' || currentStatus === 'executado_aguardando_validacao_operador')) {
     return [
       { value: 'concluido', label: 'Validar e Concluir' },
       { value: 'enviado_para_area', label: 'Rejeitar / Devolver' },
     ];
   }
-
   if (isCreator && currentStatus === 'enviado_para_area') {
     return [{ value: 'cancelado', label: 'Cancelar Chamado' }];
   }
 
-  // Ações da gerência
-  if (
-    userRole === 'gerente' &&
-    currentStatus === 'aguardando_aprovacao' &&
-    ticket.responsavelAtual === user.uid
-  ) {
-    return [
-      { value: 'aprovado', label: 'Aprovar' },
-      { value: 'reprovado', label: 'Reprovar' },
-    ];
+  // Gerente
+  if (userRole === 'gerente' && currentStatus === 'aguardando_aprovacao' && ticket.responsavelAtual === user.uid) {
+    return [{ value: 'aprovado', label: 'Aprovar' }, { value: 'reprovado', label: 'Reprovar' }];
   }
 
-  // Ações do produtor (consolidado)
+  // Produtor (mantém sua lógica nova, mas sem encerrar a função antes do restante)
   if (userRole === 'produtor') {
     const normalizeArea = (area) =>
-      (area || '')
-        .toString()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase();
+      (area || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
-    const areaHistory = [
-      ticket.area,
-      ticket.areaOriginal,
-      ticket.areaInicial,
-      ticket.areaDeOrigem,
-    ].filter(Boolean);
-
-    const isProductionTicket = areaHistory.some(
-      (area) => normalizeArea(area) === 'producao'
-    );
+    const areaHistory = [ticket.area, ticket.areaOriginal, ticket.areaInicial, ticket.areaDeOrigem].filter(Boolean);
+    const isProductionTicket = areaHistory.some((area) => normalizeArea(area) === 'producao');
 
     const possibleProducerIds = [
-      ticket.produtorResponsavelId,
-      ticket.produtorResponsavelUid,
-      ticket.produtorId,
-      ticket.produtorUid,
-      project?.produtorId,
-      project?.produtorUid,
+      ticket.produtorResponsavelId, ticket.produtorResponsavelUid, ticket.produtorId, ticket.produtorUid,
+      project?.produtorId, project?.produtorUid,
     ].filter(Boolean);
 
     const possibleProducerEmails = [
-      ticket.produtorResponsavelEmail,
-      ticket.produtorEmail,
-      project?.produtorEmail,
+      ticket.produtorResponsavelEmail, ticket.produtorEmail, project?.produtorEmail,
     ].filter(Boolean);
 
     const possibleProducerNames = [
-      ticket.produtorResponsavelNome,
-      ticket.produtorNome,
-      project?.produtorNome,
+      ticket.produtorResponsavelNome, ticket.produtorNome, project?.produtorNome,
     ].filter(Boolean);
 
     const isProducerResponsible =
@@ -923,11 +1199,9 @@ const TicketDetailPage = () => {
       (userProfile?.nome && possibleProducerNames.includes(userProfile.nome));
 
     const actions = [];
-
     if (currentStatus === 'transferido_para_produtor' && isProducerResponsible) {
       actions.push({ value: 'executado_aguardando_validacao', label: 'Executar' });
     }
-
     if (isProductionTicket && isProducerResponsible) {
       if (['aberto', 'escalado_para_outra_area', 'enviado_para_area'].includes(currentStatus)) {
         actions.push({ value: 'em_tratativa', label: 'Iniciar Tratativa (Produção)' });
@@ -935,51 +1209,50 @@ const TicketDetailPage = () => {
         actions.push({ value: 'executado_aguardando_validacao', label: 'Executado' });
       }
     }
-
     if (actions.length) return actions;
   }
 
-  // Sem ações específicas
-  return [];
-
-    if (userRole === 'administrador') {
-      if (currentStatus === 'aberto' || currentStatus === 'escalado_para_outra_area' || currentStatus === 'enviado_para_area') return [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
-      if (currentStatus === 'em_tratativa') return [ { value: 'executado_aguardando_validacao', label: 'Executado' } ];
-      if (currentStatus === 'executado_aguardando_validacao' && !isCreator) return [ { value: 'concluido', label: 'Forçar Conclusão (Admin)' } ];
-      if (currentStatus === 'aguardando_aprovacao') return [ { value: 'aprovado', label: 'Aprovar' }, { value: 'rejeitado', label: 'Reprovar' } ];
+  // Administrador (igual ao original)
+  if (userRole === 'administrador') {
+    if (['aberto','escalado_para_outra_area','enviado_para_area'].includes(currentStatus)) {
+      return [{ value: 'em_tratativa', label: 'Iniciar Tratativa' }];
     }
-    
-    if (userRole === 'operador') {
-      if ((ticket.area === userProfile.area || ticket.atribuidoA === user.uid) || (userRole === 'produtor' && currentStatus === 'transferido_para_produtor')) {
-        if (currentStatus === 'aberto' || currentStatus === 'escalado_para_outra_area' || currentStatus === 'enviado_para_area') {
-            const actions = currentStatus === 'transferido_para_produtor'
-              ? [ { value: 'em_tratativa', label: 'Iniciar Tratativa (Produção)' }, { value: 'aberto', label: 'Transferir para Área Selecionada' } ]
-              : [ { value: 'em_tratativa', label: 'Iniciar Tratativa' } ];
-            if (ticket.areaDeOrigem) {
-                actions.push({ value: 'enviado_para_area', label: 'Rejeitar / Devolver' });
-            }
-            return actions;
+    if (currentStatus === 'em_tratativa') return [{ value: 'executado_aguardando_validacao', label: 'Executado' }];
+    if (currentStatus === 'executado_aguardando_validacao' && !isCreator) return [{ value: 'concluido', label: 'Forçar Conclusão (Admin)' }];
+    if (currentStatus === 'aguardando_aprovacao') return [{ value: 'aprovado', label: 'Aprovar' }, { value: 'rejeitado', label: 'Reprovar' }];
+  }
+
+  // Operador (igual ao original; volta a aparecer “Iniciar Tratativa”)
+  if (userRole === 'operador') {
+    if (ticket.area === userProfile.area || ticket.atribuidoA === user.uid) {
+      if (['aberto','escalado_para_outra_area','enviado_para_area'].includes(currentStatus)) {
+        const actions = [{ value: 'em_tratativa', label: 'Iniciar Tratativa' }];
+        if (ticket.areaDeOrigem) {
+          actions.push({ value: 'enviado_para_area', label: 'Rejeitar / Devolver' });
         }
-        if (currentStatus === 'em_tratativa') {
-            return [ { value: 'executado_aguardando_validacao_operador', label: 'Executado' } ];
-        }
-        if (currentStatus === 'executado_pelo_consultor') {
-            return [
-                { value: 'em_tratativa', label: 'Continuar Tratativa' },
-                { value: 'executado_aguardando_validacao', label: 'Finalizar Execução' }
-            ];
-        }
+        return actions;
+      }
+      if (currentStatus === 'em_tratativa') {
+        return [{ value: 'executado_aguardando_validacao_operador', label: 'Executado' }];
+      }
+      if (currentStatus === 'executado_pelo_consultor') {
+        return [
+          { value: 'em_tratativa', label: 'Continuar Tratativa' },
+          { value: 'executado_aguardando_validacao', label: 'Finalizar Execução' },
+        ];
       }
     }
+  }
 
-    if (userRole === 'consultor' && ticket.consultorResponsavelId === user.uid) {
-        if (ticket.status === 'escalado_para_consultor') {
-            return [{ value: 'executado_pelo_consultor', label: 'Executar e Devolver para a Área' }];
-        }
+  // Consultor
+  if (userRole === 'consultor' && ticket.consultorResponsavelId === user.uid) {
+    if (ticket.status === 'escalado_para_consultor') {
+      return [{ value: 'executado_pelo_consultor', label: 'Executar e Devolver para a Área' }];
     }
-    
-    return [];
-  };
+  }
+
+  return [];
+};
 
   const handleEscalation = async () => {
     if (!escalationArea) {
@@ -1399,7 +1672,7 @@ updateData.canceladoEm = new Date();
                 {getStatusText(ticket.status)}
               </Badge>
               <Button
-                onClick={handlePrint}
+                onClick={() => handlePrintAdvanced()}
                 variant="outline"
                 size="sm"
                 className="flex items-center gap-2"
